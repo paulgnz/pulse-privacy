@@ -14,7 +14,10 @@
 html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Instrument Sans", system-ui, sans-serif; font-size: 15px; line-height: 1.5; }
 .page { max-width: 720px; margin: 0 auto; padding: 24px 24px 64px; }
 .top { display: flex; justify-content: space-between; align-items: baseline; padding: 16px 0 14px; border-bottom: 1px solid var(--rule); margin-bottom: 36px; }
-.brand { font-weight: 600; font-size: 17px; }
+.brand { font-weight: 600; font-size: 17px; display: inline-flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
+.brand img { display: block; }
+.top .muted a { color: inherit; }
+.top .sep { opacity: 0.4; margin: 0 4px; }
 h1 { font-size: 32px; line-height: 1.15; letter-spacing: -0.02em; font-weight: 600; margin: 0 0 16px; }
 h2 { font-size: 22px; font-weight: 600; margin: 40px 0 12px; }
 h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
@@ -46,7 +49,8 @@ input { font: inherit; padding: 11px 12px; border: 1px solid var(--rule); border
 .ledger { width: 100%; border-collapse: collapse; font-size: 14px; }
 .ledger th { text-align: left; font-weight: 500; color: var(--graphite); padding: 8px 8px 8px 0; border-bottom: 1px solid var(--rule); }
 .ledger td { padding: 10px 8px 10px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
-.foot { margin-top: 56px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--graphite); }
+.foot { margin-top: 56px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--graphite); display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.foot a { color: inherit; }
 @media (max-width: 640px) {
   .facts div { grid-template-columns: 1fr; gap: 2px; }
   input { min-width: 0; width: 100%; }

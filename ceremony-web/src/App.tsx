@@ -204,8 +204,13 @@ export function App() {
   return (
     <main className="page">
       <header className="top">
-        <div className="brand">Confidential XPR</div>
-        <div className="muted">Trusted setup ceremony</div>
+        <a className="brand" href="https://private.protonnz.com">
+          <img src="/xpr-network.svg" alt="XPR Network" height={20} />
+          <span>Confidential</span>
+        </a>
+        <div className="muted">
+          Trusted setup ceremony <span className="sep">|</span> <a href="https://private.protonnz.com/about">How it works</a> <span className="sep">|</span> <a href="https://private.protonnz.com">Open the app</a>
+        </div>
       </header>
 
       <section>
@@ -357,7 +362,10 @@ export function App() {
         </p>
       </section>
 
-      <footer className="foot">Confidential XPR ceremony. Coordinator: protonnz. Contract xprconf on XPR Network.</footer>
+      <footer className="foot">
+        <span>Confidential XPR ceremony. Coordinator: <a href="https://protonnz.com">protonnz</a>. Contract xprconf on XPR Network.</span>
+        <a href="https://private.protonnz.com">private.protonnz.com</a>
+      </footer>
     </main>
   );
 }
