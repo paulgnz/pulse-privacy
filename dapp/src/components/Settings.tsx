@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ConfState } from "../lib/client";
 import type { EncryptionKeypair } from "../lib/crypto/types";
-import { MIN_PASSPHRASE, exportBlob } from "../lib/keys";
+import { MIN_PASSPHRASE, exportBlob, generatePassphrase, passphraseProblem } from "../lib/keys";
 import { parseUnits, shortHex } from "../lib/format";
 import { Field, Note } from "./ui";
 
@@ -101,10 +101,11 @@ export const Settings = ({
               </div>
             ) : null}
             {onStoreBackup ? (
-              <Field label={backupOnChain ? "New passphrase" : "Passphrase"} hint={`At least ${MIN_PASSPHRASE} characters.`}>
-                <div className="row" style={{ gap: 12, alignItems: "center" }}>
-                  <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="new-password" />
-                  <button className="btn secondary" onClick={() => run(() => onStoreBackup(pass).then(() => setPass("")), "Passphrase backup stored on chain.")} disabled={busy || pass.length < MIN_PASSPHRASE}>
+              <Field label={backupOnChain ? "New passphrase" : "Passphrase"} hint={`At least ${MIN_PASSPHRASE} characters, several words; the encrypted copy is public, so it must resist offline guessing.`} error={pass ? passphraseProblem(pass) ?? undefined : undefined}>
+                <div className="row" style={{ gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <input type="text" value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="off" placeholder="four or more words" />
+                  <button className="textbtn quiet" onClick={() => setPass(generatePassphrase())}>Generate</button>
+                  <button className="btn secondary" onClick={() => run(() => onStoreBackup(pass).then(() => setPass("")), "Passphrase backup stored on chain.")} disabled={busy || !!passphraseProblem(pass)}>
                     {busy ? "Storing" : backupOnChain ? "Change" : "Set"}
                   </button>
                 </div>

@@ -3,7 +3,7 @@ import type { ConfState } from "../lib/client";
 import type { CryptoBackend, EncryptionKeypair, Hex } from "../lib/crypto/types";
 import { amountProblem, fmtUnits, parseUnits } from "../lib/format";
 import { XPR, type Token } from "../lib/token";
-import { MIN_PASSPHRASE, exportBlob, openPassphraseBlob, saveKeypair } from "../lib/keys";
+import { MIN_PASSPHRASE, exportBlob, generatePassphrase, openPassphraseBlob, passphraseProblem, saveKeypair } from "../lib/keys";
 import * as chain from "../lib/chain";
 import { checkDeposit } from "../lib/privacy";
 import { unlockOnce } from "../lib/unlock";
@@ -137,11 +137,14 @@ const Key = (p: OnboardingProps) => {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [keepRecovery, setKeepRecovery] = useState(true);
-  const [pass1, setPass1] = useState("");
+  const [pass1, setPass1] = useState(() => generatePassphrase());
   const [pass2, setPass2] = useState("");
+  const [customPass, setCustomPass] = useState(false);
   const [backupBlob, setBackupBlob] = useState<string | null>(null);
   const [passIn, setPassIn] = useState("");
-  const passOk = pass1.length === 0 || (pass1.length >= MIN_PASSPHRASE && pass1 === pass2);
+  const passProblem = customPass ? (pass1.length === 0 ? null : passphraseProblem(pass1) ?? (pass1 !== pass2 ? "The two entries differ." : null)) : null;
+  const passOk = !passProblem;
+  const passphraseToStore = customPass ? (pass1.length >= MIN_PASSPHRASE && !passphraseProblem(pass1) ? pass1 : undefined) : pass1;
   // a returning device that cannot derive the key: is there a passphrase backup on chain?
   const tryPassphrase = async (): Promise<boolean> => {
     if (p.isMock || !p.actor) return false;
@@ -308,7 +311,7 @@ const Key = (p: OnboardingProps) => {
     const kp = fresh ?? p.keypair;
     if (!kp || !p.actor) return;
     saveKeypair(p.actor, kp);
-    p.onKeyReady(kp, false, keepRecovery, pass1.length >= MIN_PASSPHRASE ? pass1 : undefined);
+    p.onKeyReady(kp, false, keepRecovery, passphraseToStore);
   };
 
   const download = () => {
@@ -394,12 +397,25 @@ const Key = (p: OnboardingProps) => {
             {copied ? "Copied" : "Copy secret"}
           </button>
         </div>
-        <Field label="Passphrase, for restoring this key on another device (recommended)" hint={`At least ${MIN_PASSPHRASE} characters. Stored on chain encrypted with it; nobody can reset it for you.`} error={!passOk ? (pass1.length < MIN_PASSPHRASE ? `Use at least ${MIN_PASSPHRASE} characters.` : "The two entries differ.") : undefined}>
-          <input type="password" value={pass1} onChange={(e) => setPass1(e.target.value)} placeholder="a long phrase you will remember" autoComplete="new-password" />
-        </Field>
-        <Field label="Passphrase again">
-          <input type="password" value={pass2} onChange={(e) => setPass2(e.target.value)} autoComplete="new-password" />
-        </Field>
+        {customPass ? (
+          <>
+            <Field label="Your own passphrase" hint={`At least ${MIN_PASSPHRASE} characters, several words. The encrypted copy is public, so a weak passphrase can be guessed offline.`} error={passProblem ?? undefined}>
+              <input type="password" value={pass1} onChange={(e) => setPass1(e.target.value)} placeholder="four or more words you will remember" autoComplete="new-password" />
+            </Field>
+            <Field label="Passphrase again">
+              <input type="password" value={pass2} onChange={(e) => setPass2(e.target.value)} autoComplete="new-password" />
+            </Field>
+            <p className="small"><button className="textbtn quiet" onClick={() => { setCustomPass(false); setPass1(generatePassphrase()); setPass2(""); }}>Use a generated phrase instead</button></p>
+          </>
+        ) : (
+          <Field label="Recovery phrase, for restoring this key on another device" hint="Six random words. Write them down with your backup; they restore the key on any device. Nobody can reset them for you.">
+            <div className="secret" aria-label="Your recovery phrase"><code>{pass1}</code></div>
+            <p className="small" style={{ marginTop: 8 }}>
+              <button className="textbtn quiet" onClick={() => setPass1(generatePassphrase())}>New phrase</button>{" "}
+              <button className="textbtn quiet" onClick={() => { setCustomPass(true); setPass1(""); setPass2(""); }}>Choose my own instead</button>
+            </p>
+          </Field>
+        )}
         <label className="check">
           <input type="checkbox" checked={keepRecovery} onChange={(e) => setKeepRecovery(e.target.checked)} />
           <span>Keep an encrypted recovery copy with the XPR Network committee (recommended). Stored on chain with your registration; only the committee's viewing key can open it, and spending still needs your wallet.</span>

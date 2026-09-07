@@ -89,6 +89,22 @@ operational findings. Each was reproduced against the code and fixed the same da
   amount, and spending still needs the wallet's signature. Saved-key users see a warning on the
   statement until they have a recovery copy or an export.
 
+## Exposure check before going public (same day)
+
+A third pass looked only at what becoming public would expose. No credential in the tree or in
+any commit. Three follow-ups, all applied:
+
+- **Passphrase backups are public ciphertext**, so a weak passphrase could be guessed offline.
+  The wizard now generates a six-word phrase (about 77 bits) by default; a custom passphrase
+  needs 14 characters and several words, and common patterns are refused. PBKDF2 stays at
+  600,000 rounds.
+- **Dependency advisories** in the projects' lockfiles: the non-breaking fixes are applied.
+  What remains is in build-time tooling (the AssemblyScript compiler's templating library, the
+  circuit compiler's websocket client) and in the Vercel function runtime package, none of which
+  runs in the browser or the contract; tracked for the next dependency pass.
+- **Fixes named in the independent review are deployed**: contract code `8c1d2986…` on both
+  networks, and the dapp and ceremony site at the commits after `65ee271`.
+
 ## Still to do before raising the caps
 
 External audit of the contract, the circuit and the client library; the circuit change above;
