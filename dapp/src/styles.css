@@ -213,14 +213,20 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--private); o
 .payme { font-size: 14px; padding: 8px 12px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 4px; user-select: all; overflow-wrap: anywhere; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; font-size: 14px; margin: 14px 0; }
 .kv .k { color: var(--graphite); }
-.backups { display: grid; grid-template-columns: max-content max-content 1fr; gap: 8px 18px; font-size: 14px; margin: 16px 0 6px; max-width: 560px; align-items: baseline; }
-.backups .k { color: var(--graphite); }
-.backups .yes { color: var(--auditor); font-weight: 500; }
-.backups .no { color: var(--warn-ink); font-weight: 500; }
-.backups .why { color: var(--graphite); }
-.section h3 { margin-top: 26px; margin-bottom: 4px; }
-.section h3 + p { color: var(--graphite); font-size: 14px; margin-bottom: 12px; max-width: 60ch; }
-@media (max-width: 600px) { .backups { grid-template-columns: max-content 1fr; } .backups .why { grid-column: 1 / -1; margin-top: -4px; margin-bottom: 4px; } }
+.recovery-status { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+.recovery-status.ok { color: var(--auditor); }
+.recovery-status.warn { color: var(--warn-ink); }
+.methods { margin: 4px 0 22px; max-width: 640px; border-top: 1px solid var(--rule); }
+.method { display: grid; grid-template-columns: 1fr max-content max-content; gap: 6px 18px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--rule-soft); font-size: 14px; }
+.method .what { display: grid; gap: 2px; }
+.method .what b { font-weight: 600; color: var(--ink); }
+.method .what span { color: var(--graphite); font-size: 13px; }
+.method .status { font-weight: 500; white-space: nowrap; }
+.method .status.yes { color: var(--auditor); }
+.method .status.no { color: var(--warn-ink); }
+.method-form { padding: 8px 0 18px; border-bottom: 1px solid var(--rule-soft); }
+.section.divided { border-top: 1px solid var(--rule); padding-top: 30px; margin-top: 40px; }
+@media (max-width: 600px) { .method { grid-template-columns: 1fr max-content; } .method .what { grid-column: 1 / -1; } }
 details summary { cursor: pointer; color: var(--graphite); font-size: 14px; }
 details[open] summary { margin-bottom: 12px; }
 

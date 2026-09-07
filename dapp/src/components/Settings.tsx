@@ -90,6 +90,7 @@ export const Settings = ({
   const [pass, setPass] = useState(() => (backupOnChain === true ? "" : generatePassphrase()));
   const [passCopied, setPassCopied] = useState(false);
   const [fileSaved, setFileSaved] = useState(() => isBackedUp(actor));
+  const anyBackup = backupOnChain === true || recoveryOnChain === true || fileSaved;
   const [linkCopied, setLinkCopied] = useState(false);
   // the chain answer can arrive after this page opened: fold the form away once a phrase is known to exist
   useEffect(() => {
@@ -110,33 +111,23 @@ export const Settings = ({
   return (
     <>
       <section className="section">
-        <h2>Encryption key</h2>
+        <h2>{keypair && !keyDerived ? "Recovery" : "Encryption key"}</h2>
         {keyDerived ? (
           <p className="lede">Your key is derived from your wallet. Each time you sign in, one signature unlocks your boxes on this device; nothing is stored here. It stays the same as long as your wallet's signing key does.</p>
-        ) : (
+        ) : keypair ? (
           <>
-            <p className="lede">Your wallet signs with a passkey, so this app keeps a saved key for you. The key reads your confidential balance and builds the proofs that spend it. It is separate from your wallet's signing key and lives only in this browser, so you need a way to get it back if this device is lost.</p>
-            <div className="backups" aria-label="Ways to get this key back">
-              <span className="k">Recovery phrase</span>
-              <span className={backupOnChain ? "yes" : "no"}>{backupOnChain ? "Set" : "Not set"}</span>
-              <span className="why">Seven words that restore the key on any device.</span>
-              <span className="k">Committee copy</span>
-              <span className={recoveryOnChain ? "yes" : "no"}>{recoveryOnChain ? "Kept" : "Not kept"}</span>
-              <span className="why">The XPR Network committee can return the key after you prove you own the account.</span>
-              <span className="k">Key file</span>
-              <span className={fileSaved ? "yes" : "no"}>{fileSaved ? "Saved" : "Not saved"}</span>
-              <span className="why">The raw key as a file, for people who prefer one.</span>
-            </div>
+            <p className={`recovery-status ${anyBackup ? "ok" : "warn"}`}>{anyBackup ? "Recovery is set up." : "Recovery is not set up."}</p>
+            <p className="lede">Your usable key is stored in this browser. Set up recovery so you can reach your confidential funds on another device.</p>
+            <details className="explain" style={{ marginBottom: 18 }}>
+              <summary>Learn more</summary>
+              <div className="body">
+                <p>Your wallet signs with a passkey, so this app keeps a saved key for you instead of deriving one from a signature. The key reads your confidential balance and builds the proofs that spend it. It is separate from your wallet's signing key, and spending always needs your wallet as well. Any one of the three methods below gets the key back on another device.</p>
+              </div>
+            </details>
           </>
-        )}
+        ) : null}
         {keypair ? (
           <>
-            <div className="kv">
-              <span className="k">Public key</span>
-              <span className="mono">{shortHex(keypair.pubkey, 12)}</span>
-              <span className="k">On chain</span>
-              <span>{st.registered ? `Registered for ${st.token.code}` : `Not registered for ${st.token.code} yet`}</span>
-            </div>
             {msg ? (
               <div style={{ margin: "4px 0 18px" }}>
                 <Note level={msg.ok ? "ok" : "error"}>{msg.text}</Note>
@@ -150,97 +141,89 @@ export const Settings = ({
               </div>
             ) : null}
 
-            {!keyDerived && onStoreBackup ? (
-              <>
-                <h3>Recovery phrase</h3>
-                <p>
-                  {backupOnChain
-                    ? "A copy of the key, locked with your phrase, is on chain. On a new device, sign in and type the phrase to get the key back. Nobody can reset the phrase, and it is not stored anywhere."
-                    : "Sets a phrase that restores this key on any device. An encrypted copy of the key goes on chain; only the phrase opens it. The phrase itself is never stored anywhere, so copy it first."}
-                </p>
-                {!showPhrase ? (
-                  <div className="row">
-                    <button className="btn secondary" onClick={() => { setPass(generatePassphrase()); setCustomPass(false); setPassCopied(false); setShowPhrase(true); }}>
-                      Change the phrase
-                    </button>
-                  </div>
-                ) : customPass ? (
-                  <>
-                    <Field className="wide" label="Your own passphrase" hint={`At least ${MIN_PASSPHRASE} characters, several words. The encrypted copy is public, so a short or common passphrase can be guessed offline.`} error={pass ? passphraseProblem(pass) ?? undefined : undefined}>
-                      <input type="text" value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="off" placeholder="four or more words you will remember" />
-                    </Field>
-                    <div className="row" style={{ marginBottom: 8 }}>
-                      <button className="btn private" onClick={savePhrase} disabled={busy || !!passphraseProblem(pass)}>
-                        {busy ? "Saving" : backupOnChain ? "Save new phrase" : "Save phrase"}
-                      </button>
-                      <button className="textbtn quiet" onClick={() => { setCustomPass(false); setPass(generatePassphrase()); setPassCopied(false); }}>Use generated words instead</button>
-                      {backupOnChain ? <button className="textbtn quiet" onClick={() => { setShowPhrase(false); setPass(""); }}>Cancel</button> : null}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="secret words" aria-label="Your new recovery phrase"><code>{pass}</code></div>
-                    <div className="row" style={{ margin: "12px 0 14px" }}>
-                      <button className="btn secondary" onClick={copyPhrase}>{passCopied ? "Copied" : "Copy phrase"}</button>
-                      <button className="textbtn quiet" onClick={() => { setPass(generatePassphrase()); setPassCopied(false); }}>New words</button>
-                      <button className="textbtn quiet" onClick={() => { setCustomPass(true); setPass(""); setPassCopied(false); }}>Type my own</button>
-                    </div>
-                    <div className="row" style={{ marginBottom: 8 }}>
-                      <button className="btn private" onClick={savePhrase} disabled={busy || !passCopied} title={!passCopied ? "Copy the phrase first" : undefined}>
-                        {busy ? "Saving" : backupOnChain ? "Save new phrase" : "Save phrase"}
-                      </button>
-                      {backupOnChain ? <button className="textbtn quiet" onClick={() => { setShowPhrase(false); setPass(""); }}>Cancel</button> : null}
-                    </div>
-                    <p className="small muted">{backupOnChain ? "Saving replaces the phrase you have now; the old one stops working. Copy the new words before you save." : "Copy the words before you save. They cannot be shown again."}</p>
-                  </>
-                )}
-              </>
-            ) : null}
-
             {!keyDerived ? (
-              <>
-                <h3>Committee copy</h3>
-                {recoveryOnChain ? (
-                  <p>An encrypted copy of this key is stored on chain with your registration. Only the committee's viewing key opens it. If you lose the key and the phrase, the committee returns it after you prove you own the account. The committee can already read every amount, so this gives it nothing new, and spending still needs your wallet.</p>
-                ) : (
-                  <>
-                    <p>Stores an encrypted copy of this key on chain that only the committee's viewing key opens. If you lose the key and the phrase, the committee returns it after you prove you own the account. The committee can already read every amount, so this gives it nothing new, and spending still needs your wallet.</p>
-                    {onStoreRecovery ? (
-                      <div className="row">
-                        <button className="btn secondary" onClick={() => run(onStoreRecovery, "Recovery copy stored with the committee.")} disabled={busy}>
-                          {busy ? "Storing" : "Keep a copy with the committee"}
-                        </button>
-                      </div>
-                    ) : null}
-                  </>
-                )}
-
-                <h3>Key file</h3>
-                <p>The raw key, for people who prefer a file. The recovery phrase restores the same key, so this is optional. Keep the file somewhere private: anyone with it can read your balance.</p>
-                <div className="row" style={{ marginBottom: 20 }}>
-                  <button className="btn secondary" onClick={download}>
-                    Download key file
-                  </button>
-                  <button className="textbtn" onClick={copy}>
-                    {copied ? "Copied" : "Copy secret"}
-                  </button>
+              <div className="methods">
+                <div className="method">
+                  <div className="what"><b>Recovery phrase</b><span>Seven words that restore the key on any device.</span></div>
+                  <span className={`status ${backupOnChain ? "yes" : "no"}`}>{backupOnChain ? "Set" : "Not set"}</span>
+                  {onStoreBackup && !showPhrase ? (
+                    <button className="textbtn" onClick={() => { setPass(generatePassphrase()); setCustomPass(false); setPassCopied(false); setShowPhrase(true); }}>
+                      {backupOnChain ? "Change" : "Set up"}
+                    </button>
+                  ) : <span />}
                 </div>
-              </>
+                {onStoreBackup && showPhrase ? (
+                  <div className="method-form">
+                    {customPass ? (
+                      <>
+                        <Field className="wide" label="Your own passphrase" hint={`At least ${MIN_PASSPHRASE} characters, several words. The encrypted copy is public, so a short or common passphrase can be guessed offline.`} error={pass ? passphraseProblem(pass) ?? undefined : undefined}>
+                          <input type="text" value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="off" placeholder="four or more words you will remember" />
+                        </Field>
+                        <div className="row">
+                          <button className="btn private" onClick={savePhrase} disabled={busy || !!passphraseProblem(pass)}>
+                            {busy ? "Saving" : backupOnChain ? "Save new phrase" : "Save phrase"}
+                          </button>
+                          <button className="textbtn quiet" onClick={() => { setCustomPass(false); setPass(generatePassphrase()); setPassCopied(false); }}>Use generated words instead</button>
+                          {backupOnChain ? <button className="textbtn quiet" onClick={() => { setShowPhrase(false); setPass(""); }}>Cancel</button> : null}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="small muted" style={{ margin: "0 0 10px" }}>{backupOnChain ? "Copy the new words before you save. Saving replaces the phrase you have now, and the old one stops working." : "Copy the words before you save. An encrypted copy of the key goes on chain; only these words open it, and they are not stored anywhere."}</p>
+                        <div className="secret words" aria-label="Your new recovery phrase"><code>{pass}</code></div>
+                        <div className="row" style={{ margin: "12px 0 14px" }}>
+                          <button className="btn secondary" onClick={copyPhrase}>{passCopied ? "Copied" : "Copy phrase"}</button>
+                          <button className="textbtn quiet" onClick={() => { setPass(generatePassphrase()); setPassCopied(false); }}>New words</button>
+                          <button className="textbtn quiet" onClick={() => { setCustomPass(true); setPass(""); setPassCopied(false); }}>Type my own</button>
+                        </div>
+                        <div className="row">
+                          <button className="btn private" onClick={savePhrase} disabled={busy || !passCopied} title={!passCopied ? "Copy the phrase first" : undefined}>
+                            {busy ? "Saving" : backupOnChain ? "Save new phrase" : "Save phrase"}
+                          </button>
+                          {backupOnChain ? <button className="textbtn quiet" onClick={() => { setShowPhrase(false); setPass(""); }}>Cancel</button> : null}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : null}
+                <div className="method">
+                  <div className="what"><b>Committee copy</b><span>The XPR Network committee can return the key after you prove you own the account. It already reads every amount, and spending still needs your wallet.</span></div>
+                  <span className={`status ${recoveryOnChain ? "yes" : "no"}`}>{recoveryOnChain ? "Kept" : "Not kept"}</span>
+                  {!recoveryOnChain && onStoreRecovery ? (
+                    <button className="textbtn" onClick={() => run(onStoreRecovery, "Recovery copy stored with the committee.")} disabled={busy}>
+                      {busy ? "Storing" : "Keep a copy"}
+                    </button>
+                  ) : <span />}
+                </div>
+                <div className="method">
+                  <div className="what"><b>Key file</b><span>The raw key as a file. Keep it private: anyone with it can read your balance.</span></div>
+                  <span className={`status ${fileSaved ? "yes" : "no"}`}>{fileSaved ? "Downloaded" : "Not downloaded"}</span>
+                  <button className="textbtn" onClick={download}>Download</button>
+                </div>
+              </div>
             ) : null}
 
             <details>
-              <summary>{keyDerived ? "Advanced: export a backup, or use a saved key" : "Advanced: replace or forget this key"}</summary>
-              {keyDerived ? (
-                <div className="row" style={{ marginBottom: 16 }}>
+              <summary>{keyDerived ? "Advanced: export a backup, or use a saved key" : "Advanced: key details, replace or forget this key"}</summary>
+              <div className="kv">
+                <span className="k">Public key</span>
+                <span className="mono">{shortHex(keypair.pubkey, 12)}</span>
+                <span className="k">On chain</span>
+                <span>{st.registered ? `Registered for ${st.token.code}` : `Not registered for ${st.token.code} yet`}</span>
+              </div>
+              <div className="row" style={{ marginBottom: 16 }}>
+                {keyDerived ? (
                   <button className="btn secondary" onClick={download}>
                     Export backup
                   </button>
-                  <button className="textbtn" onClick={copy}>
-                    {copied ? "Copied" : "Copy secret"}
-                  </button>
+                ) : null}
+                <button className="textbtn" onClick={copy}>
+                  {copied ? "Copied" : "Copy secret"}
+                </button>
+                {keyDerived ? (
                   <span className="small muted">Your key is re-derived from your wallet's signature, so normally there is nothing to keep. Export a backup before you change your wallet's keys: a new signing key gives a different signature, and with it a different key.</span>
-                </div>
-              ) : null}
+                ) : null}
+              </div>
               <Field label="Secret to import" hint="Replaces the key on this device. Only do this to restore a backup of the key registered for this account; anything else is refused.">
                 <input className="mono" value={imp} onChange={(e) => setImp(e.target.value)} placeholder="0x" />
               </Field>
@@ -284,7 +267,7 @@ export const Settings = ({
       </section>
 
       {st.registered ? (
-        <section className="section">
+        <section className="section divided">
           <h2>Pay-me link</h2>
           <p className="lede">Share this and the Send form opens with your name filled in. Anyone who has not set up yet is walked through it first.</p>
           <div className="row" style={{ gap: 14, flexWrap: "wrap" }}>
