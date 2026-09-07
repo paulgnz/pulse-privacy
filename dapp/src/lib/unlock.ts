@@ -53,9 +53,17 @@ export async function deriveSecret(signature: string, actor: string): Promise<He
 }
 
 /**
- * Ask the wallet for the fixed signature. First-time setup signs twice to confirm the wallet is
- * deterministic; pass `check = false` to sign once (e.g. on a returning session, where the UI
- * compares the derived pubkey to the one registered on chain instead).
+ * One signature, one popup. Browsers only allow a wallet popup inside a user click, so callers
+ * must invoke this directly from a click handler and never chain two calls from one click.
+ * First-time setup calls it twice from two separate clicks and compares the signatures.
+ */
+export async function unlockOnce(session: Session): Promise<{ signature: string; secret: Hex }> {
+  const signature = await signOnce(session);
+  return { signature, secret: await deriveSecret(signature, session.auth.actor) };
+}
+
+/**
+ * @deprecated chains two popups from one click (blocked by browsers); use `unlockOnce` twice.
  */
 export async function unlock(session: Session, onStage?: (stage: string) => void, check = true): Promise<{ secret: Hex; deterministic: boolean }> {
   onStage?.("Waiting for your wallet");

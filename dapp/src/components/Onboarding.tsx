@@ -4,12 +4,12 @@ import type { CryptoBackend, EncryptionKeypair, Hex } from "../lib/crypto/types"
 import { UNITS, fmtUnits, parseUnits } from "../lib/format";
 import { exportBlob, saveKeypair } from "../lib/keys";
 import { checkDeposit } from "../lib/privacy";
-import { unlock } from "../lib/unlock";
+import { unlockOnce } from "../lib/unlock";
 import type { Session } from "../lib/chain";
 import { AmountInput, EdgeNote, Field, Note } from "./ui";
 
 export type Step = "connect" | "key" | "register" | "deposit";
-export type KeyMode = "unlock" | "unlock-pending" | "unlock-done" | "import" | "create" | "backup";
+export type KeyMode = "unlock" | "unlock-pending" | "confirm" | "confirm-pending" | "unlock-done" | "import" | "create" | "backup";
 const STEPS: [Step, string][] = [
   ["connect", "Connect wallet"],
   ["key", "Unlock"],
@@ -130,36 +130,65 @@ const Key = (p: OnboardingProps) => {
     [fresh, p.keypair]
   );
 
+  // One wallet popup per click: the first click signs and derives; for a first-time account a
+  // second click signs again and the two signatures must match (deterministic wallet). Returning
+  // accounts are checked against the pubkey registered on chain instead.
+  const [firstSig, setFirstSig] = useState<{ signature: string; secret: Hex } | null>(null);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (mode !== "unlock-pending" && mode !== "confirm-pending") { setSlow(false); return; }
+    const t = setTimeout(() => setSlow(true), 4000);
+    return () => clearTimeout(t);
+  }, [mode]);
+
+  const finish = async (secret: Hex) => {
+    const pubkey = await p.backend.pubkeyOf(secret);
+    if (chainKey && pubkey.toLowerCase() !== chainKey.toLowerCase()) {
+      setMismatch(true);
+      setMode("import");
+      return;
+    }
+    setMode("unlock-done");
+    p.onKeyReady({ secret, pubkey }, true);
+  };
+
   const doUnlock = async () => {
     if (!p.session) return;
     setErr(null);
     setMode("unlock-pending");
-    setStage(p.autoUnlock ? "Your wallet will ask for one signature." : "Your wallet will ask twice, to confirm the signature is stable.");
+    setStage("Waiting for your wallet.");
     try {
-      const { secret, deterministic } = await unlock(p.session, (st) => setStage(st), !(p.autoUnlock && !!chainKey));
-      if (!deterministic) {
-        setNonDeterministic(true);
-        setMode(chainKey ? "import" : "create");
-        return;
+      const r = await unlockOnce(p.session);
+      if (chainKey) {
+        await finish(r.secret); // registered account: the chain tells us whether the key is right
+      } else {
+        setFirstSig(r);
+        setMode("confirm");
       }
-      const pubkey = await p.backend.pubkeyOf(secret);
-      if (chainKey && pubkey.toLowerCase() !== chainKey.toLowerCase()) {
-        setMismatch(true);
-        setMode("import");
-        return;
-      }
-      setMode("unlock-done");
-      p.onKeyReady({ secret, pubkey }, true);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(String((e as Error).message ?? e));
       setMode("unlock");
     }
   };
 
-  useEffect(() => {
-    if (p.autoUnlock && mode === "unlock" && !p.forceKeyMode && p.session) void doUnlock();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.autoUnlock, p.session]);
+  const doConfirm = async () => {
+    if (!p.session || !firstSig) return;
+    setErr(null);
+    setMode("confirm-pending");
+    setStage("Waiting for your wallet.");
+    try {
+      const r = await unlockOnce(p.session);
+      if (r.signature !== firstSig.signature) {
+        setNonDeterministic(true);
+        setMode("create");
+        return;
+      }
+      await finish(r.secret);
+    } catch (e) {
+      setErr(String((e as Error).message ?? e));
+      setMode("confirm");
+    }
+  };
 
   const create = async () => {
     setBusy(true);
@@ -226,13 +255,20 @@ const Key = (p: OnboardingProps) => {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  if (mode === "unlock" || mode === "unlock-pending" || mode === "unlock-done") {
-    const pending = mode === "unlock-pending";
+  if (mode === "unlock" || mode === "unlock-pending" || mode === "confirm" || mode === "confirm-pending" || mode === "unlock-done") {
+    const pending = mode === "unlock-pending" || mode === "confirm-pending";
+    const confirm = mode === "confirm" || mode === "confirm-pending";
     const done = mode === "unlock-done";
     return (
       <section className="step">
-        <h2>Unlock</h2>
-        <p className="lede">Sign once to unlock your private balance. Nothing is sent to the chain, and there is no key to back up: your wallet is the key.</p>
+        <h2>{confirm ? "Confirm your key" : "Unlock"}</h2>
+        <p className="lede">
+          {confirm
+            ? "Sign once more. The two signatures must match, which proves your wallet always derives the same key. This check happens only the first time."
+            : chainKey
+              ? "Sign once to unlock your private balance. Nothing is sent to the chain."
+              : "Sign once to unlock your private balance. Nothing is sent to the chain, and there is no key to back up: your wallet is the key."}
+        </p>
         {done ? (
           <Note level="ok">
             <p>Unlocked. Your wallet's signature opens your boxes on this device.</p>
@@ -240,20 +276,28 @@ const Key = (p: OnboardingProps) => {
         ) : pending ? (
           <Note level="info">
             <p>{stage || "Waiting for your wallet."}</p>
+            {slow ? (
+              <p>
+                Nothing opened? Your browser may be blocking pop-ups from this site. Allow pop-ups for {location.host}, then{" "}
+                <button className="textbtn" onClick={() => setMode(confirm ? "confirm" : "unlock")}>try again</button>.
+              </p>
+            ) : null}
           </Note>
         ) : err ? (
           <Note level="error">
-            <p>Not unlocked. {err}</p>
+            <p>Not signed. {err}</p>
           </Note>
         ) : null}
         {!done && !pending ? (
           <div className="row">
-            <button className="btn private" onClick={doUnlock} disabled={!p.session}>
-              Sign to unlock
+            <button className="btn private" onClick={confirm ? doConfirm : doUnlock} disabled={!p.session}>
+              {confirm ? "Sign again to confirm" : "Sign to unlock"}
             </button>
-            <button className="textbtn quiet" onClick={() => setMode("import")}>
-              I have a saved key to import
-            </button>
+            {!confirm ? (
+              <button className="textbtn quiet" onClick={() => setMode("import")}>
+                I have a saved key to import
+              </button>
+            ) : null}
           </div>
         ) : null}
       </section>
