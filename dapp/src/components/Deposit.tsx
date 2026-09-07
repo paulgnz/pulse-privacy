@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ConfState } from "../lib/client";
-import { fmtUnits, parseUnits } from "../lib/format";
+import { amountProblem, fmtUnits, parseUnits } from "../lib/format";
 import { checkDeposit } from "../lib/privacy";
 import { Busy, AmountInput, EdgeNote, Field, Note } from "./ui";
 
@@ -58,7 +58,7 @@ export const Deposit = ({
     <div className="form" aria-label="Deposit">
       <h3>Deposit</h3>
       <p>A deposit is an ordinary {T.code} transfer into the contract. Everyone sees this amount. Once inside, it is a box.</p>
-      <Field label="Amount" error={over ? `More than your public balance of ${fmtUnits(publicBalance ?? 0n, T)} ${T.code}.` : undefined} hint={publicBalance !== null ? `Public balance ${fmtUnits(publicBalance, T)} ${T.code}.` : undefined}>
+      <Field label="Amount" error={over ? `More than your public balance of ${fmtUnits(publicBalance ?? 0n, T)} ${T.code}.` : amountProblem(amt, T) ?? undefined} hint={publicBalance !== null ? `Public balance ${fmtUnits(publicBalance, T)} ${T.code}.` : undefined}>
         <AmountInput value={amt} onChange={setAmt} autoFocus token={T} tokens={tokens} onSelectToken={onSelectToken} />
       </Field>
       <div className="chips">

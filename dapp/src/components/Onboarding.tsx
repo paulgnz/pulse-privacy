@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ConfState } from "../lib/client";
 import type { CryptoBackend, EncryptionKeypair, Hex } from "../lib/crypto/types";
-import { fmtUnits, parseUnits } from "../lib/format";
+import { amountProblem, fmtUnits, parseUnits } from "../lib/format";
 import { XPR, type Token } from "../lib/token";
 import { exportBlob, saveKeypair } from "../lib/keys";
 import { checkDeposit } from "../lib/privacy";
@@ -499,7 +499,7 @@ const FirstDeposit = ({ st, publicBalance, onDeposit, onFinish, token = XPR }: O
     <section className="step">
       <h2>First deposit</h2>
       <p className="lede">Move some public {T.code} into your box. This one transfer is visible to everyone, so a round amount reveals less than a specific one. You can skip this and deposit later.</p>
-      <Field label="Amount" error={over ? `More than your public balance of ${fmtUnits(publicBalance ?? 0n, T)} ${T.code}.` : err ?? undefined} hint={publicBalance !== null ? `Public balance ${fmtUnits(publicBalance, T)} ${T.code}.` : undefined}>
+      <Field label="Amount" error={over ? `More than your public balance of ${fmtUnits(publicBalance ?? 0n, T)} ${T.code}.` : err ?? amountProblem(amt, T) ?? undefined} hint={publicBalance !== null ? `Public balance ${fmtUnits(publicBalance, T)} ${T.code}.` : undefined}>
         <AmountInput value={amt} onChange={setAmt} autoFocus token={T} />
       </Field>
       <div className="chips">

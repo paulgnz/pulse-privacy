@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ConfState } from "../lib/client";
-import { fmtUnits, parseUnits } from "../lib/format";
+import { amountProblem, fmtUnits, parseUnits } from "../lib/format";
 import { AmountInput, Field, Note, Progress } from "./ui";
 
 export const Send = ({
@@ -81,7 +81,7 @@ export const Send = ({
       </Field>
       <Field
         label="Amount"
-        error={over ? `More than you can spend. You have ${fmtUnits(spendable, T)} ${T.code}.` : undefined}
+        error={over ? `More than you can spend. You have ${fmtUnits(spendable, T)} ${T.code}.` : amountProblem(amt, T) ?? undefined}
         hint={`You can spend ${fmtUnits(spendable, T)} ${T.code}${st.pending > 0n ? ", after pending is folded in" : ""}.`}
       >
         <AmountInput value={amt} onChange={setAmt} token={T} tokens={tokens} onSelectToken={onSelectToken} />

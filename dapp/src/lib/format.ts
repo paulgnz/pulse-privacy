@@ -30,6 +30,20 @@ export function parseUnits(s: string, token: Prec = XPR): bigint {
   return BigInt(w || "0") * unit + BigInt((f + "0".repeat(precision)).slice(0, precision));
 }
 
+/** Why an amount string is not accepted, in the user's words; null when it parses (or is empty). */
+export function amountProblem(s: string, token: Prec = XPR): string | null {
+  if (!s.trim()) return null;
+  try {
+    parseUnits(s, token);
+    return null;
+  } catch (e) {
+    const precision = precOf(token);
+    const code = "code" in token ? (token as Token).code : "this token";
+    if (String((e as Error).message).startsWith("at most")) return `${code} has ${precision} decimal places. Use at most ${precision} digits after the point.`;
+    return "Enter a number, like 12.5.";
+  }
+}
+
 /** units → Antelope asset string "1234.5679 XPR" */
 export function toAsset(u: bigint, token: Token = XPR): string {
   const whole = u / token.units;
