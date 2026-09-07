@@ -64,7 +64,8 @@ export const Overview = ({
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const [form, setForm] = useState<Form>(() => {
-    const q = new URLSearchParams(location.search).get("form");
+    const params = new URLSearchParams(location.search);
+    const q = params.get("form") ?? (params.get("to") ? "send" : null);
     return q === "send" || q === "deposit" || q === "withdraw" ? q : null;
   });
   useEffect(() => {

@@ -21,7 +21,11 @@ export const Send = ({
   /** success: the parent shows the confirmation at the top of the statement and closes the form */
   onDone?: (msg: string) => void;
 }) => {
-  const [to, setTo] = useState("");
+  // pay-me link: ?to=<account> opens the form with the recipient filled in
+  const [to, setTo] = useState(() => {
+    const q = (new URLSearchParams(location.search).get("to") ?? "").trim().toLowerCase();
+    return /^[a-z1-5.]{1,12}$/.test(q) ? q : "";
+  });
   const [amt, setAmt] = useState("");
   const [prog, setProg] = useState<{ f: number; s: string } | null>(null);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
