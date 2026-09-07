@@ -9,6 +9,7 @@ export const RPCS = ["https://api.protonnz.com", "https://proton.eosusa.io", "ht
 export const CONTRACT = "xprconf";
 
 export const noteFor = (phase: number, index: number, sha256: string) => `ceremony/${phase}/${index}/${sha256}`;
+export const lockNoteFor = (phase: number, index: number, ts: number) => `ceremony/lock/${phase}/${index}/${ts}`;
 
 /** the exact transaction the browser signs (must match the client byte for byte) */
 export function attestationTransaction(actor: string, permission: string, note: string) {
@@ -52,7 +53,18 @@ async function rpc<T>(path: string, body: unknown): Promise<T> {
 export async function accountKeys(actor: string): Promise<string[]> {
   const a = await rpc<{ permissions: { perm_name: string; required_auth: { keys: { key: string }[] } }[] }>("get_account", { account_name: actor });
   const keys: string[] = [];
-  for (const p of a.permissions) if (p.perm_name === "active" || p.perm_name === "owner") for (const k of p.required_auth.keys) keys.push(PublicKey.from(k.key).toString());
+  for (const p of a.permissions) {
+    if (p.perm_name !== "active" && p.perm_name !== "owner") continue;
+    for (const k of p.required_auth.keys) {
+      // WebAuthn (PUB_WA_) keys cannot sign this transaction and the library does not parse them; skip them
+      try {
+        keys.push(PublicKey.from(k.key).toString());
+      } catch {
+        /* unsupported key type */
+      }
+    }
+  }
+  if (!keys.length) throw new Error(`${actor} has no K1 or R1 key on active or owner`);
   return keys;
 }
 

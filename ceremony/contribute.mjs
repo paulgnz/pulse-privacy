@@ -4,8 +4,10 @@
 //   node contribute.mjs in.zkey out.zkey --name "Alice @ Metallicus"      (phase 2, circuit)
 // Entropy = 64 bytes from the OS + whatever you type when prompted (type a long random
 // sentence; it is never stored). Writes <out>.json with the hashes you should publish.
-import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import * as snarkjsNs from "snarkjs";
+import { ptauContributions, zkeyContributions } from "./lib/chain.mjs";
+const snarkjs = snarkjsNs.default ?? snarkjsNs;
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -29,14 +31,12 @@ console.log(`input  ${inFile}\n       sha256 ${sha256(inFile)}`);
 const typed = await ask("Type a long random sentence and press enter (not stored): ");
 const entropy = randomBytes(64).toString("hex") + typed;
 
-const snarkjs = resolve("node_modules/.bin/snarkjs");
-const args = ext === ".ptau"
-  ? ["powersoftau", "contribute", inFile, outFile, `--name=${name}`, `--entropy=${entropy}`, "-v"]
-  : ["zkey", "contribute", inFile, outFile, `--name=${name}`, `--entropy=${entropy}`, "-v"];
+// in-process, so the entropy never appears on a command line (visible to other users via ps)
 const t0 = Date.now();
-const out = execFileSync(snarkjs, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "inherit"] });
-const hashLines = out.split("\n").filter((l) => /^\s*[0-9a-f]{8}( [0-9a-f]{8}){3}\s*$/i.test(l)).map((l) => l.trim());
-const contributionHash = hashLines.length ? hashLines.slice(-4).join(" ").replace(/\s+/g, "") : null;
+if (ext === ".ptau") await snarkjs.powersOfTau.contribute(inFile, outFile, name, entropy, console);
+else await snarkjs.zKey.contribute(inFile, outFile, name, entropy, console);
+const records = ext === ".ptau" ? await ptauContributions(outFile) : await zkeyContributions(outFile);
+const contributionHash = records.at(-1)?.hash ?? null;
 
 const attestation = {
   phase: ext === ".ptau" ? 1 : 2,
@@ -52,3 +52,4 @@ writeFileSync(`${outFile}.json`, JSON.stringify(attestation, null, 2) + "\n");
 console.log("\nDone. Publish this (tweet / post / sign it), then send the output file and its .json to the coordinator:");
 console.log(JSON.stringify({ name, output_sha256: attestation.output.sha256, contribution_hash: contributionHash }, null, 2));
 console.log("\nNow destroy anything that could hold your entropy (close this terminal; reboot if you used a VM).");
+process.exit(0);

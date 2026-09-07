@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import { collectMotion, osRandomHex } from "./lib/entropy";
 import { sha256Hex } from "./lib/hash";
-import { login, noteFor, signAttestation, type Session } from "./lib/wallet";
+import { lockNoteFor, login, noteFor, signAttestation, type Session } from "./lib/wallet";
 
 interface Head { file: string; sha256: string; index: number; name: string; url: string }
 interface Contribution { phase: 1 | 2; index: number; actor: string; timestamp: string; input: { file: string; sha256: string }; output: { file: string; sha256: string; url: string }; contributionHash: string | null; signerKey: string; note: string; signature: string }
@@ -33,6 +33,7 @@ export function App() {
   // allowed inside a click, and the mixing step ends minutes after the last one
   const ready = useRef<{ out: Uint8Array; outputSha: string; inputSha: string; phase: 1 | 2; index: number; contributionHash: string | null } | null>(null);
   const [slow, setSlow] = useState(false);
+  const lockToken = useRef<string | null>(null);
   useEffect(() => {
     if (step !== "signing") { setSlow(false); return; }
     const t = setTimeout(() => setSlow(true), 4000);
@@ -75,11 +76,14 @@ export function App() {
     setResult(null);
     setLog([]);
     try {
-      // 1. take the turn
+      // 1. take the turn: signed by your account (from this click), so nobody can take it for you
       setStep("locking");
-      const lr = await fetch("/api/lock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actor }) });
-      const lj = (await lr.json()) as { error?: string; head?: Head; phase?: 1 | 2; index?: number };
+      const ts = Date.now();
+      const lockSig = await signAttestation(session, lockNoteFor(state.phase, (state.head.index ?? 0) + 1, ts));
+      const lr = await fetch("/api/lock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actor, permission: session.auth.permission, ts, signature: lockSig }) });
+      const lj = (await lr.json()) as { error?: string; head?: Head; phase?: 1 | 2; index?: number; token?: string };
       if (!lr.ok) throw new Error(lj.error ?? "could not take a turn");
+      lockToken.current = lj.token ?? null;
       const head = lj.head!, phase = lj.phase!, index = lj.index!;
       setTurn({ index, head, phase });
 
@@ -131,7 +135,8 @@ export function App() {
     setStep("idle");
     ready.current = null;
     // give the turn back if we hold it
-    fetch("/api/lock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actor, release: true }) }).catch(() => {});
+    if (lockToken.current) fetch("/api/lock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actor, release: true, token: lockToken.current }) }).catch(() => {});
+    lockToken.current = null;
     refresh();
   };
 
@@ -169,9 +174,10 @@ export function App() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ actor, permission: session.auth.permission, phase, index, inputSha256: inputSha, outputSha256: outputSha, contributionHash: ready.current?.contributionHash ?? null, signature }),
       });
-      const cj = (await cr.json()) as { error?: string };
+      const cj = (await cr.json()) as { error?: string; attestation?: { contributionHash?: string | null } };
       if (!cr.ok) throw new Error(cj.error ?? "the coordinator rejected the contribution");
-      setResult({ index, phase, sha256: outputSha, contributionHash: ready.current?.contributionHash ?? null, file: pathname });
+      setResult({ index, phase, sha256: outputSha, contributionHash: cj.attestation?.contributionHash ?? ready.current?.contributionHash ?? null, file: pathname });
+      lockToken.current = null;
       ready.current = null;
       setStep("done");
       refresh();
@@ -243,7 +249,7 @@ export function App() {
 
         {step !== "idle" && step !== "done" ? (
           <ol className="steps">
-            <li className={step === "locking" ? "now" : "done"}>Taking your turn{turn ? `: contribution ${turn.index} of phase ${turn.phase}` : ""}</li>
+            <li className={step === "locking" ? "now" : "done"}>Taking your turn{turn ? `: contribution ${turn.index} of phase ${turn.phase}` : ""}{step === "locking" ? " (sign in your wallet to claim it)" : ""}</li>
             <li className={step === "downloading" ? "now" : ["entropy", "computing", ...AFTER_COMPUTE].includes(step) ? "done" : ""}>Downloading the current file ({turn?.phase === 1 ? "about 36 MB" : "about 25 MB"})</li>
             <li className={step === "entropy" ? "now" : ["computing", ...AFTER_COMPUTE].includes(step) ? "done" : ""}>
               Adding your randomness

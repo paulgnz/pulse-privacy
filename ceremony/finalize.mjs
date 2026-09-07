@@ -8,8 +8,8 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { beaconId } from "./lib/chain.mjs";
 
-const RPC = process.env.RPC ?? "https://proton.protonnz.com";
 const [step, file] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const bIdx = process.argv.indexOf("--beacon-block");
 const beaconBlock = bIdx > -1 ? Number(process.argv[bIdx + 1]) : null;
@@ -21,10 +21,10 @@ const sha256 = (p) => createHash("sha256").update(readFileSync(p)).digest("hex")
 
 async function beacon() {
   if (!beaconBlock) throw new Error("--beacon-block <height> is required (announce the height in advance)");
-  const r = await (await fetch(`${RPC}/v1/chain/get_block`, { method: "POST", body: JSON.stringify({ block_num_or_id: beaconBlock }) })).json();
-  if (!r.id) throw new Error(`block ${beaconBlock} not found on ${RPC}`);
-  console.log(`beacon: XPR mainnet block ${beaconBlock} id ${r.id} (${r.timestamp})`);
-  return r.id;
+  // several independent RPCs must agree on the block id, and the id must encode the height
+  const b = await beaconId(beaconBlock);
+  console.log(`beacon: XPR mainnet block ${beaconBlock} id ${b.id} (${b.timestamp}) confirmed by ${b.sources.join(", ")}`);
+  return b.id;
 }
 
 if (step === "phase1") {

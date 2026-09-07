@@ -30,6 +30,7 @@ export async function login(restore = false): Promise<Session | null> {
 }
 
 export const noteFor = (phase: number, index: number, sha256: string) => `ceremony/${phase}/${index}/${sha256}`;
+export const lockNoteFor = (phase: number, index: number, ts: number) => `ceremony/lock/${phase}/${index}/${ts}`;
 
 export function attestationTransaction(actor: string, permission: string, note: string) {
   return {

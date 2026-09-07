@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { head as blobHead } from "@vercel/blob";
 import { readState, writeState } from "./_lib/state.js";
 
@@ -12,8 +12,9 @@ import { readState, writeState } from "./_lib/state.js";
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).end();
-  const token = req.headers["x-admin-token"];
-  if (!process.env.ADMIN_TOKEN || token !== process.env.ADMIN_TOKEN) return res.status(401).json({ error: "unauthorised" });
+  const token = new Uint8Array(Buffer.from(String(req.headers["x-admin-token"] ?? "")));
+  const want = new Uint8Array(Buffer.from(process.env.ADMIN_TOKEN ?? ""));
+  if (!want.length || token.length !== want.length || !timingSafeEqual(token, want)) return res.status(401).json({ error: "unauthorised" });
   const b = (req.body ?? {}) as Record<string, string | number>;
   try {
     const s = await readState();

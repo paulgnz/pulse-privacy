@@ -2,7 +2,10 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { lockActive, readState } from "./_lib/state.js";
 
-/** Issues a client upload token for the lock holder's output file only. */
+/**
+ * Issues a client upload token for the lock holder's output file only. A file that has been
+ * recorded as the head can never be overwritten; a failed attempt may be retried until then.
+ */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).end();
   try {
@@ -17,7 +20,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const index = (s.head?.index ?? 0) + 1;
         const expected = `p${s.phase}/${String(index).padStart(2, "0")}-${actor}.${s.phase === 1 ? "ptau" : "zkey"}`;
         if (pathname !== expected) throw new Error(`upload path must be ${expected}`);
-        return { allowedContentTypes: ["application/octet-stream"], maximumSizeInBytes: 80 * 1024 * 1024, addRandomSuffix: false, tokenPayload: JSON.stringify({ actor, pathname }) };
+        const recorded = s.contributions.some((c) => c.output.file === pathname) || s.head?.file === pathname;
+        if (recorded) throw new Error("that file is already part of the transcript");
+        return {
+          allowedContentTypes: ["application/octet-stream"],
+          maximumSizeInBytes: 80 * 1024 * 1024,
+          addRandomSuffix: false,
+          allowOverwrite: true, // retries before the file is recorded; refused above once it is
+          validUntil: Date.now() + 25 * 60_000,
+          tokenPayload: JSON.stringify({ actor, pathname }),
+        };
       },
       onUploadCompleted: async () => {
         /* the attestation POST (api/contribute) advances the head; nothing to do here */

@@ -9,5 +9,8 @@
     "verify": "node verify.mjs",
     "finalize": "node finalize.mjs"
   },
-  "dependencies": { "snarkjs": "^0.7.5" }
+  "dependencies": {
+    "@greymass/eosio": "^0.6.11",
+    "snarkjs": "^0.7.5"
+  }
 }

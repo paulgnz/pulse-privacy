@@ -29,7 +29,8 @@ Withdrawing turns the balance back into ordinary tokens.
 
 The full design, including the ELI5 walk-through, the threat model and the edge-privacy analysis,
 is in [docs/01-design.md](docs/01-design.md). The mainnet operations record is
-[docs/02-mainnet-runbook.md](docs/02-mainnet-runbook.md).
+[docs/02-mainnet-runbook.md](docs/02-mainnet-runbook.md), and the internal security review with
+its findings and fixes is [docs/03-security-review.md](docs/03-security-review.md).
 
 ## Status
 
