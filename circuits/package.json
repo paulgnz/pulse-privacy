@@ -7,7 +7,10 @@
   "scripts": {
     "compile": "circom transfer/transfer.circom --r1cs --wasm --sym -o build -l node_modules",
     "setup": "node scripts/setup.mjs",
-    "test": "node test/transfer.test.mjs"
+    "test": "node test/transfer.test.mjs",
+    "compile:shielded": "circom shielded/joinsplit.circom --r1cs --wasm --sym --O2 -o build -l node_modules",
+    "setup:shielded": "node scripts/setup-shielded.mjs",
+    "test:shielded": "node test/joinsplit.test.mjs"
   },
   "dependencies": {
     "@proton/vert": "^0.3.24",

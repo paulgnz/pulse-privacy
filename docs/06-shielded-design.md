@@ -111,12 +111,11 @@ The proof shows:
    `k^a` from `esk_j·A` and `C^a_j` over `(pk'.x, pk'.y, v', token, rho', r', pk.x, pk.y)`.
    The auditor ciphertext carries the sender's key, so "who paid whom" is bound by the proof.
 
-`to` is bound so a relayer cannot redirect a withdrawal; it is zero for a transfer. Estimated
-size: inputs 2 × (Merkle 4.8k + key derivation 1k + commitment 0.6k + nullifier 0.25k) ≈ 13k,
-outputs 2 × (three scalar multiplications ≈ 7.5k + twelve Poseidons ≈ 3k) ≈ 21k, balance and
-range ≈ 0.5k: **about 35k constraints**, under the current circuit's 46,874 and inside the
-2^16 Powers of Tau already contributed to, so phase 1 of the ceremony is reused and only a
-phase 2 is needed. Proving in a browser should be under two seconds.
+`to` is bound so a relayer cannot redirect a withdrawal; it is zero for a transfer. Measured
+(S2): **31,418 constraints** after circom's linear simplification, under the current circuit's
+46,874 and inside the 2^16 Powers of Tau already contributed to, so phase 1 of the ceremony is
+reused and only a phase 2 is needed. Proving takes about 1.4 s in Node; a browser should be
+similar.
 
 ### 2.4 Withdraw
 
@@ -234,7 +233,7 @@ idea, the key derivation, the auditor key, the dapp shell and the ceremony's pha
 |---|---|---|---|
 | S0 | this design | the shape is agreed | page committed |
 | S1 | Montgomery field multiplication and Poseidon in AssemblyScript, matching circomlibjs bit for bit; a bench action on testnet. **Done 2026-09-08**: `contracts/xpr-shield-tsc/` (`fr.ts`, `poseidon.ts`, `shbench.contract.ts`, conformance test), numbers in §3.1 | the on-chain hashing budget | measured CPU for Poseidon(2) and a 21-hash insertion, recorded here |
-| S2 | join-split circuit, note library, tests, rehearsal setup on the existing 2^16 ptau | the statement, constraint count, proving time | `npm test` in `circuits/shielded/` green, numbers recorded |
+| S2 | join-split circuit, note library, tests, rehearsal setup on the existing 2^16 ptau. **Done 2026-09-08**: `circuits/shielded/joinsplit.circom` (**31,418 constraints** with `--O2`, 38 public signals), `circuits/lib/notes.mjs`, `test/joinsplit.test.mjs` (two-in two-out, dummy input, withdrawal, receiver and auditor decryption, six refusals, prove + verify, redirected withdrawal rejected); proof **≈ 1.4 s in Node**; rehearsal zkey `build/joinsplit_final.zkey` | the statement, constraint count, proving time | `npm run test:shielded` green |
 | S3 | the contract with vert tests for every action, including double spend, stale root, wrong token, relayer redirect | the semantics | tests green |
 | S4 | testnet deployment on a new account, relay permission, CLI demo: register, deposit, shielded transfer, withdraw; auditor CLI reads it back | end to end on a live chain | the explorer shows a transfer with no names and the auditor names both parties |
 | S5 | dapp: shielded mode on the testnet site (statement from notes, send and withdraw without wallet prompts, activity from decrypted notes) | usable by testers | testers send to each other |
