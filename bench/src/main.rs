@@ -412,6 +412,48 @@ fn emit_fixtures(dir: &str, rng: &mut StdRng) {
     println!("fixtures written to {dir}");
 }
 
+/// EVM/Leap-format (EIP-196/197, big-endian, uncompressed) Groth16 fixture as JSON, for the
+/// proton-tsc verifier contract. G2 coordinates are emitted imaginary-first (c1, c0) as EIP-197
+/// and Leap's alt_bn128_pair expect. Proof A is emitted as-is; the contract negates it.
+fn emit_evm_fixture(path: &str, n_pub: usize, n_pad: usize, rng: &mut StdRng) {
+    use ark_bn254::{Fq, Fq2};
+    use ark_groth16::VerifyingKey;
+    fn fq(x: &Fq) -> String { format!("0x{}", hex_be(&x.into_bigint().to_bytes_be())) }
+    fn hex_be(b: &[u8]) -> String { b.iter().map(|x| format!("{:02x}", x)).collect() }
+    fn g1(p: &G1Affine) -> String { format!("[{:?}, {:?}]", fq(&p.x), fq(&p.y)) }
+    fn fq2(x: &Fq2) -> String { format!("{:?}, {:?}", fq(&x.c1), fq(&x.c0)) }
+    fn g2(p: &G2Affine) -> String { format!("[{}, {}]", fq2(&p.x), fq2(&p.y)) }
+
+    let roots: Vec<Fr> = (0..n_pub).map(|_| Fr::rand(rng)).collect();
+    let pub_inputs: Vec<Fr> = roots.iter().map(|r| *r * *r).collect();
+    let circuit = ShapeCircuit { pub_inputs: pub_inputs.clone(), roots, n_pad };
+    let (pk, vk): (ProvingKey<Bn254>, VerifyingKey<Bn254>) =
+        Groth16::<Bn254>::circuit_specific_setup(circuit.clone(), rng).expect("setup");
+    let proof = Groth16::<Bn254>::prove(&pk, circuit, rng).expect("prove");
+    assert!(Groth16::<Bn254>::verify(&vk, &pub_inputs, &proof).unwrap());
+
+    let ic: Vec<String> = vk.gamma_abc_g1.iter().map(g1).collect();
+    let inputs: Vec<String> = pub_inputs
+        .iter()
+        .map(|x| format!("{:?}", format!("0x{}", hex_be(&x.into_bigint().to_bytes_be()))))
+        .collect();
+    let json = format!(
+        "{{\n  \"n_pub\": {},\n  \"vk\": {{\n    \"alpha\": {},\n    \"beta\": {},\n    \"gamma\": {},\n    \"delta\": {},\n    \"ic\": [{}]\n  }},\n  \"proof\": {{ \"a\": {}, \"b\": {}, \"c\": {} }},\n  \"inputs\": [{}]\n}}\n",
+        n_pub,
+        g1(&vk.alpha_g1),
+        g2(&vk.beta_g2),
+        g2(&vk.gamma_g2),
+        g2(&vk.delta_g2),
+        ic.join(", "),
+        g1(&proof.a),
+        g2(&proof.b),
+        g1(&proof.c),
+        inputs.join(", ")
+    );
+    std::fs::write(path, json).unwrap();
+    println!("evm fixture written to {path}");
+}
+
 fn machine_info() -> String {
     let arch = std::env::consts::ARCH;
     let os = std::env::consts::OS;
@@ -438,6 +480,10 @@ fn main() {
         if args[i] == "--iters" {
             iters = args[i + 1].parse().expect("--iters N");
             i += 1;
+        } else if args[i] == "--emit-evm-fixture" {
+            let mut rng = StdRng::seed_from_u64(0x5051_2026);
+            emit_evm_fixture(&args[i + 1], 2, 1_000, &mut rng);
+            return;
         } else if args[i] == "--emit-fixtures" {
             let mut rng = StdRng::seed_from_u64(0x5051_2026);
             emit_fixtures(&args[i + 1], &mut rng);

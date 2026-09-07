@@ -20,6 +20,7 @@ Layout (empty until the phase that fills it):
 - `bench/` — Groth16-bn254 vs Bulletproofs verifier micro-benchmarks, native and in WASM under
   wasmer with pulsevm's metering (`bench/`, `bench/wasm-guest/`, `bench/wasm-host/`)
 - `circuits/` — confidential-transfer circuit + ceremony artefacts
-- `contracts/` — confidential token (pulse-cdt-rust)
+- `contracts/xpr-conf-tsc/` — testnet build in proton-tsc (T1 verifier live on testnet account `xprconf`); `contracts/` later also holds the pulse-cdt-rust port
+- `dapp/` — the front end (WebAuth login, balances, send/receive/withdraw, auditor mode)
 - `prover/` — Rust crate consumed by `pulse-wallet/core`
 - `tools/` — auditor CLI

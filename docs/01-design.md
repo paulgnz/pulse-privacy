@@ -129,6 +129,53 @@ today, so a C++ CDT build of the contract is deployable there without any node c
 are missing; adding them is a protocol-feature activation, the additive, gated kind of upgrade — a node
 release plus a scheduled feature, not a fork.
 
+### 1.8 The usage model: the receiver holds the asset in the contract
+
+The confidential balance **is** the balance, not a waiting room on the way to a public one. Bob
+receives in the pool, holds in the pool, and pays others in the pool. Withdrawing is the exception,
+done rarely and in round amounts, when someone needs public XPR for something outside. Under that
+model the boundary leak of §1.6 rarely arises: if bob never withdraws 1,234.5679 there is nothing
+to match. Consequences for the product:
+
+- the wallet shows the confidential balance as a first-class balance next to public XPR, with
+  confidential send as the default action, not a special mode;
+- receiving is passive (the pending bucket) and folding is automatic on the next send;
+- merchants and payroll are the first receivers to onboard, because every payment that stays
+  inside is one fewer edge for everyone;
+- the first deposit is the one edge everyone crosses; it reveals a starting amount once, after
+  which the observer's knowledge decays to loose bounds and never sharpens again unless the user
+  withdraws.
+
+Confidential XPR is spendable only where the counterparty has registered an encryption key.
+Paying an ordinary contract or an unregistered account still means withdrawing first.
+
+### 1.9 Edge privacy: what leaks at deposit/withdraw and what helps
+
+Inside the pool amounts are hidden cryptographically. At the edges they are hidden
+**statistically**, and the design makes that explicit rather than pretending otherwise.
+
+| what leaks | how |
+|---|---|
+| the deposit amount | it is a public `eosio.token` transfer into escrow |
+| the withdrawal amount | it is a public `eosio.token` transfer out of escrow |
+| an *inference* about a transfer | matching a unique amount and a short time gap across the two edges (alice deposits 1,234.5679, one transfer, bob withdraws 1,234.5679) |
+
+| measure | effect | where |
+|---|---|---|
+| **round amounts at the edges** (`withdraw_granularity`, e.g. whole XPR or multiples of 10/100, per token) | removes the fingerprint; a round amount is shared with everyone else | contract, enforced in `withdraw`; wallet nudges the same on deposit |
+| **edge-matching warning** | before a withdrawal, the wallet compares the amount to recent incoming transfers and their sums and to pool activity since; warns and suggests a round amount and a delay; never a hard block | wallet |
+| **time and volume** | privacy at the edge is proportional to the number of other deposits/withdrawals in between; shown as an honest indicator ("12 withdrawals since your last incoming transfer") | wallet |
+| **no plaintext memo** | the confidential `transfer` carries no memo, or an encrypted one | contract |
+| splitting a withdrawal into chunks | **does not help**: an analyst sums; only time and volume do the work | — |
+| withdrawing to another account | **does not help**: the withdraw is still signed by the owner and parties are public by design | — |
+
+The contract cannot enforce "not an amount that was sent to you" because it never learns
+amounts; only the wallet (and the auditor) can. Hence the split: the chain enforces granularity,
+the wallet handles the judgment call. The only ways to remove the edge entirely are to make the
+destination confidential too (a confidential swap into another confidential token) or the
+Phase-3 shielded design; both still show the amount leaving the system, as Zcash's
+shielded-to-transparent does.
+
 ---
 
 ## 2. Cryptographic design
@@ -317,6 +364,8 @@ pub struct Config {
     pub auditor_pubkey: JubPoint,
     pub auditor_history: Vec<(u32, JubPoint)>,   // (activation block, key)
     pub vk_hash: Checksum256,            // hash of the Groth16 verifying key in `vkeys`
+    pub withdraw_granularity: u64,       // withdrawals must be a multiple (units); 0 = off
+    pub deposit_granularity: u64,        // same for deposits; 0 = off (wallet nudges regardless)
     pub paused: bool,
 }
 
@@ -332,11 +381,11 @@ pub struct VerifyingKey { pub id: u64, pub vk: Vec<u8> }   // raw, ~1–3 KB
 | `deposit` (via `on_notify` of `eosio.token::transfer` with memo `conf:<owner>`) | token contract | amount is public; contract encrypts it *deterministically* (`r = 0`, so `C = v·G`, `D = 0`) into the owner's pending | none needed: everyone can recompute |
 | `transfer(from, to, T, B_new, proof)` | from | verifies the Groth16 proof against `(P_s, P_r, P_a, B_old, B_new, T, nonce, from, to)`; replaces `from.avail`; adds `T` into `to.pending`; `nonce += 1`; emits `T` in the action trace for history | Groth16 |
 | `applypending(owner)` | owner | `avail += pending` (homomorphic), `pending = 0`, `pending_count = 0` | none |
-| `withdraw(owner, amount, B_new, proof)` | owner | proves `B_new` encrypts `v_old − amount` with `amount` public; replaces `avail`; inline `eosio.token::transfer` of `amount` from escrow to owner | Groth16 (same circuit, amount public) |
-| `configure(sym, auditor_pubkey, paused)` | contract (msig) | rotates auditor key (appends to history), pause switch | — |
+| `withdraw(owner, amount, B_new, proof)` | owner | checks `amount % withdraw_granularity == 0`; proves `B_new` encrypts `v_old − amount` with `amount` public; replaces `avail`; inline `eosio.token::transfer` of `amount` from escrow to owner | Groth16 (same circuit, amount public) |
+| `configure(sym, auditor_pubkey, withdraw_granularity, deposit_granularity, paused)` | contract (msig) | rotates auditor key (appends to history), sets edge granularities (§1.9), pause switch | — |
 | `setvk(id, vk)` | contract (msig) | installs / rotates the verifying key after a ceremony | — |
 
-`deposit` encrypting with `r = 0` is deliberate: the deposit amount is public anyway, and it removes
+`transfer` carries **no plaintext memo** (§1.9). `deposit` encrypting with `r = 0` is deliberate: the deposit amount is public anyway, and it removes
 any need for the depositor to be online or to prove anything. The auditor handle is trivially zero.
 
 Withdraw uses the same circuit with the amount exposed as a public input rather than a second
@@ -422,6 +471,9 @@ but the 0.2 ms-per-point-add bill on the homomorphic update comes from the same 
   `send_transaction`. Before sending, estimate CPU against `get_info` / account limits; a proof
   transaction that would exceed the budget is **refused by the wallet**, because pulsevm's admission
   gap (#76) drops such transactions silently.
+- **Withdraw flow:** before building the proof, run the edge-matching check (§1.9): compare the
+  amount to recent incoming transfers and sums of them, and count pool edges since the last
+  incoming transfer; warn, suggest a round amount and a delay; never block.
 - **Receive:** subscribe to `transfer` actions where `to = me`; decrypt `(C, D_r)` chunks; show the
   amount; fold pending lazily.
 - **Prover targets:** native (macOS/iOS via uniffi, Tauri desktop), `wasm-bindgen` for web. Proving
@@ -463,10 +515,7 @@ Out of scope: network-level unlinkability, private execution, hiding from the au
    (fewer moving parts, weaker ceremony tooling). Decide at the start of Phase 2.
 2. **Pairing crate alignment with #64 (Warp):** `ark-bn254` is the natural fit for Groth16; if #64
    brings `blst` for BLS12-381 there is no bn254 overlap anyway. Confirm with Glenn.
-3. **Ship a demo on XPR testnet first?** Leap has the intrinsics, so a C++ CDT build of `xpr.conf`
-   could demonstrate the full flow on XPR testnet before the PulseVM intrinsics land. The scoping
-   page's "do not start the contract before the intrinsic set is agreed" was about PulseVM; a
-   testnet demo does not block on it and would de-risk the circuit early. Needs a yes/no.
+3. ~~Ship a demo on XPR testnet first?~~ **Decided 2026-09-07: yes.** See §11.
 4. **Auditor: one key per symbol or one per chain?** Table supports per symbol; policy question.
 5. **Point cost of intrinsics** (§5.2): numbers from the `.95` box before proposing.
 
@@ -498,3 +547,38 @@ design at `pulse-privacy/docs/01-design.md`). Three things to align: which pairi
 brings in so we share one; fixed point prices for the new intrinsics (proposal in §5.2, to be
 re-measured on validator hardware); and whether the schedule-version-2 dogfood runs on a chain you
 run or ours. Separately, the `CPU_SCALE` calibration is worth a look for compute-heavy contracts.
+
+---
+
+## 11. Testnet build (decided 2026-09-07)
+
+**Why now.** XPR testnet runs Leap v5.0.3 with `CRYPTO_PRIMITIVES` active (verified on three
+endpoints), and `proton-tsc` already wraps the whole set (`bn128Add`, `bn128Mul`, `bn128Pair`,
+`modExp`, `k1Recover`, `sha3`, `keccak`, `blake2`; `@proton/vert` simulates `alt_bn128_*` for local
+tests). So the circuit, ceremony, contract logic and real proof timing can be proven on a live
+Antelope chain months before the PulseVM intrinsics land, with zero chain work. Leap bills
+wall-clock, so a transfer verifying a Groth16 proof costs ≈ 2–4 ms CPU: heavy for an action, fine
+for the per-tx limit and a testnet account.
+
+**Without WebAuth changes.** WebAuth signs whatever actions a dapp submits through the web SDK, so
+the testnet version is a dapp: it holds the encryption secret, runs the prover in the browser
+(WASM), builds ciphertexts + proof, and asks WebAuth to sign an ordinary `transfer` on the contract.
+Deposits are plain token transfers. The trade-off is key custody: WebAuth does not expose its key
+and the SDK has no arbitrary-message signing, so the dapp generates the encryption secret and the
+user backs it up (export step in the demo). Deriving it from an identity-proof signature is
+possible in principle (K1, deterministic) but fragile; not used. Production keeps the key in
+WebAuth, derived from the seed with account recovery (§2.7). The testnet build proves everything
+except key custody.
+
+**Milestones (in order; each is a checkpoint that can fail cheaply):**
+
+| # | milestone | proves | artefacts |
+|---|---|---|---|
+| T1 | **Groth16 verifier on testnet.** ✅ **Done 2026-09-07.** proton-tsc contract `verify(vk, proof, inputs)` deployed to testnet account `xprconf`; an arkworks proof (2 public inputs) verified on chain in tx `ca44bcaf…` (block 404,501,003) at **4,123 µs CPU**; tampered input rejected ("invalid proof"); off-curve point rejected by the host function itself. G2 encoding is imaginary-first as in EIP-197; `@proton/vert` simulates the intrinsics faithfully | encoding conventions, the wrappers, real CPU cost | `contracts/xpr-conf-tsc/`, `bench --emit-evm-fixture` |
+| T2 | **Transfer circuit (circom) + ceremony rehearsal.** Twisted ElGamal on Baby Jubjub, 2 × 32-bit chunks, the §2.4 statement; snarkjs phase-2 with a small Powers-of-Tau; vk exported to the contract | the statement, constraint count, prove time in browser and native | `circuits/transfer/` |
+| T3 | **Confidential token contract.** Tables and actions of §4 in proton-tsc, including `withdraw_granularity`; Baby Jubjub adds in AssemblyScript (cost measured); vert tests for every action | the contract semantics end to end | `contracts/xpr.conf-tsc/` |
+| T4 | **Dapp.** Register, deposit, send, receive, fold, withdraw; dapp-held key with export; edge warning; WebAuth signing via `@proton/web-sdk` | the whole flow on testnet without wallet changes | `dapp/` |
+| T5 | **Auditor CLI** against testnet history; escrow reconciliation | auditability | `tools/auditor-cli/` |
+
+The contract ports to `pulse-cdt-rust` later with the same tables and actions; the circuit,
+vk and dapp carry over unchanged.

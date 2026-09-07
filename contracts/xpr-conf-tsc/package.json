@@ -1,0 +1,18 @@
+{
+  "name": "xpr-conf-tsc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Confidential token for XPR Network testnet (proton-tsc). T1: Groth16 verifier.",
+  "type": "module",
+  "scripts": {
+    "build": "npx proton-asc ./assembly/groth16.contract.ts --target release",
+    "test": "node tests/groth16.test.mjs"
+  },
+  "dependencies": {
+    "@proton/vert": "^0.3.24",
+    "proton-tsc": "^0.3.58"
+  },
+  "devDependencies": {
+    "typescript": "^4.9.5"
+  }
+}
