@@ -119,5 +119,14 @@ if (overdraft !== "insufficient balance") throw new Error("overdraft witness sho
 lap("overdraft cannot be proven");
 const escrow = token.tables.accounts(nameToBigInt("xprconf")).getTableRows();
 lap(`escrow (public proof of reserve): ${escrow[0]?.balance}`);
+
+// --- soft-launch limits ---
+await conf.actions.setlimits(["4,XPR", (units(800)).toString(), (units(600)).toString()]).send("xprconf@active");
+await expectToThrow(token.actions.transfer(["alice", "xprconf", "700.0000 XPR", "conf:alice"]).send("alice@active"), "eosio_assert: deposit above the current per-deposit limit");
+await token.actions.transfer(["alice", "xprconf", "500.0000 XPR", "conf:alice"]).send("alice@active");
+await expectToThrow(token.actions.transfer(["alice", "xprconf", "500.0000 XPR", "conf:alice"]).send("alice@active"), "eosio_assert: the pool is at its current limit; try a smaller deposit later");
+const lim = conf.tables.limits(nameToBigInt("xprconf")).getTableRow(symScope());
+if (String(lim.pool) !== String(units(500))) throw new Error(`pool counter ${lim.pool}`);
+lap("soft-launch limits: per-deposit cap and pool cap enforced");
 console.log("T3 end-to-end passed");
 process.exit(0);

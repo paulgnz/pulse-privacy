@@ -1,0 +1,13 @@
+{
+  "name": "pulse-privacy-ceremony",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Groth16 phase-2 ceremony tooling for the confidential-transfer circuit (contribute, verify, finalize)",
+  "scripts": {
+    "contribute": "node contribute.mjs",
+    "verify": "node verify.mjs",
+    "finalize": "node finalize.mjs"
+  },
+  "dependencies": { "snarkjs": "^0.7.5" }
+}

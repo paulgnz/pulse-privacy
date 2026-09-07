@@ -20,7 +20,8 @@ Order of operations: design doc ✓ → benchmark ✓ (Mac; `.95` box pending) �
 
 Layout (empty until the phase that fills it):
 
-- `docs/` — scoping (00), design doc incl. threat model and key management (01)
+- `docs/` — scoping (00), design doc incl. threat model and key management (01), mainnet runbook (02)
+- `ceremony/` — trusted-setup tooling (contribute / verify / finalize) and, once run, the public transcript
 - `bench/` — Groth16-bn254 vs Bulletproofs verifier micro-benchmarks, native and in WASM under
   wasmer with pulsevm's metering (`bench/`, `bench/wasm-guest/`, `bench/wasm-host/`)
 - `circuits/` — confidential-transfer circuit + ceremony artefacts

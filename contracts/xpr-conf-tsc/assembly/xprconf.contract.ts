@@ -52,6 +52,23 @@ class Config extends Table {
   }
 }
 
+/** Soft-launch limits (separate table so the existing `config` rows keep deserialising). */
+@table("limits")
+class Limits extends Table {
+  constructor(
+    public sym: u64 = 0,
+    public max_pool: u64 = 0, // cap on deposits − withdrawals held in escrow; 0 = no cap
+    public max_deposit: u64 = 0, // cap per deposit; 0 = no cap
+    public pool: u64 = 0 // running deposits − withdrawals (units)
+  ) {
+    super();
+  }
+  @primary
+  get primary(): u64 {
+    return this.sym;
+  }
+}
+
 @table("accounts")
 class Account extends Table {
   constructor(
@@ -94,6 +111,7 @@ function chunks(amount: u64): u64[] {
 @contract
 class XprConf extends Contract {
   configs: TableStore<Config> = new TableStore<Config>(this.receiver);
+  limits: TableStore<Limits> = new TableStore<Limits>(this.receiver);
 
   accountsOf(sym: u64): TableStore<Account> {
     return new TableStore<Account>(this.receiver, Name.fromU64(sym));
@@ -126,6 +144,21 @@ class XprConf extends Contract {
     c.deposit_granularity = deposit_granularity;
     c.paused = paused;
     this.configs.update(c, this.receiver);
+  }
+
+  /** soft-launch caps (0 = off). Applies from the next deposit; `pool` tracks deposits − withdrawals. */
+  @action("setlimits")
+  setlimits(sym: Symbol, max_pool: u64, max_deposit: u64): void {
+    requireAuth(this.receiver);
+    this.configOf(sym);
+    const l = this.limits.get(sym.raw());
+    if (l == null) {
+      this.limits.store(new Limits(sym.raw(), max_pool, max_deposit, 0), this.receiver);
+    } else {
+      l.max_pool = max_pool;
+      l.max_deposit = max_deposit;
+      this.limits.update(l, this.receiver);
+    }
   }
 
   @action("setvk")
@@ -209,6 +242,14 @@ class XprConf extends Contract {
     check(quantity.amount > 0, "amount must be positive");
     const v = <u64>quantity.amount;
     if (c.deposit_granularity > 0) check(v % c.deposit_granularity == 0, "deposit must be a multiple of the granularity");
+    const lim = this.limits.get(quantity.symbol.raw());
+    if (lim != null) {
+      const l = lim!;
+      if (l.max_deposit > 0) check(v <= l.max_deposit, "deposit above the current per-deposit limit");
+      if (l.max_pool > 0) check(l.pool + v <= l.max_pool, "the pool is at its current limit; try a smaller deposit later");
+      l.pool += v;
+      this.limits.update(l, this.receiver);
+    }
     // deposit encryption with r = 0: C = v·G, D = identity, per chunk
     const ch = chunks(v);
     const dep = mulG32(ch[0]).toBytes().concat(infBytes()).concat(mulG32(ch[1]).toBytes()).concat(infBytes());
@@ -290,6 +331,12 @@ class XprConf extends Contract {
     a.avail = b_new;
     a.nonce += 1;
     accounts.update(a, owner);
+    const lim = this.limits.get(quantity.symbol.raw());
+    if (lim != null) {
+      const l = lim!;
+      l.pool = l.pool > v ? l.pool - v : 0;
+      this.limits.update(l, this.receiver);
+    }
     sendTransferTokens(this.receiver, owner, [new ExtendedAsset(quantity, c.token_contract)], "confidential withdraw");
     print("withdraw ok");
   }
