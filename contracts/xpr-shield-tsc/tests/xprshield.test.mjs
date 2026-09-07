@@ -34,8 +34,8 @@ const bc = new Blockchain();
 bc.createAccounts("alice", "bob", "carol");
 const token = bc.createContract("eosio.token", join(HERE, "../node_modules/proton-tsc/external/eosio.token/eosio.token"));
 const sh = bc.createContract("xprshield", join(HERE, "../assembly/target/xprshield.contract"));
-for (let i = 0; i < 400 && !(sh.actions.transfer && token.actions.transfer); i++) await new Promise((r) => setTimeout(r, 25));
-assert.ok(sh.actions.transfer, "xprshield did not load");
+for (let i = 0; i < 400 && !(sh.actions.spend && token.actions.transfer); i++) await new Promise((r) => setTimeout(r, 25));
+assert.ok(sh.actions.spend, "xprshield did not load");
 await token.actions.create(["eosio.token", "1000000000.0000 XPR"]).send("eosio.token@active");
 await token.actions.issue(["eosio.token", "100000.0000 XPR", ""]).send("eosio.token@active");
 await token.actions.transfer(["eosio.token", "alice", "10000.0000 XPR", "seed"]).send("eosio.token@active");
@@ -86,11 +86,11 @@ const p1 = await prove(js, { root: local.root });
 assert.deepEqual(p1.publicSignals.map(BigInt), N.publicSignals(js.expected, { root: local.root, sender: ALICE, A: auditor.pk }));
 assert.equal(p1.publics.length / 64, 28, "the action carries 28 words");
 // wrong signer for the named sender
-await expectToThrow(sh.actions.transfer(["alice", p1.proof, p1.publics]).send("bob@active"), "missing required authority alice");
+await expectToThrow(sh.actions.spend(["alice", p1.proof, p1.publics]).send("bob@active"), "missing required authority alice");
 // someone else naming themselves as sender on alice's proof
-await expectToThrow(sh.actions.transfer(["bob", p1.proof, p1.publics]).send("bob@active"), "eosio_assert: invalid proof");
+await expectToThrow(sh.actions.spend(["bob", p1.proof, p1.publics]).send("bob@active"), "eosio_assert: invalid proof");
 // the sender's own signature
-await sh.actions.transfer(["alice", p1.proof, p1.publics]).send("alice@active");
+await sh.actions.spend(["alice", p1.proof, p1.publics]).send("alice@active");
 local.append(js.outNotes[0].cm); local.append(js.outNotes[1].cm);
 assert.equal(treeRow().root, hex(local.root), "root after the transfer matches");
 assert.equal(nullifiers().length, 2, "two nullifiers recorded");
@@ -106,26 +106,26 @@ assert.deepEqual(words(outs[0].cr), [a1.v, N.TOKENS.XPR, a1.rho, a1.r], "deposit
 lap("alice signed alice → bob 1,234 XPR: receiver and amount hidden; bob and the auditor read it; wrong signers refused");
 
 // --- refusals ---
-await expectToThrow(sh.actions.transfer(["alice", p1.proof, p1.publics]).send("alice@active"), "eosio_assert: note already spent");
+await expectToThrow(sh.actions.spend(["alice", p1.proof, p1.publics]).send("alice@active"), "eosio_assert: note already spent");
 const tampered = p1.publics.slice(0, 2 * 64) + hex(12345n) + p1.publics.slice(3 * 64);
-await expectToThrow(sh.actions.transfer(["alice", p1.proof, tampered]).send("alice@active"), "eosio_assert: invalid proof");
+await expectToThrow(sh.actions.spend(["alice", p1.proof, tampered]).send("alice@active"), "eosio_assert: invalid proof");
 // a proof built with bob's key but signed and named by alice: the contract inserts alice's registered key
 const jsKey = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: bobNote, index: 4 }], outputs: [{ pk: alice.pk, v: 1n }, { pk: bob.pk, v: AMOUNT - 1n }] });
 const pKey = await prove(jsKey, { root: local.root });
-await expectToThrow(sh.actions.transfer(["alice", pKey.proof, pKey.publics]).send("alice@active"), "eosio_assert: invalid proof");
+await expectToThrow(sh.actions.spend(["alice", pKey.proof, pKey.publics]).send("alice@active"), "eosio_assert: invalid proof");
 // a proof for a different auditor key than the contract's
 const jsAud = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: N.keygen().pk, sender: BOB, inputs: [{ note: bobNote, index: 4 }], outputs: [{ pk: alice.pk, v: 1n }, { pk: bob.pk, v: AMOUNT - 1n }] });
 const pAud = await prove(jsAud, { root: local.root });
-await expectToThrow(sh.actions.transfer(["bob", pAud.proof, pAud.publics]).send("bob@active"), "eosio_assert: invalid proof");
+await expectToThrow(sh.actions.spend(["bob", pAud.proof, pAud.publics]).send("bob@active"), "eosio_assert: invalid proof");
 // unregistered sender
-await expectToThrow(sh.actions.transfer(["carol", p1.proof, p1.publics]).send("carol@active"), "eosio_assert: sender has not registered a shielded key");
+await expectToThrow(sh.actions.spend(["carol", p1.proof, p1.publics]).send("carol@active"), "eosio_assert: sender has not registered a shielded key");
 lap("double spend, tampered publics, another's key, foreign auditor key and an unregistered sender refused");
 
 // --- a proof built before another deposit still verifies (root ring) ---
 const jsOld = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: BOB, inputs: [{ note: bobNote, index: 4 }], outputs: [{ pk: alice.pk, v: units(34) }, { pk: bob.pk, v: AMOUNT - units(34) }] });
 const pOld = await prove(jsOld, { root: local.root });
 await dep(N.newNote(alice.pk, units(1), N.TOKENS.XPR));
-await sh.actions.transfer(["bob", pOld.proof, pOld.publics]).send("bob@active");
+await sh.actions.spend(["bob", pOld.proof, pOld.publics]).send("bob@active");
 local.append(jsOld.outNotes[0].cm); local.append(jsOld.outNotes[1].cm);
 assert.equal(treeRow().root, hex(local.root));
 lap("a proof against the previous root was accepted after a new deposit");
@@ -134,10 +134,10 @@ lap("a proof against the previous root was accepted after a new deposit");
 const bobNote2 = jsOld.outNotes[1]; const bobIdx2 = local.size - 1;
 const jwOther = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: BOB, inputs: [{ note: bobNote2, index: bobIdx2 }], outputs: [{ pk: bob.pk, v: 0n }, { pk: bob.pk, v: bobNote2.v - units(1000) }], vPub: units(1000), tokenPub: N.TOKENS.XPR, to: ALICE });
 const pwOther = await prove(jwOther, { root: local.root, vPub: units(1000), tokenPub: N.TOKENS.XPR, to: ALICE });
-await expectToThrow(sh.actions.transfer(["bob", pwOther.proof, pwOther.publics]).send("bob@active"), "eosio_assert: withdrawals go to the sender's own account");
+await expectToThrow(sh.actions.spend(["bob", pwOther.proof, pwOther.publics]).send("bob@active"), "eosio_assert: withdrawals go to the sender's own account");
 const jw = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: BOB, inputs: [{ note: bobNote2, index: bobIdx2 }], outputs: [{ pk: bob.pk, v: 0n }, { pk: bob.pk, v: bobNote2.v - units(1000) }], vPub: units(1000), tokenPub: N.TOKENS.XPR, to: BOB });
 const pw = await prove(jw, { root: local.root, vPub: units(1000), tokenPub: N.TOKENS.XPR, to: BOB });
-await sh.actions.transfer(["bob", pw.proof, pw.publics]).send("bob@active");
+await sh.actions.spend(["bob", pw.proof, pw.publics]).send("bob@active");
 assert.equal(balance("bob"), "1000.0000 XPR", "bob received the withdrawal");
 const tok = sh.tables.tokens(scope).getTableRows()[0];
 assert.equal(BigInt(tok.pool), units(5000) + units(700) + units(1) - units(1000));
@@ -145,7 +145,7 @@ lap(`bob withdrew 1,000 XPR to himself: public balance ${balance("bob")}; pool $
 
 // --- pause ---
 await sh.actions.pause([true]).send("xprshield@active");
-await expectToThrow(sh.actions.transfer(["bob", pw.proof, pw.publics]).send("bob@active"), "eosio_assert: paused");
+await expectToThrow(sh.actions.spend(["bob", pw.proof, pw.publics]).send("bob@active"), "eosio_assert: paused");
 lap("paused: transfers refused");
 
 // --- testnet reset wipes everything and allows a fresh init ---

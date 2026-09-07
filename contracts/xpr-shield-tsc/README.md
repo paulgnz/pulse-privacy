@@ -25,8 +25,8 @@ Deployed on XPR **testnet** as account `xprshield` (2026-09-08). Not on mainnet.
 
 Actions: `init(auditor_pubkey, vk)`, `addtoken(sym, contract, token_id, max_pool, max_deposit)`,
 `setvk`, `setauditor`, `pause`, `reset` (testnet only), `viewkey` (never broadcast; the wallet
-signs it to derive the key), `register(owner, pubkey)`, and `transfer(sender, proof, publics)`,
-which is both a payment and a withdrawal: `sender` signs and pays RAM, the proof is bound to
+signs it to derive the key), `register(owner, pubkey)`, and `spend(sender, proof, publics)`,
+which is both a payment and a withdrawal (not named `transfer`: wallets render that name as a token transfer): `sender` signs and pays RAM, the proof is bound to
 `sender` and to the key registered for `sender`, and a withdrawal pays `sender` only. The action
 carries 28 public words; the contract supplies the sender's key, the sender's name and the
 auditor key to the verifier. Deposits are token transfers with memo `shield:<rho>:<r>`.

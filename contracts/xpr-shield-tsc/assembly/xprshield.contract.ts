@@ -9,7 +9,8 @@ import { hash2, poseidon, zeroAt } from "./poseidon";
 // A note is (pk, v, token, rho, r); cm = Poseidon(pk.x, pk.y, v, token, rho, r). Commitments sit
 // in a depth-20 Poseidon Merkle tree that the contract maintains; every insertion is a pair
 // (a transfer's two outputs, or a deposit's note with an empty slot). Spending publishes
-// nullifiers. The sender's wallet signs `transfer` (docs/06 §8): the chain sees who initiated
+// nullifiers. The sender's wallet signs `spend` (docs/06 §8; not named "transfer", which
+// wallets render as a token transfer): the chain sees who initiated
 // it; the receiver, the amount and which notes were spent stay hidden.
 //
 // Public signals of the join-split proof, 33 words of 32 bytes (circuits/shielded/joinsplit.circom):
@@ -382,7 +383,7 @@ class XprShield extends Contract {
     return index;
   }
 
-  spend(nf: u8[], payer: Name): void {
+  spendNullifier(nf: u8[], payer: Name): void {
     if (isZeroWord(nf)) return;
     const key = low64(nf);
     const row = this.nullifiers.get(key);
@@ -442,8 +443,8 @@ class XprShield extends Contract {
    * Signed by `sender`, who pays CPU and RAM. The proof is bound to `sender`, to the key
    * registered for `sender`, and to the withdrawal destination, which must be `sender` itself.
    */
-  @action("transfer")
-  transfer(sender: Name, proof: u8[], publics: u8[]): void {
+  @action("spend")
+  spend(sender: Name, proof: u8[], publics: u8[]): void {
     requireAuth(sender);
     const c = this.config();
     check(!c.paused, "paused");
@@ -480,8 +481,8 @@ class XprShield extends Contract {
       .concat(c.auditor_pubkey);
     check(groth16Verify(c.vk, proof, inputs), "invalid proof");
 
-    this.spend(nf1, sender);
-    this.spend(nf2, sender);
+    this.spendNullifier(nf1, sender);
+    this.spendNullifier(nf2, sender);
     const index = this.insertPair(fromBytesBE(cm1, 0), fromBytesBE(cm2, 0), cm1, cm2, sender);
     for (let j = 0; j < 2; j++) {
       const epk = word(publics, 4 + 2 * j).concat(word(publics, 5 + 2 * j));

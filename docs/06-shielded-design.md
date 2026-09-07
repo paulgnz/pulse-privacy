@@ -287,7 +287,8 @@ sender's account name a bound public input, alongside `to`. Public signals go fr
 
 A new phase-2 setup on the same 2^16 phase 1. Everything else in §2.3 stands.
 
-**Contract.** `transfer(sender, proof, publics)` calls `require_auth(sender)`, checks that the
+**Contract.** `spend(sender, proof, publics)` (not named `transfer`: WebAuth renders an action of
+that name as a token transfer and refuses ours with "Signal sender not found") calls `require_auth(sender)`, checks that the
 `senderPk` in the proof equals `keys[sender]`, and stores leaves, outputs and nullifiers with
 `sender` as the RAM payer. Withdrawals pay `to` only when `to == sender` (own account only,
 decided). The relay permission and the public key are removed; there is no unauthenticated
