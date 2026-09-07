@@ -140,6 +140,15 @@ const Key = (p: OnboardingProps) => {
   const [pass1, setPass1] = useState(() => generatePassphrase());
   const [pass2, setPass2] = useState("");
   const [customPass, setCustomPass] = useState(false);
+  const [phraseCopied, setPhraseCopied] = useState(false);
+  const copyPhrase = async () => {
+    try {
+      await navigator.clipboard.writeText(pass1);
+      setPhraseCopied(true);
+    } catch {
+      /* clipboard blocked: the words are selectable */
+    }
+  };
   const [backupBlob, setBackupBlob] = useState<string | null>(null);
   const [passIn, setPassIn] = useState("");
   const passProblem = customPass ? (pass1.length === 0 ? null : passphraseProblem(pass1) ?? (pass1 !== pass2 ? "The two entries differ." : null)) : null;
@@ -399,10 +408,11 @@ const Key = (p: OnboardingProps) => {
         ) : (
           <Field label="Recovery phrase, for restoring this key on another device" hint="Six random words. Write them down with your backup; they restore the key on any device. Nobody can reset them for you.">
             <div className="secret" aria-label="Your recovery phrase"><code>{pass1}</code></div>
-            <p className="small" style={{ marginTop: 8 }}>
-              <button className="textbtn quiet" onClick={() => setPass1(generatePassphrase())}>New phrase</button>{" "}
-              <button className="textbtn quiet" onClick={() => { setCustomPass(true); setPass1(""); setPass2(""); }}>Choose my own instead</button>
-            </p>
+            <div className="row" style={{ margin: "12px 0 6px", gap: 14 }}>
+              <button className="btn secondary" onClick={copyPhrase}>{phraseCopied ? "Copied" : "Copy recovery phrase"}</button>
+              <button className="textbtn quiet" onClick={() => { setPass1(generatePassphrase()); setPhraseCopied(false); }}>New phrase</button>
+              <button className="textbtn quiet" onClick={() => { setCustomPass(true); setPass1(""); setPass2(""); setPhraseCopied(false); }}>Choose my own instead</button>
+            </div>
           </Field>
         )}
         <details className="explain" style={{ marginBottom: 18 }}>
@@ -431,7 +441,7 @@ const Key = (p: OnboardingProps) => {
           <span>I have written down my recovery phrase (or saved the key file) somewhere safe.</span>
         </label>
         <div className="row">
-          <button className="btn private" onClick={finishBackup} disabled={!saved || !passOk}>
+          <button className="btn private" onClick={finishBackup} disabled={!saved || !passOk || (!customPass && !phraseCopied)} title={!customPass && !phraseCopied ? "Copy the recovery phrase first" : undefined}>
             Continue
           </button>
           <button className="textbtn quiet" onClick={() => setMode("create")}>
