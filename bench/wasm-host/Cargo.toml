@@ -1,0 +1,23 @@
+[package]
+name = "pulse-privacy-wasm-host"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Runs bench/wasm-guest under wasmer with pulsevm's metering; reports wall-clock and billed points"
+
+[[bin]]
+name = "wasm-host"
+path = "src/main.rs"
+
+[features]
+default = []
+llvm = ["wasmer/llvm", "dep:wasmer-compiler-llvm"]
+
+[dependencies]
+# Pinned to what pulsevm locks (Cargo.lock: wasmer 7.0.1, llvm-sys 211 → LLVM 21).
+wasmer = { version = "=7.0.1", features = ["cranelift"] }
+wasmer-compiler-llvm = { version = "=7.0.1", optional = true }
+wasmer-middlewares = "=7.0.1"
+
+[profile.release]
+opt-level = 3
