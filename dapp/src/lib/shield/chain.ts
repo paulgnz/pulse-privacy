@@ -44,18 +44,32 @@ async function rpc<T>(path: string, body: unknown): Promise<T> {
   throw lastErr;
 }
 
-async function rows<T extends Record<string, unknown>>(table: string, key: string): Promise<T[]> {
+async function rows<T extends Record<string, unknown>>(table: string, key: string, endpoint?: string): Promise<T[]> {
   const out: T[] = [];
   let lower: string | undefined;
   for (;;) {
-    const r = await rpc<{ rows: T[]; more: boolean; next_key?: string }>("get_table_rows", { code: SHIELD.contract, scope: SHIELD.contract, table, json: true, limit: 1000, lower_bound: lower });
+    const body = { code: SHIELD.contract, scope: SHIELD.contract, table, json: true, limit: 1000, lower_bound: lower };
+    const r = endpoint
+      ? await (async () => {
+          const res = await fetch(`${endpoint}/v1/chain/get_table_rows`, { method: "POST", body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return await res.json() as { rows: T[]; more: boolean; next_key?: string };
+        })()
+      : await rpc<{ rows: T[]; more: boolean; next_key?: string }>("get_table_rows", body);
     out.push(...r.rows);
-    if (!r.more || r.rows.length === 0) return out;
+    if (!r.more) return out;
+    if (r.rows.length === 0) throw new Error(`${table}: incomplete page`);
     const next = (r as { next_key?: string }).next_key;
-    if (next) { lower = next; if (out.length > 20000) return out; continue; }
+    if (next) {
+      if (lower !== undefined && BigInt(next) <= BigInt(lower)) throw new Error(`${table}: pagination did not advance`);
+      lower = next;
+      continue;
+    }
     const last = r.rows[r.rows.length - 1][key];
-    if (typeof last === "string" && !/^\d+$/.test(last)) return out;
-    lower = (BigInt(String(last)) + 1n).toString();
+    const lastKey = typeof last === "string" && !/^\d+$/.test(last) ? nameToU64(last) : BigInt(String(last));
+    const following = lastKey + 1n;
+    if (lower !== undefined && following <= BigInt(lower)) throw new Error(`${table}: pagination did not advance`);
+    lower = following.toString();
   }
 }
 
@@ -84,9 +98,26 @@ export async function getConfig(knownTokens: Token[]): Promise<ShieldConfig | nu
 let keysCache: { at: number; map: Map<string, Pt> } | null = null;
 export async function registeredKeys(): Promise<Map<string, Pt>> {
   if (keysCache && Date.now() - keysCache.at < 60000) return keysCache.map;
-  const r = await rows<{ owner: string; pubkey: string }>("keys", "owner");
+  // Each vote is a complete table from a distinct configured server. Cached data from a
+  // single server is never an independent vote, and no request contains the recipient.
+  const answers = await Promise.allSettled([...new Set(ENDPOINTS)].map(async (ep) => {
+    const table = await rows<{ owner: string; pubkey: string }>("keys", "owner", ep);
+    const map = new Map<string, string>();
+    for (const row of table) {
+      if (!/^[a-z1-5.]{1,12}$/.test(row.owner) || !/^[0-9a-f]{128}$/i.test(row.pubkey) || map.has(row.owner)) throw new Error("Malformed shielded key table");
+      map.set(row.owner, row.pubkey.toLowerCase());
+    }
+    return map;
+  }));
+  const tables = answers.flatMap((a) => a.status === "fulfilled" ? [a.value] : []);
+  if (tables.length < 2) throw new Error("Cannot confirm shielded keys with two independent servers. Try again shortly.");
   const map = new Map<string, Pt>();
-  for (const k of r) { const w = words(k.pubkey); if (w.length === 2) map.set(k.owner, [w[0], w[1]]); }
+  for (const table of tables) for (const [owner, pubkey] of table) {
+    if (tables.filter((t) => t.get(owner) === pubkey).length >= 2) {
+      const w = words(pubkey);
+      map.set(owner, [w[0], w[1]]);
+    }
+  }
   keysCache = { at: Date.now(), map };
   return map;
 }
@@ -94,30 +125,12 @@ export async function registeredNames(): Promise<string[]> {
   return [...(await registeredKeys()).keys()].sort();
 }
 
-/** one account's key, read from a single node with the owner checked */
-async function keyFrom(ep: string, actor: string): Promise<Pt | null> {
-  const res = await fetch(`${ep}/v1/chain/get_table_rows`, { method: "POST", body: JSON.stringify({ code: SHIELD.contract, scope: SHIELD.contract, table: "keys", lower_bound: actor, upper_bound: actor, limit: 1, json: true }), signal: AbortSignal.timeout(15000) });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const r = (await res.json()) as { rows: { owner: string; pubkey: string }[] };
-  const row = r.rows.find((x) => x.owner === actor);
-  if (!row) return null;
-  const w = words(row.pubkey);
-  return [w[0], w[1]];
-}
-
 /**
- * The recipient's key decides where a payment goes and the chain cannot check it, so it must
- * agree between two independent nodes (or the node and the cached table) before it is used.
+ * Only use keys confirmed by two distinct servers. Resolve locally so sending does not
+ * reveal the recipient's name to an RPC server.
  */
 export async function registeredKey(actor: string): Promise<Pt | null> {
-  const eps = await endpoints();
-  const [a, b] = await Promise.all([keyFrom(eps[0], actor), eps[1] ? keyFrom(eps[1], actor).catch(() => undefined) : Promise.resolve(undefined)]);
-  const cached = keysCache?.map.get(actor);
-  const same = (x: Pt | null, y: Pt | null | undefined) => !!x && !!y && x[0] === y[0] && x[1] === y[1];
-  if (a === null) return null;
-  if (same(a, b) || same(a, cached)) return a;
-  if (b === undefined && !cached) return a; // only one node reachable and nothing cached: accept, the fingerprint is shown
-  throw new Error(`Two sources disagree about ${actor}'s shielded key. Nothing was sent; try again in a moment.`);
+  return (await registeredKeys()).get(actor) ?? null;
 }
 
 /** a short fingerprint of a key, shown next to the recipient so a wrong key is visible */

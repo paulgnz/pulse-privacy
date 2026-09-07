@@ -144,3 +144,23 @@ transaction, which would break key derivation for everyone; no wallet has been s
 broadcast a request marked not to be broadcast. The nullifier table stays keyed by the low 64
 bits: a targeted collision needs the victim's nullifier key, and an accidental one over a full
 tree is about 2⁻²⁵.
+
+## Shielded mode: independent review (Codex, 2026-09-08)
+
+Worked Brief 5 after the internal round, against the fixed tree. Four findings, each
+reproduced and fixed the same day; the dependency and secret-hygiene notes are recorded below.
+
+| # | area | finding | fix |
+|---|---|---|---|
+| 1 | contract, high | `addtoken` accepted two symbols with the same token id; notes bind the id, and a withdrawal picks the first symbol with that id, so an operator mistake could pay the wrong asset. | The id must be unique across tokens; re-adding the same symbol still updates its caps. Test added. |
+| 2 | client, medium | Switching accounts left the generated secret and the two-signature state behind, and a refresh started for the previous account could repopulate the next account's notes. | All account state, including the secret and the signature state, is cleared on switch; every asynchronous result is discarded unless the session counter still matches. |
+| 3 | client, medium | A reload restored a saved key but not the "copy your secret first" gate, so a passkey user could register with no backup. | Backup status is persisted beside the key; until the secret has been copied once it is shown again, registration stays gated, and a registered account with an uncopied secret sees the warning on its statement. |
+| 4 | client, medium | The main site's confirmation of incoming rows against the chain was cached by transaction id alone, so a later indexer row with a changed ciphertext inherited a "confirmed" verdict. | The cache key includes sender, receiver and the ciphertext. |
+
+Also noted: dependency advisories in build and ceremony tooling (tracked, none in browser or
+contract code; `path-to-regexp` and nested `undici` in the ceremony functions, `lodash.set` in
+contract tooling, `tracing-subscriber` and `memmap2` in the benchmarks); the gitignored local
+key files were world-readable on the developer machine and are now owner-only; the published
+testnet relay key is gone from the contract's permissions, confirmed on two nodes. The known
+release risks stand as stated in the design doc: rehearsal proving keys, browser storage for
+fallback keys, and the tree's capacity, which the minimum deposit prices but does not remove.

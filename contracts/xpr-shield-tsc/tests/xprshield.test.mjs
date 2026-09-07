@@ -51,6 +51,8 @@ const balance = (acct) => { const r = token.tables.accounts(nameToBigInt(acct)).
 // --- init / addtoken / register ---
 await sh.actions.init([ptHex(auditor.pk), encodeVk(VK)]).send("xprshield@active");
 await sh.actions.addtoken(["4,XPR", "eosio.token", "1", "0", "0", "10000"]).send("xprshield@active");
+await expectToThrow(sh.actions.addtoken(["6,XMD", "xmd.token", "1", "0", "0", "0"]).send("xprshield@active"), "eosio_assert: token id already used by another token");
+await sh.actions.addtoken(["4,XPR", "eosio.token", "1", "0", "0", "10000"]).send("xprshield@active"); // same token again: allowed (updates caps)
 await sh.actions.register(["alice", ptHex(alice.pk)]).send("alice@active");
 await sh.actions.register(["bob", ptHex(bob.pk)]).send("bob@active");
 await expectToThrow(sh.actions.register(["bob", ptHex(bob.pk)]).send("bob@active"), "eosio_assert: already registered");

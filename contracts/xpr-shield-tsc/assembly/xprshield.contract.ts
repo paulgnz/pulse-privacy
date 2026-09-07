@@ -246,6 +246,12 @@ class XprShield extends Contract {
     requireAuth(this.receiver);
     this.config();
     check(token_id > 0 && token_id < 256, "token id must be 1..255");
+    // notes bind the id, not the symbol: two symbols with one id would let a withdrawal pay the wrong asset
+    let other = this.tokens.first();
+    while (other != null) {
+      check(other.sym == sym.raw() || other.token_id != token_id, "token id already used by another token");
+      other = this.tokens.next(other);
+    }
     const existing = this.tokens.get(sym.raw());
     if (existing == null) {
       this.tokens.store(new TokenRow(sym.raw(), token_contract, token_id, max_pool, max_deposit, min_deposit, 0, 0, 0), this.receiver);

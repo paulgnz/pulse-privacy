@@ -340,13 +340,14 @@ const confirmed = new Map<string, boolean>();
  * the row and asks again next refresh.
  */
 export async function confirmSend(blockNum: number, trxId: string, from: string, to: string, tRaw: string | undefined): Promise<"yes" | "no" | "unknown"> {
-  const hit = confirmed.get(trxId);
+  const cacheKey = `${trxId}|${from}|${to}|${tRaw ?? ""}`; // a later row with other data must not inherit the verdict
+  const hit = confirmed.get(cacheKey);
   if (hit !== undefined) return hit ? "yes" : "no";
   const data = await Promise.race([sendDataFromChain(blockNum, trxId), new Promise<null | undefined>((r) => setTimeout(() => r(undefined), 6000))]);
   if (data === undefined) return "unknown";
   const chainT = String(data?.t ?? "").replace(/^0x/i, "").toLowerCase();
   const ok = !!data && String(data.from) === from && String(data.to) === to && !!tRaw && chainT === tRaw;
-  confirmed.set(trxId, ok);
+  confirmed.set(cacheKey, ok);
   return ok ? "yes" : "no";
 }
 

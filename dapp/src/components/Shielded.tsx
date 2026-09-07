@@ -15,6 +15,7 @@ import { Amount } from "./Amount";
 import { AmountInput, Field, Line, Note, Progress, TokenIcon } from "./ui";
 
 const SAVED = (actor: string) => `pulse-privacy/shield/${actor}`;
+const BACKED = (actor: string) => `pulse-privacy/shield/${actor}/backedup`;
 const REVEAL = "pulse-privacy/shield/reveal";
 
 type Form = "send" | "deposit" | "withdraw" | null;
@@ -41,7 +42,11 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const [showSpent, setShowSpent] = useState(false);
   // read ahead when a form opens, so the click leads straight to the proof and the wallet
   const pre = useRef<Prefetched | null>(null);
+  const seq = useRef(0);
   const [peers, setPeers] = useState<string[]>([]);
+  const [firstAsk, setFirstAsk] = useState<bigint | null>(null);
+  const [savedSecret, setSavedSecret] = useState<string | null>(null);
+  const [secretCopied, setSecretCopied] = useState(false);
 
   const shieldTokens = useMemo(() => (cfg?.tokens ?? []).map((t) => t.token).sort((a, b) => (a.code === "XPR" ? -1 : b.code === "XPR" ? 1 : a.code.localeCompare(b.code))), [cfg]);
   const token = useMemo(() => shieldTokens.find((t) => t.code === tokenCode) ?? shieldTokens[0] ?? tokens[0], [shieldTokens, tokenCode, tokens]);
@@ -53,29 +58,35 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   // A saved key exists only for wallets that cannot re-derive one (passkeys). Wallets with a
   // K1 key derive the spending key again each session with one signature, and it stays in memory:
   // the browser holding this key can spend shielded funds without any further prompt.
-  const seq = useRef(0);
   useEffect(() => {
     seq.current += 1;
     const mine = seq.current;
     setKeys(null); setRegistered(undefined); setNotes(null); setSpent([]); setPub({}); setPeers([]); setShowSpent(false); setNotice(null); setForm(null); setStage(null);
+    setFirstAsk(null); setSavedSecret(null); setSecretCopied(false);
     pre.current = null;
     if (!actor) return;
-    // a saved key from an earlier visit (passkey wallets, or a wallet that signs differently each time)
+    // a saved key from an earlier visit (passkey wallets, or a wallet that signs differently each time);
+    // until its secret has been copied once, it is shown again and registration stays gated
     try {
       const saved = localStorage.getItem(SAVED(actor));
-      if (saved) setKeys(keygen(BigInt(saved)));
+      if (saved) {
+        setKeys(keygen(BigInt(saved)));
+        if (localStorage.getItem(BACKED(actor)) !== "1") setSavedSecret(BigInt(saved).toString(16).padStart(64, "0"));
+      }
     } catch { /* ignore */ }
     sh.registeredKey(actor).then((k) => { if (seq.current === mine) setRegistered(k); }).catch(() => { if (seq.current === mine) setRegistered(null); });
   }, [actor, session]);
 
   const refresh = useCallback(async () => {
     if (!keys) return;
+    const mine = seq.current;
     const r = await sh.scan(keys);
+    if (seq.current !== mine) return; // the account changed while reading
     setNotes(r.notes);
     setSpent(r.spent);
     const p: Record<string, bigint> = {};
     for (const t of shieldTokens) p[t.code] = await getPublicBalance(actor, t).catch(() => 0n);
-    setPub(p);
+    if (seq.current === mine) setPub(p);
   }, [keys, actor, shieldTokens]);
 
   useEffect(() => { if (keys && registered) refresh().catch((e) => setNotice({ ok: false, text: (e as Error).message })); }, [keys, registered, refresh]);
@@ -89,9 +100,6 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   // message the same way every time, so one signature is enough. Other wallets sign a second
   // time from a second click; if the two agree the key is derived, if they differ (passkeys) a
   // generated key is kept in this browser instead, with its secret shown for saving.
-  const [firstAsk, setFirstAsk] = useState<bigint | null>(null);
-  const [savedSecret, setSavedSecret] = useState<string | null>(null);
-  const [secretCopied, setSecretCopied] = useState(false);
   const adopt = (ask: bigint, save: boolean) => {
     const k = keygen(ask);
     if (registered && !eq(registered, k.pk)) {
@@ -220,7 +228,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
             <p>Your wallet signs differently each time, so this browser keeps a generated key instead. It exists nowhere else. Copy this secret and keep it where you keep important things: without it, a lost or cleared browser means these notes are gone.</p>
             <div className="secret" aria-label="Your shielded secret"><code>{savedSecret}</code></div>
             <div className="row" style={{ marginTop: 10 }}>
-              <button className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(savedSecret); setSecretCopied(true); } catch { /* selectable */ } }}>{secretCopied ? "Copied" : "Copy secret"}</button>
+              <button className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(savedSecret); setSecretCopied(true); try { localStorage.setItem(BACKED(actor), "1"); } catch { /* ignore */ } } catch { /* selectable */ } }}>{secretCopied ? "Copied" : "Copy secret"}</button>
             </div>
           </Note>
         ) : null}
@@ -259,6 +267,15 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
         </Note>
       ) : null}
 
+      {savedSecret && !secretCopied ? (
+        <Note level="warn">
+          <p>This browser keeps a generated shielded key that has never been copied. Without it, a lost or cleared browser means these notes are gone.</p>
+          <div className="secret" aria-label="Your shielded secret"><code>{savedSecret}</code></div>
+          <div className="row" style={{ marginTop: 10 }}>
+            <button className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(savedSecret); setSecretCopied(true); try { localStorage.setItem(BACKED(actor), "1"); } catch { /* ignore */ } } catch { /* selectable */ } }}>{secretCopied ? "Copied" : "Copy secret"}</button>
+          </div>
+        </Note>
+      ) : null}
       <div className="group private">
         <h3>
           Shielded balance
