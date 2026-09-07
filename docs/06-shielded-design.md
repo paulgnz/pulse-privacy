@@ -5,6 +5,11 @@ the receiver on chain, test it on testnet, and keep the current `xprconf` untouc
 keeps full visibility, so this is still confidential-with-compliance, not anonymity from
 everyone. This page is the design; the milestones are at the end.
 
+> **Revision 2 (2026-09-08, after S5).** The relay model in §0–§3 was built and tested, then
+> replaced: the sender's wallet signs every spend and only the receiver, the amount and the
+> spent notes are hidden. The reasons, the changes and the merge into `xprconf` are in **§8**,
+> which supersedes the relay parts of the sections above. Milestones S7 onward are the plan.
+
 ## 0. One page
 
 Today (`xprconf`) a payment is an account-to-account row: *paul paid alvosec, amount hidden*.
@@ -242,3 +247,95 @@ idea, the key derivation, the auditor key, the dapp shell and the ceremony's pha
 | S6 | review briefs, phase-2 ceremony, `setvk`, then the mainnet decision | | |
 
 Not in scope until S6: fee for RAM, split viewing keys, subtree caching, hosted relay.
+
+## 8. Revision 2: signed sender, sealed receiver (decided 2026-09-08)
+
+### 8.1 Why
+
+The relay build (S1–S5) hid the sender by letting anyone submit the proof. That put the whole
+authority to spend into the spending key, and the spending key lives in the browser. A copy
+of that key, from a shared machine, an extension, or a backup, moves the funds. The current
+product never has that property: nothing moves without the wallet. Paul's call: the wallet
+signs every spend, the chain may see who initiated a transfer, and what must stay hidden is
+who received it and how much.
+
+What this gives up is sender anonymity. A watcher can count and time an account's transfers,
+and if the receiver spends immediately after being paid, timing links the two. That limit is
+stated to users, not solved.
+
+What it gains: custody as today (wallet plus proof, two factors); no relay permission and no
+published key; the sender pays their own CPU and RAM, which removes the spam concern; the
+auditor still opens every note and the chain additionally shows the initiator, which suits the
+committee's compliance model; mobile and passkey wallets behave as they do on the main site.
+
+### 8.2 Threat model, restated
+
+| party | sees |
+|---|---|
+| anyone | that account X spent notes and created notes at time T; deposits and withdrawals with amounts and names; the pool size |
+| the receiver | their own notes, from trial decryption |
+| the auditor | sender key, receiver key, amount and token of every note; names through the registration table |
+| a thief with the browser's key but not the wallet | can read the account's notes; cannot spend them |
+| a thief with the wallet but not the key | can sign but cannot build a proof; cannot spend, and cannot read |
+
+### 8.3 Changes
+
+**Circuit.** The sender's public key `pk = ask·G` becomes a public output (two words) and the
+sender's account name a bound public input, alongside `to`. Public signals go from 38 to 41:
+
+    nf[2] cm[2] epk[2][2] cr[2][4] ca[2][8] senderPk[2] | root vPub tokenPub to sender A[2]
+
+A new phase-2 setup on the same 2^16 phase 1. Everything else in §2.3 stands.
+
+**Contract.** `transfer(sender, proof, publics)` calls `require_auth(sender)`, checks that the
+`senderPk` in the proof equals `keys[sender]`, and stores leaves, outputs and nullifiers with
+`sender` as the RAM payer. Withdrawals pay `to` only when `to == sender` (own account only,
+decided). The relay permission and the public key are removed; there is no unauthenticated
+path. `outputs` stays, so receivers still need no history indexer.
+
+**Dapp.** Send and withdraw go through the wallet again, one signature each, as the main
+site does. The derived key is a viewing-and-proving key: memory only for wallets that can
+re-derive it; a saved copy for passkey wallets, which is now read-only exposure. The relay
+key leaves the bundle. The setup copy changes to "your wallet signs every payment; the chain
+sees that you paid, not whom or how much".
+
+**Receiving.** Registered accounts only, as today: the sender looks the receiver's key up by
+name, and the auditor maps keys back to names.
+
+**Testnet.** `xprshield` is redeployed with the new contract and proving key. The test notes
+there are worthless, so the tables are simply reset (new account state via a fresh `init`
+after clearing, or a fresh account if clearing is awkward).
+
+### 8.4 Merging into `xprconf` (decided in principle)
+
+Once the shielded mode is reviewed and stable on testnet, it is folded into `xprconf` as a
+second mode rather than shipped as a second contract:
+
+- **Tables and actions are added, none changed.** The current tables keep deserialising; the
+  shielded ones (`keys`, `leaves`, `tree`, `roots`, `nullifiers`, `outputs`, `tokens`) sit
+  beside them. Shielded actions get distinct names (`shregister`, `shtransfer`, deposits by
+  memo prefix `shield:` next to `conf:`).
+- **One wallet signature, two keys.** The existing `viewkey` signature derives both the ElGamal
+  key and the shielded key with different hash domains, so setup stays one prompt.
+- **One escrow, two ledgers.** Deposits and withdrawals of each mode are counted separately in
+  the existing `limits` rows and the shielded `tokens` rows; the auditor reconciles both.
+- **Moving between modes** is a public withdrawal followed by a deposit, or a dedicated action
+  that does both in one transaction with the amount visible. Nothing moves between modes
+  privately, by design.
+- **Size.** About 28 KB plus 78 KB of WASM, so roughly 1.1 MB of RAM on mainnet, which the
+  account already holds.
+- **The dapp** gains a "Shielded" tab beside the statement, the auditor page reads both
+  ledgers, and the About page explains the two modes: confidential (names visible, amount
+  hidden) and shielded (receiver and amount hidden).
+
+Until then `xprshield` on testnet is the proving ground and `xprconf` is untouched.
+
+### 8.5 Milestones, revised
+
+| # | milestone | done when |
+|---|---|---|
+| S7 | circuit revision: `senderPk` output, `sender` bound; library, tests, rehearsal setup | `npm run test:shielded` green with 41 public signals |
+| S8 | contract revision: signed `transfer`, key check, sender-paid RAM, relay removed; vert tests including "right key, wrong signer" and "wrong key, right signer" | tests green |
+| S9 | testnet redeploy of `xprshield`, demo script signs as the sender, auditor still names both parties | a transfer on the explorer shows the sender's authorisation and no receiver |
+| S10 | dapp: wallet-signed send and withdraw, relay key removed, copy updated | a tester pays another tester from a phone |
+| S11 | review briefs for the shielded circuit and contract; phase-2 ceremony for the join-split circuit; then the merge into `xprconf` per §8.4 and the mainnet decision | |
