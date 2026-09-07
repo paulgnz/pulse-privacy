@@ -378,7 +378,7 @@ export class ConfidentialClient {
       },
       onProgress
     );
-    actions.push(chain.transferAction(this.session, to, out.transfer, out.newBalance, out.proof));
+    actions.push(chain.transferAction(this.session, to, out.transfer, out.newBalance, out.proof, this.need().pubkey, peer.enc_pubkey, cfg.auditorPubkey));
     onProgress?.(0.97, "waiting for WebAuth signature");
     return chain.broadcast(this.session, actions);
   }
@@ -439,7 +439,7 @@ export class ConfidentialClient {
       { owner: this.actor, nonce: BigInt(row.nonce), amount, oldBalance, oldBalanceCiphertext: folded, keypair: kp, auditorPubkey: cfg.auditorPubkey },
       onProgress
     );
-    actions.push(chain.withdrawAction(this.session, amount, out.newBalance, out.proof));
+    actions.push(chain.withdrawAction(this.session, amount, out.newBalance, out.proof, this.need().pubkey, cfg.auditorPubkey));
     onProgress?.(0.97, "waiting for WebAuth signature");
     return chain.broadcast(this.session, actions);
   }

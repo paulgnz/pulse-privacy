@@ -20,6 +20,10 @@ function loadSdk(): Promise<Sdk> {
 import { APP_NAME, CHAIN_ID, CONTRACT, ENDPOINTS, HYPERION, SYM_RAW, TOKEN_CONTRACT } from "../config";
 import type { ChunkedCiphertext, Ciphertext, Hex, TransferCiphertext } from "./crypto/types";
 import { fromAsset, toAsset } from "./format";
+import { decompressHex, ptHex } from "./crypto/babyjub";
+
+/** keys are stored compressed (32 B) on chain, or full (64 B) for rows registered earlier */
+const fullKey = (h: string): Hex => hx(ptHex(decompressHex(h)));
 
 export interface Session {
   auth: { actor: string; permission: string };
@@ -163,7 +167,7 @@ interface RawAccountRow {
 }
 const parseRow = (r: RawAccountRow): ConfAccountRow => ({
   owner: r.owner,
-  enc_pubkey: hx(r.enc_pubkey),
+  enc_pubkey: fullKey(r.enc_pubkey),
   avail: parsePairSet(r.avail),
   pending: parsePairSet(r.pending),
   pending_count: Number(r.pending_count),
@@ -219,7 +223,7 @@ export async function getConfConfig(): Promise<ConfConfig | null> {
   const c = r.rows[0];
   if (!c) return null;
   return {
-    auditorPubkey: hx(c.auditor_pubkey),
+    auditorPubkey: fullKey(c.auditor_pubkey),
     withdrawGranularity: BigInt(c.withdraw_granularity),
     depositGranularity: BigInt(c.deposit_granularity),
     paused: !!c.paused,
@@ -315,21 +319,23 @@ export function applyPendingAction(s: Session) {
   return { account: CONTRACT, name: "applypending", authorization: auth(s), data: { owner: s.auth.actor, sym: SYM } };
 }
 
-export function transferAction(s: Session, to: string, t: TransferCiphertext, newBalance: ChunkedCiphertext, proof: Hex) {
+/** `ps`/`pr`/`pa`: full sender / receiver / auditor pubkeys; the contract stores them compressed and checks these. */
+export function transferAction(s: Session, to: string, t: TransferCiphertext, newBalance: ChunkedCiphertext, proof: Hex, ps: Hex, pr: Hex, pa: Hex) {
   return {
     account: CONTRACT,
     name: "send",
     authorization: auth(s),
-    data: { from: s.auth.actor, sym: SYM, to, t: transferSetHex(t), b_new: pairSetHex(newBalance), proof: bare(proof) },
+    data: { from: s.auth.actor, sym: SYM, to, ps: bare(ps), pr: bare(pr), pa: bare(pa), t: transferSetHex(t), b_new: pairSetHex(newBalance), proof: bare(proof) },
   };
 }
 
-export function withdrawAction(s: Session, amount: bigint, newBalance: ChunkedCiphertext, proof: Hex) {
+/** `po`/`pa`: full owner / auditor pubkeys (see `transferAction`). */
+export function withdrawAction(s: Session, amount: bigint, newBalance: ChunkedCiphertext, proof: Hex, po: Hex, pa: Hex) {
   return {
     account: CONTRACT,
     name: "withdraw",
     authorization: auth(s),
-    data: { owner: s.auth.actor, quantity: toAsset(amount), b_new: pairSetHex(newBalance), proof: bare(proof) },
+    data: { owner: s.auth.actor, quantity: toAsset(amount), po: bare(po), pa: bare(pa), b_new: pairSetHex(newBalance), proof: bare(proof) },
   };
 }
 

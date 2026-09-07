@@ -43,7 +43,9 @@ await conf.actions.init(["4,XPR", "eosio.token", eg.ptHex(auditor.P), encodeVk(V
 await conf.actions.register(["alice", "4,XPR", eg.ptHex(alice.P)]).send("alice@active");
 await conf.actions.register(["bob", "4,XPR", eg.ptHex(bob.P)]).send("bob@active");
 await expectToThrow(conf.actions.register(["alice", "4,XPR", eg.ptHex(alice.P)]).send("alice@active"), "eosio_assert: already registered");
-lap("init + register");
+const regRow = conf.tables.accounts(symScope()).getTableRow(nameToBigInt("alice"));
+if (regRow.enc_pubkey.length !== 64 || eg.toObj(eg.decompressHex(regRow.enc_pubkey))[0] !== eg.toObj(alice.P)[0]) throw new Error("stored pubkey is not the 32-byte compressed form");
+lap("init + register (keys stored compressed, 32 B)");
 
 // accounts are scoped by the symbol raw value (precision in the low byte, code above it)
 function symScope() {
@@ -75,11 +77,13 @@ let { proof } = await snarkjs.groth16.fullProve(wit.input, WASM, ZKEY);
 lap("transfer proof generated");
 const tHex = eg.tHex(wit.T);
 const bnewHex = eg.ctHex(wit.Bnew);
-await conf.actions.send(["alice", "4,XPR", "bob", tHex, bnewHex, encodeProof(proof)]).send("alice@active");
+await conf.actions.send(["alice", "4,XPR", "bob", eg.ptHex(alice.P), eg.ptHex(bob.P), eg.ptHex(auditor.P), tHex, bnewHex, encodeProof(proof)]).send("alice@active");
 lap("send accepted on chain");
 
 // replay is rejected (nonce and balance moved on)
-await expectToThrow(conf.actions.send(["alice", "4,XPR", "bob", tHex, bnewHex, encodeProof(proof)]).send("alice@active"), "eosio_assert: invalid proof");
+await expectToThrow(conf.actions.send(["alice", "4,XPR", "bob", eg.ptHex(alice.P), eg.ptHex(bob.P), eg.ptHex(auditor.P), tHex, bnewHex, encodeProof(proof)]).send("alice@active"), "eosio_assert: invalid proof");
+// a wrong key hint is rejected before any proof work
+await expectToThrow(conf.actions.send(["alice", "4,XPR", "bob", eg.ptHex(bob.P), eg.ptHex(bob.P), eg.ptHex(auditor.P), tHex, bnewHex, encodeProof(proof)]).send("alice@active"), "eosio_assert: ps does not match the sender's registered key");
 lap("replay rejected");
 
 a = acct("alice");
@@ -99,7 +103,7 @@ const bVold = [eg.bsgs32(eg.decryptPoint(bBold[0].C, bBold[0].D, bob.s)), eg.bsg
 const wwit = eg.buildWithdrawWitness({ owner: bob, auditorP: auditor.P, bold: bBold, voldChunks: bVold, v: units(1000), nonce: BigInt(b.nonce), ownerName: nameToBigInt("bob") });
 ({ proof } = await snarkjs.groth16.fullProve(wwit.input, WASM, ZKEY));
 lap("withdraw proof generated");
-await conf.actions.withdraw(["bob", "1000.0000 XPR", eg.ctHex(wwit.Bnew), encodeProof(proof)]).send("bob@active");
+await conf.actions.withdraw(["bob", "1000.0000 XPR", eg.ptHex(bob.P), eg.ptHex(auditor.P), eg.ctHex(wwit.Bnew), encodeProof(proof)]).send("bob@active");
 const bobPublic = token.tables.accounts(nameToBigInt("bob")).getTableRows();
 if (!bobPublic.some((r) => r.balance === "1000.0000 XPR")) throw new Error(`bob public balance: ${JSON.stringify(bobPublic)}`);
 b = acct("bob");
@@ -107,7 +111,7 @@ if (eg.decrypt64(eg.ctFromHex(b.avail), bob.s) !== units(234)) throw new Error("
 lap("withdraw: bob has 1,000.0000 XPR public and 234 XPR confidential");
 
 // --- rejections ---
-await expectToThrow(conf.actions.withdraw(["bob", "12.3456 XPR", eg.ctHex(wwit.Bnew), encodeProof(proof)]).send("bob@active"), "eosio_assert: withdrawal must be a multiple of the granularity");
+await expectToThrow(conf.actions.withdraw(["bob", "12.3456 XPR", eg.ptHex(bob.P), eg.ptHex(auditor.P), eg.ctHex(wwit.Bnew), encodeProof(proof)]).send("bob@active"), "eosio_assert: withdrawal must be a multiple of the granularity");
 lap("granularity enforced (12.3456 XPR rejected)");
 let overdraft = null;
 try { eg.buildWithdrawWitness({ owner: bob, auditorP: auditor.P, bold: eg.ctFromHex(b.avail), voldChunks: [units(234), 0n], v: units(300), nonce: 1n, ownerName: 1n }); } catch (e) { overdraft = e.message; }

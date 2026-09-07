@@ -12,7 +12,7 @@ import {
 } from "proton-tsc";
 import { sendTransferTokens } from "proton-tsc/token";
 import { groth16Verify } from "./groth16";
-import { Pt, add, mulG32, onCurve, u64Word } from "./babyjub";
+import { Pt, add, compress, keyMatches, mulG32, onCurve, u64Word } from "./babyjub";
 
 // xpr.conf — confidential token (testnet build, design doc §4).
 //
@@ -113,7 +113,7 @@ class XprConf extends Contract {
     check(vk.length == 64 + 3 * 128 + 64 * 42, "vk length must match 41 public inputs");
     const existing = this.configs.get(sym.raw());
     check(existing == null, "already configured");
-    this.configs.store(new Config(sym.raw(), token_contract, auditor_pubkey, vk, withdraw_granularity, deposit_granularity, false), this.receiver);
+    this.configs.store(new Config(sym.raw(), token_contract, compress(Pt.fromBytes(auditor_pubkey, 0)), vk, withdraw_granularity, deposit_granularity, false), this.receiver);
   }
 
   @action("configure")
@@ -121,7 +121,7 @@ class XprConf extends Contract {
     requireAuth(this.receiver);
     const c = this.configOf(sym);
     check(auditor_pubkey.length == 64 && onCurve(Pt.fromBytes(auditor_pubkey, 0)), "auditor pubkey not on curve");
-    c.auditor_pubkey = auditor_pubkey;
+    c.auditor_pubkey = compress(Pt.fromBytes(auditor_pubkey, 0));
     c.withdraw_granularity = withdraw_granularity;
     c.deposit_granularity = deposit_granularity;
     c.paused = paused;
@@ -159,7 +159,10 @@ class XprConf extends Contract {
     check(note.length <= 256, "note too long");
   }
 
-  /** publish an encryption pubkey (P = s^-1·H). On-curve check only in v0 (see README). */
+  /**
+   * Publish an encryption pubkey (P = s^-1·H), given as the full 64-byte point; stored
+   * compressed (32 B). On-curve check only in v0 (see README).
+   */
   @action("register")
   register(owner: Name, sym: Symbol, enc_pubkey: u8[]): void {
     requireAuth(owner);
@@ -170,7 +173,7 @@ class XprConf extends Contract {
     check(onCurve(P) && !P.eq(Pt.inf()), "pubkey not on curve");
     const accounts = this.accountsOf(sym.raw());
     check(accounts.get(owner.N) == null, "already registered");
-    accounts.store(new Account(owner, enc_pubkey, zeroCt(), zeroCt(), 0, 0), owner);
+    accounts.store(new Account(owner, compress(P), zeroCt(), zeroCt(), 0, 0), owner);
   }
 
   /** fold pending credits into the available balance (homomorphic add, no proof) */
@@ -217,8 +220,12 @@ class XprConf extends Contract {
 
   // ---------------------------------------------------------------- confidential send
 
+  /**
+   * `ps`, `pr`, `pa` are the full 64-byte sender / receiver / auditor pubkeys; the contract
+   * stores keys compressed and only checks the supplied points against them (no sqrt on chain).
+   */
   @action("send")
-  send(from: Name, sym: Symbol, to: Name, t: u8[], b_new: u8[], proof: u8[]): void {
+  send(from: Name, sym: Symbol, to: Name, ps: u8[], pr: u8[], pa: u8[], t: u8[], b_new: u8[], proof: u8[]): void {
     requireAuth(from);
     const c = this.configOf(sym);
     check(!c.paused, "paused");
@@ -233,8 +240,11 @@ class XprConf extends Contract {
     check(rAcc != null, "receiver not registered");
     const s = sAcc!;
     const r = rAcc!;
+    check(keyMatches(s.enc_pubkey, ps), "ps does not match the sender's registered key");
+    check(keyMatches(r.enc_pubkey, pr), "pr does not match the receiver's registered key");
+    check(keyMatches(c.auditor_pubkey, pa), "pa does not match the auditor key");
 
-    const inputs = this.publicInputs(s.enc_pubkey, r.enc_pubkey, c.auditor_pubkey, s.avail, b_new, t, s.nonce, from.N, to.N);
+    const inputs = this.publicInputs(ps, pr, pa, s.avail, b_new, t, s.nonce, from.N, to.N);
     check(groth16Verify(c.vk, proof, inputs), "invalid proof");
 
     // sender: balance replaced by the proven re-encryption
@@ -251,8 +261,9 @@ class XprConf extends Contract {
 
   // ---------------------------------------------------------------- withdraw
 
+  /** `po` / `pa`: full 64-byte owner and auditor pubkeys (see `send`). */
   @action("withdraw")
-  withdraw(owner: Name, quantity: Asset, b_new: u8[], proof: u8[]): void {
+  withdraw(owner: Name, quantity: Asset, po: u8[], pa: u8[], b_new: u8[], proof: u8[]): void {
     requireAuth(owner);
     const c = this.configOf(quantity.symbol);
     check(!c.paused, "paused");
@@ -265,13 +276,15 @@ class XprConf extends Contract {
     const acc = accounts.get(owner.N);
     check(acc != null, "not registered");
     const a = acc!;
+    check(keyMatches(a.enc_pubkey, po), "po does not match your registered key");
+    check(keyMatches(c.auditor_pubkey, pa), "pa does not match the auditor key");
 
     // public "transfer" ciphertexts: C_k = v_k·G, handles = identity (r_T = 0)
     const ch = chunks(v);
     const inf = infBytes();
     const t = mulG32(ch[0]).toBytes().concat(inf).concat(inf).concat(inf)
       .concat(mulG32(ch[1]).toBytes()).concat(inf).concat(inf).concat(inf);
-    const inputs = this.publicInputs(a.enc_pubkey, a.enc_pubkey, c.auditor_pubkey, a.avail, b_new, t, a.nonce, owner.N, owner.N);
+    const inputs = this.publicInputs(po, po, pa, a.avail, b_new, t, a.nonce, owner.N, owner.N);
     check(groth16Verify(c.vk, proof, inputs), "invalid proof");
 
     a.avail = b_new;

@@ -168,3 +168,49 @@ export function ptFromHex(h: string, off = 0): Pt {
   const s = h.replace(/^0x/i, "").toLowerCase();
   return [BigInt("0x" + s.slice(off, off + 64)), BigInt("0x" + s.slice(off + 64, off + 128))];
 }
+
+// --- compressed points (32 bytes: y big-endian, bit 255 = x > (p-1)/2) ---------------------
+function fpow(b: bigint, e: bigint, m = P): bigint {
+  let r = 1n; b %= m;
+  while (e > 0n) { if (e & 1n) r = (r * b) % m; b = (b * b) % m; e >>= 1n; }
+  return r;
+}
+/** Tonelli–Shanks square root mod P (P − 1 = 2^28 · t). Returns null if `n` is not a square. */
+export function fsqrt(n: bigint): bigint | null {
+  n %= P;
+  if (n === 0n) return 0n;
+  if (fpow(n, (P - 1n) / 2n) !== 1n) return null;
+  let q = P - 1n, sPow = 0n;
+  while ((q & 1n) === 0n) { q >>= 1n; sPow++; }
+  let z = 2n;
+  while (fpow(z, (P - 1n) / 2n) !== P - 1n) z++;
+  let c = fpow(z, q), r = fpow(n, (q + 1n) / 2n), t = fpow(n, q), m = sPow;
+  while (t !== 1n) {
+    let i = 0n, tt = t;
+    while (tt !== 1n) { tt = (tt * tt) % P; i++; }
+    const b = fpow(c, 1n << (m - i - 1n));
+    r = (r * b) % P; c = (b * b) % P; t = (t * c) % P; m = i;
+  }
+  return r;
+}
+export function compressHex(p: Pt): string {
+  const half = (P - 1n) / 2n;
+  return w32(p[0] > half ? p[1] | (1n << 255n) : p[1]);
+}
+/** Accepts the 32-byte compressed form or the 64-byte full form (bare or 0x hex). */
+export function decompressHex(h: string): Pt {
+  h = h.replace(/^0x/i, "");
+  if (h.length === 128) return ptFromHex(h);
+  if (h.length !== 64) throw new Error("bad point encoding");
+  const v = BigInt("0x" + h);
+  const sign = (v >> 255n) & 1n;
+  const y = v & ((1n << 255n) - 1n);
+  const y2 = fmul(y, y);
+  // x^2 = (1 - y^2) / (a - d y^2)
+  const x2 = fmul(fsub(1n, y2), finv(fsub(A, fmul(D, y2))));
+  let x = fsqrt(x2);
+  if (x === null) throw new Error("not a curve point");
+  const half = (P - 1n) / 2n;
+  if ((x > half ? 1n : 0n) !== sign) x = fsub(0n, x);
+  return [x, y];
+}

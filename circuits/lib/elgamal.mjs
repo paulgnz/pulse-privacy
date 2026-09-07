@@ -201,10 +201,34 @@ export const tHex = (T) => T.map((c) => ptHex(c.C) + ptHex(c.D.s) + ptHex(c.D.r)
 export const tReceiverFromHex = (h) => [0, 1].map((k) => ({ C: ptFromHex(h, k * 512), D: ptFromHex(h, k * 512 + 256) }));
 export const tAuditorFromHex = (h) => [0, 1].map((k) => ({ C: ptFromHex(h, k * 512), D: ptFromHex(h, k * 512 + 384) }));
 
+/** 32-byte compressed point hex: y big-endian with bit 255 = (x > (p-1)/2). */
+export function compressHex(p) {
+  const [x, y] = toObj(p);
+  const half = (F.p - 1n) / 2n;
+  const v = x > half ? y | (1n << 255n) : y;
+  return v.toString(16).padStart(64, "0");
+}
+export function decompressHex(h) {
+  h = h.replace(/^0x/, "");
+  if (h.length === 128) return ptFromHex(h);
+  const v = BigInt("0x" + h);
+  const sign = (v >> 255n) & 1n;
+  const y = F.e(v & ((1n << 255n) - 1n));
+  const y2 = F.square(y);
+  const num = F.sub(F.one, y2);
+  const den = F.sub(bj.A, F.mul(bj.D, y2)); // x^2 = (1 - y^2) / (a - d y^2)
+  let x = F.sqrt(F.div(num, den));
+  if (x === null || x === undefined) throw new Error("not a point");
+  const xo = F.toObject(x);
+  const xIsHigh = xo > (F.p - 1n) / 2n ? 1n : 0n;
+  if (xIsHigh !== sign) x = F.neg(x);
+  return [x, y];
+}
+
 const api = {
   init, keygen, encrypt, encryptPublic, decryptPoint, decrypt64, bsgs32, buildBabyTable, ctAdd,
   split64, join64, randScalar, toObj, toPt, buildTransferWitness, buildWithdrawWitness,
-  ptHex, ptFromHex, ctHex, ctFromHex, tHex, tReceiverFromHex, tAuditorFromHex,
+  ptHex, ptFromHex, ctHex, ctFromHex, tHex, tReceiverFromHex, tAuditorFromHex, compressHex, decompressHex,
   get F() { return F; }, get G() { return G; }, get H() { return H; }, get INF() { return INF; }, get bj() { return bj; },
 };
 export default api;

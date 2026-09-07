@@ -124,3 +124,29 @@ export function mulG32(v: u64): Pt {
 export function u64Word(v: u64): u8[] {
   return U256.fromU64(v).toBytes(true);
 }
+
+/**
+ * Compressed point: 32 bytes = y (big-endian) with bit 255 set when x > (p-1)/2.
+ * Decompression needs a square root (expensive on this field), so the contract never
+ * decompresses: actions carry the full point and the contract checks it against the stored form.
+ */
+export function compress(P: Pt): u8[] {
+  const y = P.y.toBytes(true);
+  const half = (p() - U256.One) >> 1;
+  if (P.x > half) y[0] = y[0] | 0x80;
+  return y;
+}
+
+function bytesEq(a: u8[], b: u8[]): bool {
+  if (a.length != b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] != b[i]) return false;
+  return true;
+}
+
+/** `stored` is 32 B (compressed) or 64 B (legacy full); `full` is the 64 B point supplied by the action. */
+export function keyMatches(stored: u8[], full: u8[]): bool {
+  if (full.length != 64) return false;
+  if (stored.length == 64) return bytesEq(stored, full);
+  if (stored.length != 32) return false;
+  return bytesEq(compress(Pt.fromBytes(full, 0)), stored);
+}

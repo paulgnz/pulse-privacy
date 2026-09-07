@@ -92,7 +92,7 @@ if (cmd === "init") {
   const wit = eg.buildTransferWitness({ sender: K.alice, receiverP: K.bob.P, auditorP: K.auditor.P, bold, voldChunks: vold, v: units(arg || 1234), nonce: BigInt(a.nonce), senderName: nameToU64(ALICE), receiverName: nameToU64(BOB) });
   const { proof } = await snarkjs.groth16.fullProve(wit.input, CB("transfer_js/transfer.wasm"), CB("transfer_final.zkey"));
   console.log(`proof generated in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-  const out = action(CONTRACT, "send", { from: ALICE, sym: SYM, to: BOB, t: eg.tHex(wit.T), b_new: eg.ctHex(wit.Bnew), proof: encodeProof(proof) }, ALICE);
+  const out = action(CONTRACT, "send", { from: ALICE, sym: SYM, to: BOB, ps: eg.ptHex(K.alice.P), pr: eg.ptHex(K.bob.P), pa: eg.ptHex(K.auditor.P), t: eg.tHex(wit.T), b_new: eg.ctHex(wit.Bnew), proof: encodeProof(proof) }, ALICE);
   console.log("send tx", txId(out), "cpu", cpuOf(out), "µs");
 } else if (cmd === "withdraw") {
   const b = await acct(BOB);
@@ -100,7 +100,7 @@ if (cmd === "init") {
   const vold = [eg.bsgs32(eg.decryptPoint(bold[0].C, bold[0].D, K.bob.s)), eg.bsgs32(eg.decryptPoint(bold[1].C, bold[1].D, K.bob.s))];
   const wit = eg.buildWithdrawWitness({ owner: K.bob, auditorP: K.auditor.P, bold, voldChunks: vold, v: units(arg || 1000), nonce: BigInt(b.nonce), ownerName: nameToU64(BOB) });
   const { proof } = await snarkjs.groth16.fullProve(wit.input, CB("transfer_js/transfer.wasm"), CB("transfer_final.zkey"));
-  const out = action(CONTRACT, "withdraw", { owner: BOB, quantity: asset(units(arg || 1000)), b_new: eg.ctHex(wit.Bnew), proof: encodeProof(proof) }, BOB);
+  const out = action(CONTRACT, "withdraw", { owner: BOB, quantity: asset(units(arg || 1000)), po: eg.ptHex(K.bob.P), pa: eg.ptHex(K.auditor.P), b_new: eg.ctHex(wit.Bnew), proof: encodeProof(proof) }, BOB);
   console.log("withdraw tx", txId(out), "cpu", cpuOf(out), "µs");
 } else if (cmd === "balances") {
   await balances();
