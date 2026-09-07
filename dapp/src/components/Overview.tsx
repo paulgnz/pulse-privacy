@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ConfState } from "../lib/client";
+import { EXPLORER } from "../config";
 import { Amount } from "./Amount";
 import { Deposit } from "./Deposit";
 import { Send } from "./Send";
@@ -57,9 +58,9 @@ export const Overview = ({
       return false;
     }
   });
-  const [notice, setNotice] = useState<string | null>(null);
-  const done = (msg: string) => {
-    setNotice(msg);
+  const [notice, setNotice] = useState<{ msg: string; txid?: string } | null>(null);
+  const done = (msg: string, txid?: string) => {
+    setNotice({ msg, txid: txid && txid !== "mock" ? txid : undefined });
     setForm(null);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -88,7 +89,15 @@ export const Overview = ({
       {notice ? (
         <Note level="ok">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 16 }}>
-            <span>{notice}</span>
+            <span>
+              {notice.msg}
+              {notice.txid ? (
+                <>
+                  {" "}
+                  <a href={`${EXPLORER}/transaction/${notice.txid}`} target="_blank" rel="noreferrer">Transaction {notice.txid.slice(0, 12)}</a>.
+                </>
+              ) : null}
+            </span>
             <button className="textbtn quiet" onClick={() => setNotice(null)}>Dismiss</button>
           </div>
         </Note>

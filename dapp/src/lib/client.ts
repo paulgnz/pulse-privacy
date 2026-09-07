@@ -318,8 +318,8 @@ export class ConfidentialClient {
       await this.register();
       return this.deposit(amount);
     }
-    const existing = await chain.getConfAccount(this.actor, this.token);
-    if (existing) throw new Error(`already registered for ${this.token.code}`);
+    // no network call between the tap and the signing request: on a phone the wallet hand-off
+    // has to happen inside the tap, and the contract rejects a duplicate registration itself
     return chain.broadcast(this.session, [chain.registerAction(this.session, this.token, kp.pubkey), chain.depositAction(this.session, this.token, amount)]);
   }
 

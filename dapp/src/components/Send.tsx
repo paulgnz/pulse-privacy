@@ -19,7 +19,7 @@ export const Send = ({
   tokens?: { code: string }[];
   onSelectToken?: (code: string) => void;
   /** success: the parent shows the confirmation at the top of the statement and closes the form */
-  onDone?: (msg: string) => void;
+  onDone?: (msg: string, txid?: string) => void;
 }) => {
   // pay-me link: ?to=<account> opens the form with the recipient filled in
   const [to, setTo] = useState(() => {
@@ -50,8 +50,8 @@ export const Send = ({
     setProg({ f: 0, s: "Starting" });
     try {
       const tx = await onSend(name, parsed, (f, s) => setProg({ f, s }));
-      const done = `Sent ${fmtUnits(parsed, T)} ${T.code} to ${name}. Transaction ${tx.slice(0, 12)}.`;
-      if (onDone) onDone(done); else setResult({ ok: true, msg: done });
+      const done = `Sent ${fmtUnits(parsed, T)} ${T.code} to ${name}.`;
+      if (onDone) onDone(done, tx); else setResult({ ok: true, msg: done });
       setAmt("");
     } catch (e) {
       setResult({ ok: false, msg: `Not sent. ${(e as Error).message}` });

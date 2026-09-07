@@ -22,7 +22,7 @@ export const Deposit = ({
   tokens?: { code: string }[];
   onSelectToken?: (code: string) => void;
   /** success: the parent shows the confirmation at the top of the statement and closes the form */
-  onDone?: (msg: string) => void;
+  onDone?: (msg: string, txid?: string) => void;
 }) => {
   const [amt, setAmt] = useState("");
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -44,8 +44,8 @@ export const Deposit = ({
     try {
       setPending(true);
       const tx = await onDeposit(parsed);
-      const done = `Deposited ${fmtUnits(parsed, T)} ${T.code}. It lands in your pending box. Transaction ${tx.slice(0, 12)}.`;
-      if (onDone) onDone(done); else setResult({ ok: true, msg: done });
+      const done = `Deposited ${fmtUnits(parsed, T)} ${T.code}. It lands in your pending box.`;
+      if (onDone) onDone(done, tx); else setResult({ ok: true, msg: done });
       setAmt("");
     } catch (e) {
       setResult({ ok: false, msg: `Not deposited. ${(e as Error).message}` });

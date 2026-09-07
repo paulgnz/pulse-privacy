@@ -20,7 +20,7 @@ export const Withdraw = ({
   tokens?: { code: string }[];
   onSelectToken?: (code: string) => void;
   /** success: the parent shows the confirmation at the top of the statement and closes the form */
-  onDone?: (msg: string) => void;
+  onDone?: (msg: string, txid?: string) => void;
 }) => {
   const [amt, setAmt] = useState("");
   const [prog, setProg] = useState<{ f: number; s: string } | null>(null);
@@ -49,8 +49,8 @@ export const Withdraw = ({
     setProg({ f: 0, s: "Starting" });
     try {
       const tx = await onWithdraw(parsed, (f, s) => setProg({ f, s }));
-      const done = `Withdrew ${fmtUnits(parsed, T)} ${T.code} to your public balance. Transaction ${tx.slice(0, 12)}.`;
-      if (onDone) onDone(done); else setResult({ ok: true, msg: done });
+      const done = `Withdrew ${fmtUnits(parsed, T)} ${T.code} to your public balance.`;
+      if (onDone) onDone(done, tx); else setResult({ ok: true, msg: done });
       setAmt("");
       setAck(false);
     } catch (e) {
