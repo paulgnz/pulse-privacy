@@ -3,8 +3,8 @@ import type { EdgeCheck } from "../lib/privacy";
 import { fmtUnits, zeroPlaceholder } from "../lib/format";
 import { XPR, type Token } from "../lib/token";
 
-export const Field = ({ label, hint, error, children }: { label: string; hint?: ReactNode; error?: ReactNode; children: ReactNode }) => (
-  <div className="field">
+export const Field = ({ label, hint, error, children, className }: { label: string; hint?: ReactNode; error?: ReactNode; children: ReactNode; className?: string }) => (
+  <div className={`field ${className ?? ""}`}>
     <label>{label}</label>
     {children}
     {error ? <div className="hint error">{error}</div> : hint ? <div className="hint">{hint}</div> : null}

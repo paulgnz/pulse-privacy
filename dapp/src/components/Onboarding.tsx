@@ -407,7 +407,7 @@ const Key = (p: OnboardingProps) => {
           </>
         ) : (
           <Field label="Recovery phrase, for restoring this key on another device" hint="Seven random words. Copy or write them down; they restore the key on any device. The phrase itself is never stored anywhere, so nobody can reset it for you.">
-            <div className="secret" aria-label="Your recovery phrase"><code>{pass1}</code></div>
+            <div className="secret words" aria-label="Your recovery phrase"><code>{pass1}</code></div>
             <div className="row" style={{ margin: "12px 0 6px", gap: 14 }}>
               <button className="btn secondary" onClick={copyPhrase}>{phraseCopied ? "Copied" : "Copy recovery phrase"}</button>
               <button className="textbtn quiet" onClick={() => { setPass1(generatePassphrase()); setPhraseCopied(false); }}>New phrase</button>
