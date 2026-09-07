@@ -1,15 +1,16 @@
 // Poseidon over the bn254 scalar field with circomlib's parameters, in the optimised form
 // circomlibjs uses (`poseidon_opt.js`): dense MDS in the full rounds, a sparse matrix in each
 // partial round. Bit-for-bit equal to circomlib's `Poseidon(n)` template and to circomlibjs.
-// Supported widths: t = 3 (two inputs: Merkle nodes, nullifiers, keys) and t = 7 (six inputs:
+// Supported widths: t = 3 (two inputs: Merkle nodes, nullifiers, keys) and t = 6 (five inputs:
 // note commitments).
-import { C3, C7, M3, M7, P3, P7, S3, S7, ZEROS } from "./poseidon_consts";
+import { C3, C6, M3, M6, P3, P6, S3, S6, ZEROS } from "./poseidon_consts";
+import { check } from "proton-tsc";
 import { Limbs, add, addConst, copy, mulConst, pow5, zero } from "./fr";
 
 const N_ROUNDS_F: i32 = 8;
 
 function nRoundsP(t: i32): i32 {
-  return t == 3 ? 57 : 63;
+  return t == 3 ? 57 : 60;
 }
 
 // state = M^T · state, i.e. new[i] = Σ_j M[j][i]·state[j], matrices stored row-major j then i.
@@ -29,10 +30,11 @@ function mixDense(state: StaticArray<Limbs>, M: u32[], t: i32, acc: StaticArray<
 /** Poseidon of `inputs` (t − 1 field elements in Montgomery form); returns the first state word */
 export function poseidon(inputs: StaticArray<Limbs>): Limbs {
   const t = inputs.length + 1;
-  const C = t == 3 ? C3 : C7;
-  const S = t == 3 ? S3 : S7;
-  const M = t == 3 ? M3 : M7;
-  const P = t == 3 ? P3 : P7;
+  check(t == 3 || t == 6, "Poseidon width");
+  const C = t == 3 ? C3 : C6;
+  const S = t == 3 ? S3 : S6;
+  const M = t == 3 ? M3 : M6;
+  const P = t == 3 ? P3 : P6;
   const nP = nRoundsP(t);
 
   const state = new StaticArray<Limbs>(t);

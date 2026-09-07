@@ -2,18 +2,19 @@ pragma circom 2.1.0;
 
 // Shielded join-split (docs/06-shielded-design.md §2.3): two input notes, two output notes.
 //
-// Note: (pk, v, token, rho, r); cm = Poseidon(pk.x, pk.y, v, token, rho, r).
+// Note: (pk, v, token, r); cm = Poseidon(pk.x, pk.y, v, token, r).
 // Keys: pk = ask·B8 (circomlib Base8), nk = Poseidon(ask, 0), nf = Poseidon(nk, leafIndex).
 // Encryption to a point P with ephemeral esk: k = Poseidon((esk·P).x, (esk·P).y),
 // c[m] = plain[m] + Poseidon(k, m).
 //
 // Revision 2 (docs/06 §8): the sender's wallet signs the action, so the sender's key is a
 // public output the contract checks against the sender's registration, and the sender's
-// account name is bound. Value and token pack into one word (v + token·2^64); the auditor
-// ciphertext no longer carries the sender key (the action names the sender).
+// account name is bound. Revision 3 trims the data: no `rho` (nullifiers use the leaf index),
+// value and token packed into one word (v + token·2^64), and the auditor ciphertext carries
+// the receiver key as (y, parity of x) with the parity bit at 2^72 of the packed word.
 //
 // Public signals, in snarkjs order (outputs first, then public inputs):
-//   nf[2] cm[2] epk[2][2] cr[2][3] ca[2][5] senderPk[2]     (outputs, 26)
+//   nf[2] cm[2] epk[2][2] cr[2][2] ca[2][3] senderPk[2]     (outputs, 20)
 //   root vPub tokenPub to sender A[2]                       (public inputs, 7)
 //
 // Input 0 is always a real note. Input 1 may be disabled (enabled1 = 0): then it carries no
@@ -28,16 +29,14 @@ template NoteCommitment() {
     signal input pk[2];
     signal input v;
     signal input token;
-    signal input rho;
     signal input r;
     signal output cm;
-    component h = Poseidon(6);
+    component h = Poseidon(5);
     h.inputs[0] <== pk[0];
     h.inputs[1] <== pk[1];
     h.inputs[2] <== v;
     h.inputs[3] <== token;
-    h.inputs[4] <== rho;
-    h.inputs[5] <== r;
+    h.inputs[4] <== r;
     cm <== h.out;
 }
 
@@ -101,14 +100,12 @@ template JoinSplit(depth) {
     signal input ask;
     signal input inV[2];
     signal input inToken[2];
-    signal input inRho[2];
     signal input inR[2];
     signal input inIndex[2];
     signal input inSiblings[2][depth];
     signal input enabled1;
     signal input outPk[2][2];
     signal input outV[2];
-    signal input outRho[2];
     signal input outR[2];
     signal input esk[2];
 
@@ -124,8 +121,8 @@ template JoinSplit(depth) {
     signal output nf[2];
     signal output cm[2];
     signal output epk[2][2];
-    signal output cr[2][3];
-    signal output ca[2][5];
+    signal output cr[2][2];
+    signal output ca[2][3];
     signal output senderPk[2];
 
     // 1. keys
@@ -157,7 +154,6 @@ template JoinSplit(depth) {
         inCm[i].pk[1] <== pk.Ay;
         inCm[i].v <== inV[i];
         inCm[i].token <== inToken[i];
-        inCm[i].rho <== inRho[i];
         inCm[i].r <== inR[i];
 
         inBits[i] = Num2Bits(depth);
@@ -203,7 +199,9 @@ template JoinSplit(depth) {
     component sa[2];
     component er[2];
     component ea[2];
+    component xbits[2];
     signal packed[2];
+    signal packedA[2];
     for (var j = 0; j < 2; j++) {
         outCheck[j] = BabyCheck();
         outCheck[j].x <== outPk[j][0];
@@ -214,7 +212,6 @@ template JoinSplit(depth) {
         outCm[j].pk[1] <== outPk[j][1];
         outCm[j].v <== outV[j];
         outCm[j].token <== token;
-        outCm[j].rho <== outRho[j];
         outCm[j].r <== outR[j];
         cm[j] <== outCm[j].cm;
 
@@ -228,27 +225,28 @@ template JoinSplit(depth) {
         sr[j].p[0] <== outPk[j][0];
         sr[j].p[1] <== outPk[j][1];
         packed[j] <== outV[j] + token * 18446744073709551616;
-        er[j] = Encrypt(3);
+        er[j] = Encrypt(2);
         er[j].shared[0] <== sr[j].out[0];
         er[j].shared[1] <== sr[j].out[1];
         er[j].plain[0] <== packed[j];
-        er[j].plain[1] <== outRho[j];
-        er[j].plain[2] <== outR[j];
-        for (var m = 0; m < 3; m++) cr[j][m] <== er[j].c[m];
+        er[j].plain[1] <== outR[j];
+        for (var m = 0; m < 2; m++) cr[j][m] <== er[j].c[m];
 
         sa[j] = MulPoint();
         sa[j].e <== esk[j];
         sa[j].p[0] <== A[0];
         sa[j].p[1] <== A[1];
-        ea[j] = Encrypt(5);
+        // the receiver key travels as (y, parity of x): parity bit at 2^72 of the packed word
+        xbits[j] = Num2Bits(254);
+        xbits[j].in <== outPk[j][0];
+        packedA[j] <== packed[j] + xbits[j].out[0] * 4722366482869645213696;
+        ea[j] = Encrypt(3);
         ea[j].shared[0] <== sa[j].out[0];
         ea[j].shared[1] <== sa[j].out[1];
-        ea[j].plain[0] <== outPk[j][0];
-        ea[j].plain[1] <== outPk[j][1];
-        ea[j].plain[2] <== packed[j];
-        ea[j].plain[3] <== outRho[j];
-        ea[j].plain[4] <== outR[j];
-        for (var m = 0; m < 5; m++) ca[j][m] <== ea[j].c[m];
+        ea[j].plain[0] <== outPk[j][1];
+        ea[j].plain[1] <== packedA[j];
+        ea[j].plain[2] <== outR[j];
+        for (var m = 0; m < 3; m++) ca[j][m] <== ea[j].c[m];
     }
 }
 

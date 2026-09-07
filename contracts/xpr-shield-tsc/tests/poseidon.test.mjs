@@ -46,17 +46,33 @@ for (let i = 0; i < 5; i++) {
 console.log("ok  t=3 matches circomlibjs on 5 random inputs");
 
 for (let i = 0; i < 3; i++) {
-  const xs = [rnd(), rnd(), rnd(), rnd(), rnd(), rnd()];
+  const xs = [rnd(), rnd(), rnd(), rnd(), rnd()];
   const got = await run("hash", { inputs: xs.map(hex).join("") });
-  assert.equal(got, hex(P(...xs)), `t=7 random ${i}`);
+  assert.equal(got, hex(P(...xs)), `t=6 random ${i}`);
 }
-console.log("ok  t=7 matches circomlibjs on 3 random inputs");
+console.log("ok  t=6 matches circomlibjs on 3 random inputs");
 
 // edge: the largest canonical element and zero
 const edge = await run("hash", { inputs: hex(r - 1n) + hex(0n) });
 assert.equal(edge, hex(P(r - 1n, 0n)), "edge (r-1, 0)");
 await assert.rejects(run("hash", { inputs: hex(r) + hex(0n) }), /not canonical/, "non-canonical input refused");
 console.log("ok  edge values and the canonical check");
+
+// point decompression against the JS library
+{
+  const N = (await import("../../../circuits/lib/notes.mjs")).default;
+  await N.init();
+  for (let i = 0; i < 3; i++) {
+    const k = N.keygen();
+    const w = N.compressPoint(k.pk);
+    const got = await run("decomp", { w: hex(w) });
+    assert.equal(got, hex(k.pk[0]) + hex(k.pk[1]), `decompress ${i}`);
+  }
+  let bad = 2n;
+  for (;;) { try { N.xFromY(bad, 0n); bad += 1n; } catch { break; } }
+  await assert.rejects(run("decomp", { w: hex(bad) }), /not a curve point/, "non-point refused");
+  console.log("ok  point decompression matches the JS library; non-point refused");
+}
 
 // tree insertion: pair leaf, then 20 levels with zero-chain siblings
 const cm1 = rnd(), cm2 = rnd(), index = 5;

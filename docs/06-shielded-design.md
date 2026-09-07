@@ -283,11 +283,22 @@ committee's compliance model; mobile and passkey wallets behave as they do on th
 **Circuit.** The sender's public key `pk = ask·G` becomes a public output (two words) and the
 sender's account name a bound public input, alongside `to`. Public signals go from 38 to 41:
 
-    nf[2] cm[2] epk[2][2] cr[2][4] ca[2][8] senderPk[2] | root vPub tokenPub to sender A[2]
+    nf[2] cm[2] epk[2][2] cr[2][2] ca[2][3] senderPk[2] | root vPub tokenPub to sender A[2]
 
-A new phase-2 setup on the same 2^16 phase 1. Everything else in §2.3 stands.
+A new phase-2 setup on the same 2^16 phase 1. Everything else in §2.3 stands, with the
+revision-3 encoding below.
 
-**Contract.** `spend(owner, proof, publics)` calls `require_auth(owner)`, checks that the
+**Revision 3 (same day, before review): the encoding.** No `rho` (nullifiers already use
+the leaf index), so a note is `(pk, v, token, r)` and `cm = Poseidon(pk.x, pk.y, v, token, r)`;
+value and token pack into one word; the receiver ciphertext is two words and the auditor's
+three, the receiver key travelling as `(y, parity of x)` with the parity at bit 72 of the packed
+word; ephemeral keys travel compressed the same way and the contract decompresses them (a
+square root in the field, about 1 ms); the amount, the token id and the root's sequence number
+are native action fields, the contract supplies the root bytes from its ring. Circuit: 28,477
+constraints, 27 public signals. **The action carries 785 bytes** (256 proof, 512 public words,
+17 native), down from 1,152. Measured on testnet: spend 15.0 ms, withdrawal 15.3 ms.
+
+**Contract.** `spend(owner, proof, publics, amount, token_id, root_seq)` calls `require_auth(owner)`, checks that the
 `senderPk` in the proof equals `keys[sender]`, and stores leaves, outputs and nullifiers with
 `sender` as the RAM payer. Withdrawals pay `to` only when `to == sender` (own account only,
 decided). The relay permission and the public key are removed; there is no unauthenticated

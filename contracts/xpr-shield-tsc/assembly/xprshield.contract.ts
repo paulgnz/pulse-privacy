@@ -1,27 +1,28 @@
 import { Asset, Contract, ExtendedAsset, Name, Symbol, Table, TableStore, check, print, requireAuth } from "proton-tsc";
 import { sendTransferTokens } from "proton-tsc/token";
 import { groth16Verify } from "./groth16";
-import { Limbs, add, fromBytesBE, fromU64, hex, isCanonicalBE, mul, toBytesBE } from "./fr";
+import { Limbs, fromBytesBE, fromU64, hex, isCanonicalBE, toBytesBE } from "./fr";
 import { hash2, poseidon, zeroAt } from "./poseidon";
+import { decompress, onCurve } from "./curve";
 
 // xprshield — shielded transfers (docs/06-shielded-design.md).
 //
-// A note is (pk, v, token, rho, r); cm = Poseidon(pk.x, pk.y, v, token, rho, r). Commitments sit
-// in a depth-20 Poseidon Merkle tree that the contract maintains; every insertion is a pair
-// (a transfer's two outputs, or a deposit's note with an empty slot). Spending publishes
-// nullifiers. The sender's wallet signs `spend` (docs/06 §8): the chain sees who initiated
-// it; the receiver, the amount and which notes were spent stay hidden.
+// A note is (pk, v, token, r); cm = Poseidon(pk.x, pk.y, v, token, r). Commitments sit in a
+// depth-20 Poseidon Merkle tree that the contract maintains; every insertion is a pair (a
+// transfer's two outputs, or a deposit's note with an empty slot). Spending publishes
+// nullifiers Poseidon(nk, leafIndex). The owner's wallet signs `spend` (docs/06 §8): the chain
+// sees who initiated it; the receiver, the amount and which notes were spent stay hidden.
 //
-// Public signals of the join-split proof, 33 words of 32 bytes (circuits/shielded/joinsplit.circom):
-//   [0,1] nf  [2,3] cm  [4..7] epk (x,y × 2)  [8..13] cr (3 × 2)  [14..23] ca (5 × 2)
-//   [24,25] senderPk  [26] root  [27] vPub  [28] tokenPub  [29] to  [30] sender  [31,32] A
-// The action carries the 28 words the chain cannot know (0..23 and 26..29); the contract
-// inserts senderPk from the sender's registration, sender from the authorisation and A from
-// its config.
+// Public signals of the join-split proof, 27 words (circuits/shielded/joinsplit.circom):
+//   [0,1] nf  [2,3] cm  [4..7] epk (x,y × 2)  [8..11] cr (2 × 2)  [12..17] ca (3 × 2)
+//   [18,19] senderPk  [20] root  [21] vPub  [22] tokenPub  [23] to  [24] sender  [25,26] A
+// The action carries 16 words: nf, cm, epk compressed (y with the parity of x in the top bit),
+// cr, ca; plus `amount`, `token_id` and `root_seq` as native fields. The contract decompresses
+// epk, looks the root up by sequence, and supplies senderPk, the name and the auditor key.
 
 const DEPTH: i32 = 20;
-const N_PUB: i32 = 33;
-const N_ACTION: i32 = 28;
+const N_PUB: i32 = 27;
+const N_ACTION: i32 = 16;
 const ACTION_LEN: i32 = N_ACTION * 32;
 const PROOF_LEN: i32 = 256;
 const RING: u64 = 128;
@@ -92,8 +93,7 @@ class TreeRow extends Table {
     public next_leaf: u64 = 0,
     public filled: u8[] = [], // DEPTH × 32 bytes
     public root: u8[] = [], // 32 bytes
-    public root_seq: u64 = 0,
-    public ring: u64[] = [] // keys of the last RING roots, for eviction
+    public root_seq: u64 = 0
   ) {
     super();
   }
@@ -103,14 +103,15 @@ class TreeRow extends Table {
   }
 }
 
+/** the last RING roots, keyed by sequence number, so a proof can name its root in 8 bytes */
 @table("roots")
 class RootRow extends Table {
-  constructor(public key: u64 = 0, public root: u8[] = [], public seq: u64 = 0) {
+  constructor(public seq: u64 = 0, public root: u8[] = []) {
     super();
   }
   @primary
   get primary(): u64 {
-    return this.key;
+    return this.seq;
   }
 }
 
@@ -155,9 +156,17 @@ function isZeroWord(w: u8[]): bool {
   for (let i = 0; i < 32; i++) if (w[i] != 0) return false;
   return true;
 }
-function wordToU64(w: u8[]): u64 {
-  for (let i = 0; i < 24; i++) check(w[i] == 0, "value word above 64 bits");
-  return low64(w);
+function u64Word(n: u64): u8[] {
+  const w = new Array<u8>(32);
+  for (let i = 0; i < 24; i++) w[i] = 0;
+  for (let i = 31; i >= 24; i--) { w[i] = (n & 0xff) as u8; n >>= 8; }
+  return w;
+}
+/** v + token·2^64 as a 32-byte word */
+function packedWord(v: u64, token: u64): u8[] {
+  const w = u64Word(v);
+  w[23] = (token & 0xff) as u8;
+  return w;
 }
 function bytesEq(a: u8[], b: u8[]): bool {
   if (a.length != b.length) return false;
@@ -180,29 +189,6 @@ function fromHex(s: string): u8[] {
     out[i] = ((a << 4) | b) as u8;
   }
   return out;
-}
-
-/** Baby Jubjub: a·x² + y² == 1 + d·x²·y², coordinates canonical */
-function onCurve(p: u8[]): bool {
-  if (p.length != 64) return false;
-  if (!isCanonicalBE(p, 0) || !isCanonicalBE(p, 32)) return false;
-  const x = fromBytesBE(p, 0);
-  const y = fromBytesBE(p, 32);
-  const a = fromU64(168700);
-  const d = fromU64(168696);
-  const one = fromU64(1);
-  const x2 = new StaticArray<u32>(8);
-  const y2 = new StaticArray<u32>(8);
-  const lhs = new StaticArray<u32>(8);
-  const rhs = new StaticArray<u32>(8);
-  mul(x2, x, x);
-  mul(y2, y, y);
-  mul(lhs, a, x2);
-  add(lhs, lhs, y2);
-  mul(rhs, x2, y2);
-  mul(rhs, d, rhs);
-  add(rhs, rhs, one);
-  return bytesEq(toBytesBE(lhs), toBytesBE(rhs));
 }
 
 @contract
@@ -248,7 +234,7 @@ class XprShield extends Contract {
     const filled = new Array<u8>(DEPTH * 32);
     for (let i = 0; i < filled.length; i++) filled[i] = 0;
     const root = toBytesBE(zeroAt(DEPTH));
-    const t = new TreeRow(0, 0, filled, root, 0, []);
+    const t = new TreeRow(0, 0, filled, root, 0);
     this.trees.store(t, this.receiver);
     this.rememberRoot(t, root);
     this.trees.update(t, this.receiver);
@@ -340,19 +326,10 @@ class XprShield extends Contract {
   rememberRoot(t: TreeRow, root: u8[]): void {
     t.root = root;
     t.root_seq += 1;
-    const key = low64(root);
-    if (t.ring.length >= (RING as i32)) {
-      const old = t.ring.shift();
-      const row = this.roots.get(old);
-      if (row != null) this.roots.remove(row);
-    }
-    t.ring.push(key);
-    const existing = this.roots.get(key);
-    if (existing == null) this.roots.store(new RootRow(key, root, t.root_seq), this.receiver);
-    else {
-      existing.root = root;
-      existing.seq = t.root_seq;
-      this.roots.update(existing, this.receiver);
+    this.roots.store(new RootRow(t.root_seq, root), this.receiver);
+    if (t.root_seq > RING) {
+      const old = this.roots.get(t.root_seq - RING);
+      if (old != null) this.roots.remove(old);
     }
   }
 
@@ -404,12 +381,11 @@ class XprShield extends Contract {
     const t = tok!;
     check(this.firstReceiver == t.token_contract, "wrong token contract");
     check(!this.config().paused, "paused");
-    check(memo.startsWith("shield:"), "memo must be shield:<rho>:<r>");
-    const parts = memo.slice(7).split(":");
-    check(parts.length == 2 && parts[0].length == 64 && parts[1].length == 64, "memo must carry two 32-byte hex values");
-    const rho = fromHex(parts[0]);
-    const r = fromHex(parts[1]);
-    check(isCanonicalBE(rho, 0) && isCanonicalBE(r, 0), "rho and r must be field elements");
+    check(memo.startsWith("shield:"), "memo must be shield:<r>");
+    const rHex = memo.slice(7);
+    check(rHex.length == 64, "memo must carry one 32-byte hex value");
+    const r = fromHex(rHex);
+    check(isCanonicalBE(r, 0), "r must be a field element");
     const key = this.keys.get(from.N);
     check(key != null, "depositor has not registered a key");
     check(quantity.amount > 0, "amount must be positive");
@@ -421,74 +397,71 @@ class XprShield extends Contract {
     this.tokens.update(t, this.receiver);
 
     const pk = key!.pubkey;
-    const inp = new StaticArray<Limbs>(6);
+    const inp = new StaticArray<Limbs>(5);
     unchecked((inp[0] = fromBytesBE(pk, 0)));
     unchecked((inp[1] = fromBytesBE(pk, 32)));
     unchecked((inp[2] = fromU64(v)));
     unchecked((inp[3] = fromU64(t.token_id)));
-    unchecked((inp[4] = fromBytesBE(rho, 0)));
-    unchecked((inp[5] = fromBytesBE(r, 0)));
+    unchecked((inp[4] = fromBytesBE(r, 0)));
     const cm = poseidon(inp);
     const cmBytes = toBytesBE(cm);
     const index = this.insertPair(cm, null, cmBytes, [], this.receiver);
-    const plain = toBytesBE(fromU64(v)).concat(toBytesBE(fromU64(t.token_id))).concat(rho).concat(r);
-    this.outputs.store(new OutputRow(index, [], plain, []), this.receiver);
+    // the plaintext note as a receiver would read it: (v + token·2^64, r)
+    this.outputs.store(new OutputRow(index, [], packedWord(v, t.token_id).concat(r), []), this.receiver);
     print("shield leaf " + index.toString() + " cm " + hex(cmBytes));
   }
 
   // ---------------------------------------------------------------- shielded transfer / withdraw
 
   /**
-   * Signed by `sender`, who pays CPU and RAM. The proof is bound to `sender`, to the key
-   * registered for `sender`, and to the withdrawal destination, which must be `sender` itself.
+   * Signed by `owner`, who pays CPU and RAM. The proof is bound to `owner`, to the key
+   * registered for `owner`, and to the withdrawal destination, which is `owner` itself.
+   * `amount` > 0 makes it a withdrawal of `token_id`; `root_seq` names the tree root the
+   * proof was built against (one of the last 128).
    */
   @action("spend")
-  spend(owner: Name, proof: u8[], publics: u8[]): void {
-    const sender = owner;
-    requireAuth(sender);
+  spend(owner: Name, proof: u8[], publics: u8[], amount: u64, token_id: u8, root_seq: u64): void {
+    requireAuth(owner);
     const c = this.config();
     check(!c.paused, "paused");
     check(proof.length == PROOF_LEN, "proof must be 256 bytes");
-    check(publics.length == ACTION_LEN, "publics must be 28 words");
-    for (let i = 0; i < N_ACTION; i++) check(isCanonicalBE(publics, i * 32), "public word not canonical");
-    const key = this.keys.get(sender.N);
-    check(key != null, "sender has not registered a shielded key");
+    check(publics.length == ACTION_LEN, "publics must be 16 words");
+    for (let i = 0; i < N_ACTION; i++) if (i != 4 && i != 5) check(isCanonicalBE(publics, i * 32), "public word not canonical");
+    const key = this.keys.get(owner.N);
+    check(key != null, "owner has not registered a shielded key");
 
     const nf1 = word(publics, 0);
     const nf2 = word(publics, 1);
     const cm1 = word(publics, 2);
     const cm2 = word(publics, 3);
-    const root = word(publics, 24);
-    const vPub = wordToU64(word(publics, 25));
-    const tokenPub = wordToU64(word(publics, 26));
-    const to = wordToU64(word(publics, 27));
-
     check(!isZeroWord(nf1), "first input must be a real note");
     check(!bytesEq(nf1, nf2), "the same note twice");
-    const known = this.roots.get(low64(root));
-    check(known != null && bytesEq(known!.root, root), "unknown or stale root");
-    if (vPub > 0) check(to == sender.N, "withdrawals go to the sender's own account");
+    const rootRow = this.roots.get(root_seq);
+    check(rootRow != null, "unknown or stale root");
+    const epk1 = decompress(word(publics, 4));
+    const epk2 = decompress(word(publics, 5));
+    const vPub: u64 = amount;
+    const tokenPub: u64 = amount > 0 ? (token_id as u64) : 0;
+    const to: u64 = amount > 0 ? owner.N : 0;
 
-    // the verifier's 33 words: action words 0..23, senderPk, root vPub tokenPub to, sender, A
-    const senderWord = new Array<u8>(32);
-    for (let i = 0; i < 24; i++) senderWord[i] = 0;
-    let n = sender.N;
-    for (let i = 31; i >= 24; i--) { senderWord[i] = (n & 0xff) as u8; n >>= 8; }
-    const inputs = publics.slice(0, 24 * 32)
+    // the verifier's 27 words
+    const inputs = publics.slice(0, 4 * 32)
+      .concat(epk1).concat(epk2)
+      .concat(publics.slice(6 * 32, 16 * 32))
       .concat(key!.pubkey)
-      .concat(publics.slice(24 * 32, 28 * 32))
-      .concat(senderWord)
+      .concat(rootRow!.root)
+      .concat(u64Word(vPub)).concat(u64Word(tokenPub)).concat(u64Word(to)).concat(u64Word(owner.N))
       .concat(c.auditor_pubkey);
     check(groth16Verify(c.vk, proof, inputs), "invalid proof");
 
-    this.spendNullifier(nf1, sender);
-    this.spendNullifier(nf2, sender);
-    const index = this.insertPair(fromBytesBE(cm1, 0), fromBytesBE(cm2, 0), cm1, cm2, sender);
+    this.spendNullifier(nf1, owner);
+    this.spendNullifier(nf2, owner);
+    const index = this.insertPair(fromBytesBE(cm1, 0), fromBytesBE(cm2, 0), cm1, cm2, owner);
     for (let j = 0; j < 2; j++) {
-      const epk = word(publics, 4 + 2 * j).concat(word(publics, 5 + 2 * j));
-      const cr = publics.slice((8 + 3 * j) * 32, (11 + 3 * j) * 32);
-      const ca = publics.slice((14 + 5 * j) * 32, (19 + 5 * j) * 32);
-      this.outputs.store(new OutputRow(index + (j as u64), epk, cr, ca), sender);
+      const epk = word(publics, 4 + j);
+      const cr = publics.slice((6 + 2 * j) * 32, (8 + 2 * j) * 32);
+      const ca = publics.slice((10 + 3 * j) * 32, (13 + 3 * j) * 32);
+      this.outputs.store(new OutputRow(index + (j as u64), epk, cr, ca), owner);
     }
 
     if (vPub > 0) {
@@ -497,7 +470,7 @@ class XprShield extends Contract {
       t.withdrawals += vPub;
       this.tokens.update(t, this.receiver);
       const sym = Symbol.fromU64(t.sym);
-      sendTransferTokens(this.receiver, sender, [new ExtendedAsset(new Asset(<i64>vPub, sym), t.token_contract)], "shielded withdraw");
+      sendTransferTokens(this.receiver, owner, [new ExtendedAsset(new Asset(<i64>vPub, sym), t.token_contract)], "shielded withdraw");
     }
     print("shield leaf " + index.toString());
   }

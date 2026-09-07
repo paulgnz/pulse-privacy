@@ -91,15 +91,17 @@ assert.ok(await snarkjs.groth16.verify(vk, publicSignals, proof), "snarkjs verif
 lap("snarkjs verify ok");
 const expectedSignals = N.publicSignals(js.expected, { root: tree.root, sender: ALICE, A: auditor.pk });
 assert.deepEqual(publicSignals.map(BigInt), expectedSignals, "public signal order matches the library");
-lap("public signals match the library's recomputation");
+assert.equal(N.actionPublics(js.expected).length, 16, "the action carries 16 words");
+assert.deepEqual(N.decompressPoint(N.actionPublics(js.expected)[4]), js.expected.epk[0], "compressed ephemeral key round-trips");
+lap("public signals match the library's recomputation; action carries 16 words");
 // a wrong destination on a withdrawal proof fails verification
 const { proof: pw, publicSignals: psw } = await snarkjs.groth16.fullProve(jw.input, wasm, B("joinsplit_final.zkey"));
 const redirected = psw.slice(); redirected[psw.length - 4] = N.nameToU64("mallory").toString();
 assert.equal(await snarkjs.groth16.verify(vk, redirected, pw), false, "redirected withdrawal rejected");
 const resigned = psw.slice(); resigned[psw.length - 3] = N.nameToU64("mallory").toString();
 assert.equal(await snarkjs.groth16.verify(vk, resigned, pw), false, "proof bound to another signer rejected");
-const swappedKey = psw.slice(); swappedKey[24] = bob.pk[0].toString(); swappedKey[25] = bob.pk[1].toString();
+const swappedKey = psw.slice(); swappedKey[18] = bob.pk[0].toString(); swappedKey[19] = bob.pk[1].toString();
 assert.equal(await snarkjs.groth16.verify(vk, swappedKey, pw), false, "sender key cannot be substituted");
 lap("redirected destination, other signer and substituted sender key all rejected");
-console.log("S7 join-split (signed sender) passed");
+console.log("S7 join-split (revision 3) passed");
 process.exit(0);

@@ -1,7 +1,7 @@
 // Shielded notes for the browser: keys, commitments, nullifiers, the Merkle tree, both
 // encryptions and the join-split witness. Mirrors circuits/lib/notes.mjs and
 // circuits/shielded/joinsplit.circom exactly.
-import { G, L, mul, randScalar as randL } from "../crypto/babyjub";
+import { A as CURVE_A, D as CURVE_D, G, L, finv, fmul, fsqrt, fsub, mul, randScalar as randL } from "../crypto/babyjub";
 import type { Pt } from "../crypto/babyjub";
 import { P } from "../crypto/babyjub";
 import { hash2, poseidon } from "./poseidon";
@@ -10,7 +10,7 @@ export const DEPTH = 20;
 export const TOKEN_IDS: Record<string, bigint> = { XPR: 1n, XMD: 2n };
 
 export interface ShieldKeys { ask: bigint; pk: Pt; nk: bigint }
-export interface Note { pk: Pt; v: bigint; token: bigint; rho: bigint; r: bigint; cm: bigint }
+export interface Note { pk: Pt; v: bigint; token: bigint; r: bigint; cm: bigint }
 export interface OwnedNote extends Note { index: number }
 
 const randBig = (bytes: number) => {
@@ -28,12 +28,28 @@ export function keygen(ask: bigint): ShieldKeys {
   ask = ((ask % L) + L) % L;
   return { ask, pk: mul(G, ask), nk: hash2(ask, 0n) };
 }
-export const commitment = (n: { pk: Pt; v: bigint; token: bigint; rho: bigint; r: bigint }) => poseidon([n.pk[0], n.pk[1], n.v, n.token, n.rho, n.r]);
+export const commitment = (n: { pk: Pt; v: bigint; token: bigint; r: bigint }) => poseidon([n.pk[0], n.pk[1], n.v, n.token, n.r]);
 export const nullifier = (nk: bigint, index: number) => hash2(nk, BigInt(index));
-export function newNote(pk: Pt, v: bigint, token: bigint, rho = randField(), r = randField()): Note {
-  const n = { pk, v, token, rho, r, cm: 0n };
+export function newNote(pk: Pt, v: bigint, token: bigint, r = randField()): Note {
+  const n = { pk, v, token, r, cm: 0n };
   n.cm = commitment(n);
   return n;
+}
+
+// ---- point compression: (y, parity of x); as a word, y with the parity in bit 255 ----
+export const compressPoint = (p: Pt) => p[1] | ((p[0] & 1n) << 255n);
+/** x from y and the parity of x: x² = (1 − y²) / (a − d·y²) */
+export function xFromY(y: bigint, parity: bigint): bigint {
+  const y2 = fmul(y, y);
+  const x2 = fmul(fsub(1n, y2), finv(fsub(CURVE_A, fmul(CURVE_D, y2))));
+  const root = fsqrt(x2);
+  if (root === null) throw new Error("not a curve point");
+  return (root & 1n) === parity ? root : P - root;
+}
+export function decompressPoint(w: bigint): Pt {
+  const parity = (w >> 255n) & 1n;
+  const y = w & ((1n << 255n) - 1n);
+  return [xFromY(y, parity), y];
 }
 
 /** incremental Merkle tree of commitments; odd leaves of a deposit pair are 0 */
@@ -73,15 +89,15 @@ function encryptWith(shared: Pt, plain: bigint[]) { const k = padKey(shared); re
 function decryptWith(shared: Pt, c: bigint[]) { const k = padKey(shared); return c.map((x, m) => fmod(x - hash2(k, BigInt(m)))); }
 const ecdh = (scalar: bigint, point: Pt) => mul(point, scalar);
 
-const TWO64 = 1n << 64n;
-export const pack = (v: bigint, token: bigint) => v + token * TWO64;
-export const unpack = (w: bigint): [bigint, bigint] => [w % TWO64, w / TWO64];
+const TWO64 = 1n << 64n, TWO72 = 1n << 72n;
+export const pack = (v: bigint, token: bigint, parity = 0n) => v + token * TWO64 + parity * TWO72;
+export const unpack = (w: bigint): [bigint, bigint, bigint] => [w % TWO64, (w / TWO64) % 256n, (w / TWO72) & 1n];
 
 /** our note behind (epk, cr) with commitment cm, or null */
 export function tryDecryptReceiver(keys: ShieldKeys, epk: Pt, cr: bigint[], cm: bigint): Note | null {
-  const [packed, rho, r] = decryptWith(ecdh(keys.ask, epk), cr);
+  const [packed, r] = decryptWith(ecdh(keys.ask, epk), cr);
   const [v, token] = unpack(packed);
-  const n = { pk: keys.pk, v, token, rho, r, cm: 0n };
+  const n = { pk: keys.pk, v, token, r, cm: 0n };
   n.cm = commitment(n);
   return n.cm === cm ? n : null;
 }
@@ -102,10 +118,12 @@ export interface JoinSplitBuilt {
   input: Record<string, unknown>;
   outNotes: Note[];
   nf: bigint[];
-  /** the 28 words the action carries: nf cm epk cr ca root vPub tokenPub to */
+  /** the 16 words the action carries: nf cm epk(compressed) cr ca */
   actionPublics: bigint[];
-  /** the verifier's 33 words, for checking a proof locally */
+  /** the verifier's 27 words, for checking a proof locally */
   publicSignals: bigint[];
+  vPub: bigint;
+  tokenPub: bigint;
 }
 
 export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender, vPub = 0n, tokenPub = 0n, to = 0n }: JoinSplitInput): JoinSplitBuilt {
@@ -123,14 +141,12 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
     ask: S(keys.ask),
     inV: ins.map((i) => S(i ? i.v : 0n)),
     inToken: ins.map((i) => S(i ? i.token : token)),
-    inRho: ins.map((i) => S(i ? i.rho : 0n)),
     inR: ins.map((i) => S(i ? i.r : 0n)),
     inIndex: ins.map((i) => S(i ? i.index : 0)),
     inSiblings: ins.map((i) => (i ? tree.path(i.index) : Array(tree.depth).fill(0n)).map(S)),
     enabled1: ins[1] ? "1" : "0",
     outPk: outNotes.map((n) => [S(n.pk[0]), S(n.pk[1])]),
     outV: outNotes.map((n) => S(n.v)),
-    outRho: outNotes.map((n) => S(n.rho)),
     outR: outNotes.map((n) => S(n.r)),
     esk: esk.map(S),
     root: S(tree.root),
@@ -142,12 +158,12 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
   };
   const nf = ins.map((i) => (i ? nullifier(keys.nk, i.index) : 0n));
   const epk = esk.map((e) => mul(G, e));
-  const cr = outNotes.map((n, j) => encryptWith(ecdh(esk[j], n.pk), [pack(n.v, n.token), n.rho, n.r]));
-  const ca = outNotes.map((n, j) => encryptWith(ecdh(esk[j], auditorPk), [n.pk[0], n.pk[1], pack(n.v, n.token), n.rho, n.r]));
-  const head = [...nf, ...outNotes.map((n) => n.cm), ...epk.flat(), ...cr.flat(), ...ca.flat()];
-  const actionPublics = [...head, tree.root, vPub, tokenPub, to];
-  const publicSignals = [...head, keys.pk[0], keys.pk[1], tree.root, vPub, tokenPub, to, sender, auditorPk[0], auditorPk[1]];
-  return { input, outNotes, nf, actionPublics, publicSignals };
+  const cr = outNotes.map((n, j) => encryptWith(ecdh(esk[j], n.pk), [pack(n.v, n.token), n.r]));
+  const ca = outNotes.map((n, j) => encryptWith(ecdh(esk[j], auditorPk), [n.pk[1], pack(n.v, n.token, n.pk[0] & 1n), n.r]));
+  const cms = outNotes.map((n) => n.cm);
+  const actionPublics = [...nf, ...cms, ...epk.map(compressPoint), ...cr.flat(), ...ca.flat()];
+  const publicSignals = [...nf, ...cms, ...epk.flat(), ...cr.flat(), ...ca.flat(), keys.pk[0], keys.pk[1], tree.root, vPub, tokenPub, to, sender, auditorPk[0], auditorPk[1]];
+  return { input, outNotes, nf, actionPublics, publicSignals, vPub, tokenPub };
 }
 
 /** account name → u64 (Antelope base-32 name encoding) */

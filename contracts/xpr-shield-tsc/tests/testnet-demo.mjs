@@ -73,11 +73,13 @@ const K = Object.fromEntries(Object.entries(keys ?? {}).map(([w, s]) => [w, N.ke
 async function chainTree() {
   const tree = await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "tree", json: true, limit: 1 });
   const next = Number(tree.rows[0].next_leaf);
+  const rootSeq = Number(tree.rows[0].root_seq);
   const leaves = await rows("leaves");
   const byIndex = new Map(leaves.map((l) => [Number(l.index), BigInt("0x" + l.cm)]));
   const t = new N.Tree();
   for (let i = 0; i < next; i++) t.append(byIndex.get(i) ?? 0n);
   if (hex(t.root) !== tree.rows[0].root) throw new Error(`local root ${hex(t.root)} != chain root ${tree.rows[0].root}`);
+  t.rootSeq = rootSeq;
   return t;
 }
 
@@ -94,11 +96,12 @@ async function scan(who) {
     if (cm === undefined) continue;
     let note = null;
     if (o.epk.length === 0) {
-      const [v, token, rho, r] = words(o.cr);
-      const cand = { pk: k.pk, v, token, rho, r };
+      const [packed, r] = words(o.cr);
+      const [v, token] = N.unpack(packed);
+      const cand = { pk: k.pk, v, token, r };
       if (N.commitment(cand) === cm) note = { ...cand, cm };
     } else {
-      note = N.tryDecryptReceiver(k, words(o.epk), words(o.cr), cm);
+      note = N.tryDecryptReceiver(k, N.decompressPoint(words(o.epk)[0]), words(o.cr), cm);
     }
     if (!note || note.v === 0n) continue; // zero-value change notes are real but not worth spending
     const nf = N.nullifier(k.nk, index);
@@ -122,7 +125,7 @@ async function submit(js, who, pub, label) {
   console.log("proving…");
   const { proof } = await snarkjs.groth16.fullProve(js.input, CB("joinsplit_js/joinsplit.wasm"), CB("joinsplit_final.zkey"));
   console.log(`proof in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-  const out = action(CONTRACT, "spend", { owner: ACCOUNTS[who], proof: encodeProof(proof), publics: encodeInputs(N.actionPublics(js.expected, pub)) }, `${ACCOUNTS[who]}@active`);
+  const out = action(CONTRACT, "spend", { owner: ACCOUNTS[who], proof: encodeProof(proof), publics: encodeInputs(N.actionPublics(js.expected)), amount: (pub.vPub ?? 0n).toString(), token_id: Number(pub.tokenPub ?? 0n), root_seq: pub.seq }, `${ACCOUNTS[who]}@active`);
   console.log(`${label}: tx ${txId(out)} cpu ${cpuOf(out)} µs\n${explorer(txId(out))}`);
 }
 
@@ -142,7 +145,7 @@ if (cmd === "reset") {
 } else if (cmd === "deposit") {
   const [who, amt] = args;
   const note = N.newNote(K[who].pk, units(amt), TOKEN_ID);
-  const out = action(TOKEN_CONTRACT, "transfer", { from: ACCOUNTS[who], to: CONTRACT, quantity: asset(note.v), memo: `shield:${hex(note.rho)}:${hex(note.r)}` }, `${ACCOUNTS[who]}@active`);
+  const out = action(TOKEN_CONTRACT, "transfer", { from: ACCOUNTS[who], to: CONTRACT, quantity: asset(note.v), memo: `shield:${hex(note.r)}` }, `${ACCOUNTS[who]}@active`);
   console.log(`deposit: tx ${txId(out)} cpu ${cpuOf(out)} µs\n${explorer(txId(out))}`);
 } else if (cmd === "scan") {
   const notes = await scan(args[0]);
@@ -161,7 +164,7 @@ if (cmd === "reset") {
   const auditor = (await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "config", json: true, limit: 1 })).rows[0].auditor_pubkey;
   const change = notes.reduce((s, n) => s + n.v, 0n) - amount;
   const js = N.buildJoinSplit({ keys: K[from], tree, auditorPk: words(auditor), sender: N.nameToU64(ACCOUNTS[from]), inputs: notes.map((n) => ({ note: n, index: n.index })), outputs: [{ pk: words(toKey.pubkey), v: amount }, { pk: K[from].pk, v: change }] });
-  await submit(js, from, { root: tree.root }, `${from} → ${to} ${asset(amount)} (signed by ${ACCOUNTS[from]}; receiver and amount hidden)`);
+  await submit(js, from, { seq: tree.rootSeq }, `${from} → ${to} ${asset(amount)} (signed by ${ACCOUNTS[from]}; receiver and amount hidden)`);
 } else if (cmd === "withdraw") {
   const [who, amt] = args;
   const amount = units(amt);
@@ -169,17 +172,17 @@ if (cmd === "reset") {
   const tree = await chainTree();
   const auditor = (await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "config", json: true, limit: 1 })).rows[0].auditor_pubkey;
   const change = notes.reduce((s, n) => s + n.v, 0n) - amount;
-  const pub = { root: tree.root, vPub: amount, tokenPub: TOKEN_ID, to: N.nameToU64(ACCOUNTS[who]) };
+  const pub = { vPub: amount, tokenPub: TOKEN_ID, to: N.nameToU64(ACCOUNTS[who]) };
   const js = N.buildJoinSplit({ keys: K[who], tree, auditorPk: words(auditor), sender: N.nameToU64(ACCOUNTS[who]), inputs: notes.map((n) => ({ note: n, index: n.index })), outputs: [{ pk: K[who].pk, v: 0n }, { pk: K[who].pk, v: change }], ...pub });
-  await submit(js, who, pub, `${who} withdraws ${asset(amount)} to ${ACCOUNTS[who]}`);
+  await submit(js, who, { ...pub, seq: tree.rootSeq }, `${who} withdraws ${asset(amount)} to ${ACCOUNTS[who]}`);
 } else if (cmd === "audit") {
   const names = new Map((await rows("keys")).map((r) => [r.pubkey.slice(0, 64), r.owner]));
   const leaves = new Map((await rows("leaves")).map((l) => [Number(l.index), BigInt("0x" + l.cm)]));
   for (const o of await rows("outputs")) {
     const index = Number(o.index);
     const cm = leaves.get(index);
-    if (o.epk.length === 0) { const [v, token, rho, r] = words(o.cr); console.log(`  leaf ${index}: deposit ${v} of token ${token} (public)`); continue; }
-    const n = N.decryptAuditor(K.auditor.ask, words(o.epk), words(o.ca), cm);
+    if (o.epk.length === 0) { const [v, token] = N.unpack(words(o.cr)[0]); console.log(`  leaf ${index}: deposit ${v} of token ${token} (public)`); continue; }
+    const n = N.decryptAuditor(K.auditor.ask, N.decompressPoint(words(o.epk)[0]), words(o.ca), cm);
     const name = (pk) => names.get(hex(pk[0])) ?? `unregistered ${hex(pk[0]).slice(0, 10)}…`;
     console.log(`  leaf ${index}: → ${name(n.pk)} ${n.v} of token ${n.token}${n.valid ? "" : "  (DOES NOT MATCH THE COMMITMENT)"}  (sender: named in the signed action)`);
   }

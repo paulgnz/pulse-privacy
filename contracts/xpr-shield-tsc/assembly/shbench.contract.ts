@@ -1,5 +1,6 @@
 import { Contract, check, print } from "proton-tsc";
 import { fromBytesBE, fromU64, hex, isCanonicalBE, toBytesBE } from "./fr";
+import { decompress } from "./curve";
 import { hash2, poseidon, zeroAt } from "./poseidon";
 
 /**
@@ -13,7 +14,7 @@ class ShBench extends Contract {
   @action("hash")
   hash(inputs: u8[]): void {
     const n = inputs.length / 32;
-    check(n == 2 || n == 6, "2 or 6 inputs");
+    check(n == 2 || n == 5, "2 or 5 inputs");
     const inp = new StaticArray<StaticArray<u32>>(n);
     for (let i = 0; i < n; i++) {
       check(isCanonicalBE(inputs, i * 32), "input not canonical");
@@ -28,6 +29,13 @@ class ShBench extends Contract {
     const one = fromU64(1);
     for (let i: u32 = 0; i < n; i++) acc = hash2(acc, one);
     print(hex(toBytesBE(acc)));
+  }
+
+  @action("decomp")
+  decomp(w: u8[]): void {
+    check(w.length == 32, "32-byte word");
+    const p = decompress(w);
+    print(hex(p));
   }
 
   @action("insert")

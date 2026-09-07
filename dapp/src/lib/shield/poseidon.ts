@@ -7,7 +7,7 @@ import { P } from "../crypto/babyjub";
 type Consts = { C: string[]; S: string[]; M: string[][]; P: string[][] };
 const RAW = consts as unknown as Record<string, Consts>;
 const N_ROUNDS_F = 8;
-const N_ROUNDS_P: Record<number, number> = { 3: 57, 7: 63 };
+const N_ROUNDS_P: Record<number, number> = { 3: 57, 6: 60 };
 
 const cache = new Map<number, { C: bigint[]; S: bigint[]; M: bigint[][]; P: bigint[][] }>();
 function params(t: number) {
@@ -24,7 +24,7 @@ function params(t: number) {
 const mod = (a: bigint) => { const r = a % P; return r < 0n ? r + P : r; };
 const pow5 = (a: bigint) => { const a2 = (a * a) % P; return (((a2 * a2) % P) * a) % P; };
 
-/** Poseidon(inputs), inputs.length ∈ {2, 6}, all reduced mod P */
+/** Poseidon(inputs), inputs.length ∈ {2, 5}, all reduced mod P */
 export function poseidon(inputs: bigint[]): bigint {
   const t = inputs.length + 1;
   const { C, S, M, P: PM } = params(t);

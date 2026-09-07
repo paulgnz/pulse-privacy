@@ -3,7 +3,7 @@
 // Elements are 8 little-endian 32-bit limbs in Montgomery form (x·R mod r, R = 2^256).
 // Multiplication is CIOS Montgomery with 32-bit words; every routine writes into a caller-owned
 // buffer so hashing allocates nothing per round.
-import { MODULUS, N0INV, R2 } from "./poseidon_consts";
+import { MODULUS, N0INV, ONE, R2, SQRT_EXP, SQRT_S, SQRT_Z } from "./poseidon_consts";
 
 export type Limbs = StaticArray<u32>;
 
@@ -191,4 +191,87 @@ export function hex(b: u8[]): string {
   let out = "";
   for (let i = 0; i < b.length; i++) out += digits.charAt(b[i] >> 4) + digits.charAt(b[i] & 15);
   return out;
+}
+
+export function eq(a: Limbs, b: Limbs): bool {
+  for (let i = 0; i < 8; i++) if (unchecked(a[i]) != unchecked(b[i])) return false;
+  return true;
+}
+function fromTable(table: u32[], idx: i32 = 0): Limbs {
+  const out = new StaticArray<u32>(8);
+  for (let i = 0; i < 8; i++) unchecked((out[i] = table[(idx << 3) + i]));
+  return out;
+}
+/** out = a^e with e a plain 256-bit integer given as little-endian limbs (square-and-multiply) */
+export function powLimbs(out: Limbs, a: Limbs, e: u32[]): void {
+  const acc = fromTable(ONE);
+  const base = zero();
+  copy(base, a);
+  const t = zero();
+  for (let i = 0; i < 8; i++) {
+    let w = unchecked(e[i]);
+    for (let b = 0; b < 32; b++) {
+      if (w & 1) { mul(t, acc, base); copy(acc, t); }
+      mul(t, base, base); copy(base, t);
+      w >>= 1;
+    }
+  }
+  copy(out, acc);
+}
+/** out = a⁻¹ (Fermat: a^(r−2)); a must be non-zero */
+export function inv(out: Limbs, a: Limbs): void {
+  const e = new Array<u32>(8);
+  for (let i = 0; i < 8; i++) e[i] = unchecked(MODULUS[i]);
+  e[0] -= 2; // the low limb of r is 0xf0000001, so no borrow
+  powLimbs(out, a, e);
+}
+/** out = √a (Tonelli–Shanks, r − 1 = 2^28·S); returns false if a is a non-residue */
+export function sqrt(out: Limbs, a: Limbs): bool {
+  const one = fromTable(ONE);
+  const zeroL = zero();
+  if (eq(a, zeroL)) { copy(out, zeroL); return true; }
+  let m = 28;
+  const c = fromTable(SQRT_Z);
+  const t = zero();
+  powLimbs(t, a, SQRT_S);
+  const r = zero();
+  powLimbs(r, a, SQRT_EXP);
+  const tmp = zero();
+  const b = zero();
+  for (;;) {
+    if (eq(t, one)) { copy(out, r); return true; }
+    // least i with t^(2^i) == 1
+    let i = 0;
+    copy(tmp, t);
+    while (!eq(tmp, one)) {
+      mul(tmp, tmp, tmp);
+      i++;
+      if (i == m) return false;
+    }
+    // b = c^(2^(m−i−1))
+    copy(b, c);
+    for (let k = 0; k < m - i - 1; k++) { mul(tmp, b, b); copy(b, tmp); }
+    m = i;
+    mul(c, b, b);
+    mul(tmp, t, c); copy(t, tmp);
+    mul(tmp, r, b); copy(r, tmp);
+  }
+  return false;
+}
+/** out = −a */
+export function neg(out: Limbs, a: Limbs): void {
+  const z = zero();
+  if (eq(a, z)) { copy(out, z); return; }
+  // r − a, computed on plain integers: MODULUS − a where a is in Montgomery form is still a
+  // valid Montgomery element (negation commutes with the Montgomery map)
+  let borrow: u64 = 0;
+  for (let i = 0; i < 8; i++) {
+    const d: u64 = (unchecked(MODULUS[i]) as u64) - (unchecked(a[i]) as u64) - borrow;
+    unchecked((out[i] = d as u32));
+    borrow = (d >> 63) & 1;
+  }
+}
+/** parity of the integer an element represents */
+export function isOdd(a: Limbs): bool {
+  return (toBytesBE(a)[31] & 1) == 1;
 }

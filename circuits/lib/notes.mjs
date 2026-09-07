@@ -37,14 +37,37 @@ export function keygen(ask = randScalar()) {
   return { ask, pk, nk };
 }
 
-export const commitment = (n) => H(n.pk[0], n.pk[1], n.v, n.token, n.rho, n.r);
+export const commitment = (n) => H(n.pk[0], n.pk[1], n.v, n.token, n.r);
 export const nullifier = (nk, index) => H(nk, BigInt(index));
 
 /** a fresh note to `pk` */
-export function newNote(pk, v, token, rho = randField(), r = randField()) {
-  const n = { pk, v: BigInt(v), token: BigInt(token), rho, r };
+export function newNote(pk, v, token, r = randField()) {
+  const n = { pk, v: BigInt(v), token: BigInt(token), r };
   n.cm = commitment(n);
   return n;
+}
+
+// ---- point compression: (y, parity of x). As a 32-byte word: y with the parity in bit 255. ----
+const CURVE_A = 168700n, CURVE_D = 168696n;
+export const compressPoint = (p) => BigInt(p[1]) | ((BigInt(p[0]) & 1n) << 255n);
+/** x from y and the parity of x: x² = (1 − y²) / (a − d·y²) */
+export function xFromY(y, parity) {
+  const Y = F.e(y);
+  const y2 = F.mul(Y, Y);
+  const num = F.sub(F.one, y2);
+  const den = F.sub(F.e(CURVE_A), F.mul(F.e(CURVE_D), y2));
+  const x2 = F.mul(num, F.inv(den));
+  // Euler's criterion first: ffjavascript's sqrt loops on a non-residue
+  if (!F.isZero(x2) && !F.eq(F.exp(x2, (F.p - 1n) / 2n), F.one)) throw new Error("not a curve point");
+  const root = F.sqrt(x2);
+  let x = F.toObject(root);
+  if ((x & 1n) !== BigInt(parity)) x = F.p - x;
+  return x;
+}
+export function decompressPoint(w) {
+  const parity = (BigInt(w) >> 255n) & 1n;
+  const y = BigInt(w) & ((1n << 255n) - 1n);
+  return [xFromY(y, parity), y];
 }
 
 // ---- Merkle tree of commitments, depth DEPTH, Poseidon(2) nodes, zero chain leaves ----
@@ -94,26 +117,30 @@ function decryptWith(shared, c) {
 }
 const ecdh = (scalar, point) => pt(bj.mulPointEscalar([F.e(point[0]), F.e(point[1])], BigInt(scalar)));
 
-const TWO64 = 1n << 64n;
-export const pack = (v, token) => BigInt(v) + BigInt(token) * TWO64;
-export const unpack = (w) => [w % TWO64, w / TWO64];
+const TWO64 = 1n << 64n, TWO72 = 1n << 72n;
+/** v (64 bits) + token·2^64 (8 bits) + parity·2^72 */
+export const pack = (v, token, parity = 0n) => BigInt(v) + BigInt(token) * TWO64 + BigInt(parity) * TWO72;
+export const unpack = (w) => [w % TWO64, (w / TWO64) % 256n, (w / TWO72) & 1n];
 
 /** receiver side: recover a note from (epk, cr) with own key; null if it is not ours */
 export function tryDecryptReceiver(keys, epk, cr, cmOnChain) {
-  const [packed, rho, r] = decryptWith(ecdh(keys.ask, epk), cr);
+  const [packed, r] = decryptWith(ecdh(keys.ask, epk), cr);
   const [v, token] = unpack(packed);
-  const n = { pk: keys.pk, v, token, rho, r };
+  const n = { pk: keys.pk, v, token, r };
   n.cm = commitment(n);
   return n.cm === BigInt(cmOnChain) ? n : null;
 }
 
 /** auditor side: recover receiver key and note from (epk, ca); the sender is named by the action */
 export function decryptAuditor(auditorAsk, epk, ca, cmOnChain) {
-  const [pkx, pky, packed, rho, r] = decryptWith(ecdh(auditorAsk, epk), ca);
-  const [v, token] = unpack(packed);
-  const n = { pk: [pkx, pky], v, token, rho, r };
+  const [pky, packed, r] = decryptWith(ecdh(auditorAsk, epk), ca);
+  const [v, token, parity] = unpack(packed);
+  let pkx = 0n, valid = false;
+  try { pkx = xFromY(pky, parity); } catch { /* not a point: leave invalid */ }
+  const n = { pk: [pkx, pky], v, token, r };
   n.cm = commitment(n);
-  n.valid = n.cm === BigInt(cmOnChain);
+  valid = n.cm === BigInt(cmOnChain);
+  n.valid = valid;
   return n;
 }
 
@@ -130,12 +157,11 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
   const ins = [inputs[0], inputs[1] ?? null];
   const inV = ins.map((i) => (i ? i.note.v : 0n));
   const inToken = ins.map((i) => (i ? i.note.token : token));
-  const inRho = ins.map((i) => (i ? i.note.rho : 0n));
   const inR = ins.map((i) => (i ? i.note.r : 0n));
   const inIndex = ins.map((i) => (i ? BigInt(i.index) : 0n));
   const inSiblings = ins.map((i) => (i ? tree.path(i.index).siblings : Array(tree.depth).fill(0n)));
   const enabled1 = ins[1] ? 1n : 0n;
-  const outNotes = outputs.map((o) => newNote(o.pk, o.v, token, o.rho, o.r));
+  const outNotes = outputs.map((o) => newNote(o.pk, o.v, token, o.r));
   const esk = outputs.map((o) => o.esk ?? randScalar());
   const total = inV[0] + inV[1];
   if (total !== outNotes[0].v + outNotes[1].v + BigInt(vPub)) throw new Error("values do not balance");
@@ -143,10 +169,9 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
 
   const input = {
     ask: keys.ask,
-    inV, inToken, inRho, inR, inIndex, inSiblings, enabled1,
+    inV, inToken, inR, inIndex, inSiblings, enabled1,
     outPk: outNotes.map((n) => n.pk),
     outV: outNotes.map((n) => n.v),
-    outRho: outNotes.map((n) => n.rho),
     outR: outNotes.map((n) => n.r),
     esk,
     root: tree.root,
@@ -161,14 +186,14 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
     nf: ins.map((i) => (i ? nullifier(keys.nk, i.index) : 0n)),
     cm: outNotes.map((n) => n.cm),
     epk: esk.map((e) => pt(bj.mulPointEscalar(B8, e))),
-    cr: outNotes.map((n, j) => encryptWith(ecdh(esk[j], n.pk), [pack(n.v, n.token), n.rho, n.r])),
-    ca: outNotes.map((n, j) => encryptWith(ecdh(esk[j], auditorPk), [n.pk[0], n.pk[1], pack(n.v, n.token), n.rho, n.r])),
+    cr: outNotes.map((n, j) => encryptWith(ecdh(esk[j], n.pk), [pack(n.v, n.token), n.r])),
+    ca: outNotes.map((n, j) => encryptWith(ecdh(esk[j], auditorPk), [n.pk[1], pack(n.v, n.token, n.pk[0] & 1n), n.r])),
     senderPk: keys.pk,
   };
   return { input, expected, outNotes };
 }
 
-/** public signals in the circuit's order: nf[2] cm[2] epk[2][2] cr[2][3] ca[2][5] senderPk[2] root vPub tokenPub to sender A[2] */
+/** public signals in the circuit's order: nf[2] cm[2] epk[2][2] cr[2][2] ca[2][3] senderPk[2] root vPub tokenPub to sender A[2] */
 export function publicSignals(expected, { root, vPub = 0n, tokenPub = 0n, to = 0n, sender, A }) {
   return [
     ...expected.nf, ...expected.cm, ...expected.epk.flat(), ...expected.cr.flat(), ...expected.ca.flat(), ...expected.senderPk,
@@ -177,14 +202,13 @@ export function publicSignals(expected, { root, vPub = 0n, tokenPub = 0n, to = 0
 }
 
 /**
- * What the sender puts in the action (the contract supplies senderPk from the registration,
- * sender from the authorisation and A from its config): the 26 outputs minus senderPk, then
- * root, vPub, tokenPub, to = 28 words.
+ * What the sender puts in the action's `publics` (16 words): nf[2] cm[2] epk compressed[2]
+ * cr[2][2] ca[2][3]. The amount, token id and root sequence travel as native fields; the
+ * contract supplies senderPk, sender, A, decompresses epk and looks the root up by sequence.
  */
-export function actionPublics(expected, { root, vPub = 0n, tokenPub = 0n, to = 0n }) {
+export function actionPublics(expected) {
   return [
-    ...expected.nf, ...expected.cm, ...expected.epk.flat(), ...expected.cr.flat(), ...expected.ca.flat(),
-    root, BigInt(vPub), BigInt(tokenPub), BigInt(to),
+    ...expected.nf, ...expected.cm, ...expected.epk.map(compressPoint), ...expected.cr.flat(), ...expected.ca.flat(),
   ].map((x) => BigInt(x));
 }
 
@@ -204,7 +228,7 @@ export const hex32 = (x) => BigInt(x).toString(16).padStart(64, "0");
 
 const api = {
   init, keygen, newNote, commitment, nullifier, Tree, buildJoinSplit, publicSignals, actionPublics, pack, unpack,
-  tryDecryptReceiver, decryptAuditor, randField, randScalar, nameToU64, hex32, TOKENS, DEPTH,
+  compressPoint, decompressPoint, xFromY, tryDecryptReceiver, decryptAuditor, randField, randScalar, nameToU64, hex32, TOKENS, DEPTH,
   get F() { return F; }, get bj() { return bj; }, get B8() { return B8; },
 };
 export default api;
