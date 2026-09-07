@@ -18,6 +18,7 @@ export const Overview = ({
   onDeposit,
   onWithdraw,
   busy,
+  refreshing = false,
 }: {
   st: ConfState;
   publicBalance: bigint | null;
