@@ -30,7 +30,7 @@ export const Activity = ({ st, isMock }: { st: ConfState; isMock: boolean }) => 
     <section className="section">
       <h2>Activity</h2>
       <p className="muted small">Confidential {st.token.code}</p>
-      <p className="lede">Each line is what the chain recorded. Amounts you can read are shown because this device holds your key.</p>
+      <p className="lede">Each line is what the chain recorded, across every token. Amounts you can read are shown because this device holds your key.</p>
       {rows.length === 0 ? (
         <div className="empty">{st.historyLoaded === false ? "Loading activity" : "No activity yet. Deposit to start."}</div>
       ) : (

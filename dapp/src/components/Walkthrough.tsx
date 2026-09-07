@@ -34,8 +34,10 @@ const BAR_H = 13;
 
 export const Walkthrough = () => {
   const reduced = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  const [t, setT] = useState(reduced ? 23.2 : 0);
-  const [paused, setPaused] = useState(reduced);
+  // `?wt=<seconds>` freezes the clock at a point in the loop (screenshots, reviews)
+  const frozen = typeof window !== "undefined" ? Number(new URLSearchParams(window.location.search).get("wt")) : 0;
+  const [t, setT] = useState(reduced ? 23.2 : frozen > 0 ? frozen % LOOP : 0);
+  const [paused, setPaused] = useState(reduced || frozen > 0);
   const raf = useRef(0);
   const last = useRef<number | null>(null);
 

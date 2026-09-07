@@ -398,7 +398,7 @@ export default function App() {
             {k === "overview" && st && st.pendingCount > 0 ? ` (${st.pendingCount} pending)` : ""}
           </a>
         ))}
-        {tokens.length > 1 ? (
+        {tokens.length > 1 && tab !== "activity" ? (
           <span className="tokens" role="group" aria-label="Token">
             {tokens.map((t) => (
               <button key={t.code} onClick={() => chooseToken(t.code)} aria-pressed={t.code === token.code} title={`Confidential ${t.code}`}>
