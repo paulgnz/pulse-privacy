@@ -175,6 +175,17 @@ export const About = ({ signedIn, onConnect }: { signedIn: boolean; onConnect?: 
     </section>
 
     <section>
+      <h2>If you lose your key</h2>
+      <p>
+        For most accounts the key comes back from your wallet's signature every time, so there is nothing to lose. Accounts that sign in with a
+        passkey get a saved key instead, because passkey signatures differ every time. Those accounts can keep an encrypted recovery copy with
+        the XPR Network committee: if the device is lost, the committee returns the key after you prove you own the account. And if a key is
+        ever beyond recovery, the committee can pause the token and return an account's balance from escrow, using the amounts its viewing key
+        can read. Funds in the contract are recoverable; they are never simply gone.
+      </p>
+    </section>
+
+    <section>
       <h2>Tokens and limits</h2>
       <p>
         This is an early release, so the contract caps what it holds. The caps are set on chain and will be raised in steps.

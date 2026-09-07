@@ -164,6 +164,7 @@ export class ConfidentialClient {
       withdrawGranularity: BigInt(pool.config.withdrawGranularity),
       depositGranularity: BigInt(pool.config.depositGranularity),
       units: this.token.units,
+      auditorPubkey: pool.auditorPubkey,
     };
     const peers = Object.entries(pool.accounts)
       .filter(([n]) => n !== this.actor)
@@ -197,6 +198,7 @@ export class ConfidentialClient {
       withdrawGranularity: cfgRow?.withdrawGranularity ?? t.units,
       depositGranularity: cfgRow?.depositGranularity ?? 0n,
       units: t.units,
+      auditorPubkey: cfgRow?.auditorPubkey,
     };
     const peers = all.filter((a) => a.owner !== this.actor).map((a) => ({ name: a.owner, pubkey: a.enc_pubkey }));
     const empty: ConfState = { token: t, registered: !!row, pubkey: row?.enc_pubkey, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], edgesSinceLastIncoming: 0, config: cfg, peers };
@@ -295,7 +297,7 @@ export class ConfidentialClient {
     return this.keypair;
   }
 
-  async register(): Promise<string> {
+  async register(recoveryBlob?: Hex): Promise<string> {
     const kp = this.need();
     if (this.isMock) {
       const pool = await loadPool(this.backend, this.token);
@@ -318,20 +320,31 @@ export class ConfidentialClient {
       if (existing.enc_pubkey.toLowerCase() !== kp.pubkey.toLowerCase()) throw new Error("this account is registered with a different encryption key. Import that key in Settings.");
       throw new Error(`already registered for ${this.token.code}`);
     }
-    return chain.broadcast(this.session, [chain.registerAction(this.session, this.token, kp.pubkey)]);
+    const actions: unknown[] = [chain.registerAction(this.session, this.token, kp.pubkey)];
+    if (recoveryBlob) actions.push(chain.recoveryAction(this.session, recoveryBlob));
+    return chain.broadcast(this.session, actions);
+  }
+
+  /** store (or replace) the encrypted recovery copy of the secret; one signature */
+  async storeRecovery(blob: Hex): Promise<string> {
+    if (this.isMock) return "mock";
+    return chain.broadcast(this.session, [chain.recoveryAction(this.session, blob)]);
   }
 
   /** First run: publish the key and make the first deposit in one transaction (one signature). */
-  async registerAndDeposit(amount: bigint): Promise<string> {
+  async registerAndDeposit(amount: bigint, recoveryBlob?: Hex): Promise<string> {
     if (amount <= 0n) throw new Error("amount must be positive");
     const kp = this.need();
     if (this.isMock) {
-      await this.register();
+      await this.register(recoveryBlob);
       return this.deposit(amount);
     }
     // no network call between the tap and the signing request: on a phone the wallet hand-off
     // has to happen inside the tap, and the contract rejects a duplicate registration itself
-    return chain.broadcast(this.session, [chain.registerAction(this.session, this.token, kp.pubkey), chain.depositAction(this.session, this.token, amount)]);
+    const actions: unknown[] = [chain.registerAction(this.session, this.token, kp.pubkey)];
+    if (recoveryBlob) actions.push(chain.recoveryAction(this.session, recoveryBlob));
+    actions.push(chain.depositAction(this.session, this.token, amount));
+    return chain.broadcast(this.session, actions);
   }
 
   async deposit(amount: bigint): Promise<string> {

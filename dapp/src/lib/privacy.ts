@@ -1,3 +1,4 @@
+import type { Hex } from "./crypto/types";
 // The §1.9 rules that live in the wallet. The chain enforces granularity; the wallet handles
 // judgment: does this withdrawal look like something you just received? Never a hard block.
 
@@ -8,6 +9,8 @@ export interface IncomingEvent {
 }
 
 export interface PoolConfig {
+  /** the auditor\'s full public key, hex; the recovery copy is encrypted to it */
+  auditorPubkey?: Hex;
   /** withdrawals must be a multiple of this many units; 0 = off */
   withdrawGranularity: bigint;
   /** deposits: the wallet nudges toward a multiple; 0 = off */

@@ -32,6 +32,8 @@ export const Overview = ({
   onSelectToken,
   onRegister,
   hasKey = false,
+  backupNeeded = false,
+  onStoreRecovery,
 }: {
   /** the token the forms act on */
   st: ConfState;
@@ -48,6 +50,9 @@ export const Overview = ({
   /** register the encryption key for a token (already set up for another one) */
   onRegister?: (code: string) => Promise<unknown>;
   hasKey?: boolean;
+  /** a saved key with no recovery copy on chain and no export yet: losing this browser loses the funds */
+  backupNeeded?: boolean;
+  onStoreRecovery?: () => Promise<unknown>;
   tokens?: { code: string }[];
   onSelectToken?: (code: string) => void;
 }) => {
@@ -86,6 +91,21 @@ export const Overview = ({
   return (
     <section className="statement">
       <h2>Statement</h2>
+      {backupNeeded ? (
+        <Note level="warn">
+          <p>
+            <b>Your encryption key is only in this browser.</b> If it is lost, nobody can read or spend this balance. Keep an encrypted recovery copy with the XPR Network committee (one signature), or export the key file in Settings.
+          </p>
+          <div className="row" style={{ gap: 14 }}>
+            {onStoreRecovery ? (
+              <button className="btn private small" onClick={() => onStoreRecovery()} disabled={busy}>
+                {busy ? "Storing" : "Keep a recovery copy"}
+              </button>
+            ) : null}
+            <button className="textbtn" onClick={() => onGo("settings")}>Export the key file</button>
+          </div>
+        </Note>
+      ) : null}
       {notice ? (
         <Note level="ok">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 16 }}>

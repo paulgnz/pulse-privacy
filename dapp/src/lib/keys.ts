@@ -27,6 +27,29 @@ export function forgetKeypair(actor: string) {
   localStorage.removeItem(KEY(actor));
 }
 
+const BACKED_UP = (actor: string) => `pulse-privacy/backedup/v1/${actor}`;
+export const markBackedUp = (actor: string) => { try { localStorage.setItem(BACKED_UP(actor), "1"); } catch { /* ignore */ } };
+export const isBackedUp = (actor: string) => { try { return localStorage.getItem(BACKED_UP(actor)) === "1"; } catch { return false; } };
+
+/**
+ * An encrypted copy of the secret that only the auditor's viewing key opens (96 bytes:
+ * R = r·P_a as a full point, then secret XOR sha256(r·H)). The committee can return it to the
+ * account's owner if this browser's copy is lost. It gives the committee nothing it does not
+ * already have: it can read every amount with the viewing key, and spending still needs the
+ * wallet's own signature.
+ */
+export async function recoveryBlob(secret: Hex, auditorPubkey: Hex): Promise<Hex> {
+  const { H, mul, ptFromHex, ptHex, randScalar } = await import("./crypto/babyjub");
+  const r = randScalar();
+  const R = mul(ptFromHex(auditorPubkey.replace(/^0x/, "")), r);
+  const K = mul(H, r);
+  const keyBytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ptHex(K))));
+  const s = secret.replace(/^0x/, "").padStart(64, "0");
+  let ct = "";
+  for (let i = 0; i < 32; i++) ct += (parseInt(s.slice(i * 2, i * 2 + 2), 16) ^ keyBytes[i]).toString(16).padStart(2, "0");
+  return `0x${ptHex(R)}${ct}` as Hex;
+}
+
 export async function createKeypair(actor: string, backend: CryptoBackend): Promise<EncryptionKeypair> {
   const kp = await backend.generateKeypair();
   saveKeypair(actor, kp);

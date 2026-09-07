@@ -15,6 +15,9 @@ export const Settings = ({
   onImportKey,
   onForgetKey,
   onRegister,
+  recoveryOnChain = null,
+  onStoreRecovery,
+  onExported,
   onSimulateIncoming,
   onSimulatePool,
   onResetMock,
@@ -30,6 +33,10 @@ export const Settings = ({
   onImportKey: (secret: string) => Promise<void>;
   onForgetKey: () => void;
   onRegister: () => Promise<string>;
+  /** saved keys: null = unknown/not applicable, true = an encrypted copy is on chain */
+  recoveryOnChain?: boolean | null;
+  onStoreRecovery?: () => Promise<unknown>;
+  onExported?: () => void;
   onSimulateIncoming: (from: string, amount: bigint) => Promise<void>;
   onSimulatePool: (n: number) => Promise<void>;
   onResetMock: () => Promise<void>;
@@ -52,6 +59,7 @@ export const Settings = ({
   };
 
   const download = () => {
+    onExported?.();
     if (!keypair) return;
     const blob = new Blob([exportBlob(actor, keypair)], { type: "application/json" });
     const a = document.createElement("a");
@@ -62,6 +70,7 @@ export const Settings = ({
   };
 
   const copy = async () => {
+    onExported?.();
     if (!keypair) return;
     await navigator.clipboard.writeText(exportBlob(actor, keypair));
     setCopied(true);
@@ -80,9 +89,20 @@ export const Settings = ({
         ) : (
           <>
             <p className="lede">This is a saved key. It opens your boxes, is separate from your wallet's signing key, and stays in this browser.</p>
-            <Note level="warn">
-              <p>If you lose this key you cannot read your confidential balance, and you cannot build the proof that spends it. Export it and keep the file somewhere safe.</p>
-            </Note>
+            {recoveryOnChain ? (
+              <Note level="ok">
+                <p>An encrypted recovery copy of this key is kept with the XPR Network committee. If this browser is lost, the committee can return the key to you after you prove you own the account. Exporting the key file as well is still a good idea.</p>
+              </Note>
+            ) : (
+              <Note level="warn">
+                <p>If you lose this key you cannot read your confidential balance, and you cannot build the proof that spends it. Keep an encrypted recovery copy with the committee, export the key file, or both.</p>
+                {onStoreRecovery ? (
+                  <button className="btn private small" onClick={() => run(onStoreRecovery, "Recovery copy stored with the committee.")} disabled={busy}>
+                    {busy ? "Storing" : "Keep a recovery copy with the committee"}
+                  </button>
+                ) : null}
+              </Note>
+            )}
           </>
         )}
         {keypair ? (

@@ -226,7 +226,7 @@ export function decompressHex(h) {
 }
 
 const api = {
-  init, keygen, encrypt, encryptPublic, decryptPoint, decrypt64, bsgs32, buildBabyTable, ctAdd,
+  init, keygen, encrypt, encryptPublic, decryptPoint, decrypt64, bsgs32, buildBabyTable, ctAdd, mul, add,
   split64, join64, randScalar, toObj, toPt, buildTransferWitness, buildWithdrawWitness,
   ptHex, ptFromHex, ctHex, ctFromHex, tHex, tReceiverFromHex, tAuditorFromHex, compressHex, decompressHex,
   get F() { return F; }, get G() { return G; }, get H() { return H; }, get INF() { return INF; }, get bj() { return bj; },

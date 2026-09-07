@@ -69,6 +69,21 @@ class Limits extends Table {
   }
 }
 
+/** An encrypted copy of the owner's encryption secret, readable only with the auditor's viewing key. */
+@table("recovery")
+class Recovery extends Table {
+  constructor(
+    public owner: Name = new Name(),
+    public blob: u8[] = []
+  ) {
+    super();
+  }
+  @primary
+  get primary(): u64 {
+    return this.owner.N;
+  }
+}
+
 @table("accounts")
 class Account extends Table {
   constructor(
@@ -112,6 +127,7 @@ function chunks(amount: u64): u64[] {
 class XprConf extends Contract {
   configs: TableStore<Config> = new TableStore<Config>(this.receiver);
   limits: TableStore<Limits> = new TableStore<Limits>(this.receiver);
+  recovery: TableStore<Recovery> = new TableStore<Recovery>(this.receiver);
 
   accountsOf(sym: u64): TableStore<Account> {
     return new TableStore<Account>(this.receiver, Name.fromU64(sym));
@@ -169,6 +185,60 @@ class XprConf extends Contract {
   }
 
   /** soft-launch caps (0 = off). Applies from the next deposit; `pool` tracks deposits − withdrawals. */
+  // ---------------------------------------------------------------- recovery
+
+  /** Keep an encrypted copy of the encryption secret (96 bytes: R || ciphertext), readable with the auditor's viewing key. */
+  @action("setrecovery")
+  setrecovery(owner: Name, blob: u8[]): void {
+    requireAuth(owner);
+    check(blob.length == 96, "blob must be 96 bytes");
+    const r = this.recovery.get(owner.N);
+    if (r == null) this.recovery.store(new Recovery(owner, blob), owner);
+    else {
+      r.blob = blob;
+      this.recovery.update(r, owner);
+    }
+  }
+
+  @action("delrecovery")
+  delrecovery(owner: Name): void {
+    requireAuth(owner);
+    const r = this.recovery.get(owner.N);
+    check(r != null, "no recovery copy");
+    this.recovery.remove(r!);
+  }
+
+  /**
+   * Return an account's balance from escrow, by the contract's authority (the committee), only
+   * while the token is paused. The amount comes from the auditor's reconstruction of the ledger;
+   * the boxes are reset so nothing can be spent twice. Every restore is a public transfer with
+   * the memo, so the record of what was returned is on chain.
+   */
+  @action("restore")
+  restore(owner: Name, quantity: Asset, memo: string): void {
+    requireAuth(this.receiver);
+    const c = this.configOf(quantity.symbol);
+    check(c.paused, "restore is only possible while the token is paused");
+    check(quantity.amount > 0, "amount must be positive");
+    const accounts = this.accountsOf(quantity.symbol.raw());
+    const acc = accounts.get(owner.N);
+    check(acc != null, "not registered");
+    const a = acc!;
+    a.avail = zeroCt();
+    a.pending = zeroCt();
+    a.pending_count = 0;
+    a.nonce += 1;
+    accounts.update(a, this.receiver);
+    const v = <u64>quantity.amount;
+    const lim = this.limits.get(quantity.symbol.raw());
+    if (lim != null) {
+      const l = lim!;
+      l.pool = l.pool > v ? l.pool - v : 0;
+      this.limits.update(l, this.receiver);
+    }
+    sendTransferTokens(this.receiver, owner, [new ExtendedAsset(quantity, c.token_contract)], "restore: " + memo);
+  }
+
   /** Set the pool counter to the actual escrow for a token (the counter starts at 0 when limits are first set). */
   @action("setpool")
   setpool(sym: Symbol, pool: u64): void {

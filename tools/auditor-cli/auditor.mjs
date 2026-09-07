@@ -8,6 +8,7 @@
 //                                                  auditor, so balances are reconstructed by summing)
 //                                                  and Σ(deposits − withdrawals) vs the escrow
 //   node auditor.mjs account NAME                  one account's history
+//   node auditor.mjs recover NAME                  decrypt NAME's recovery copy (prints the secret; hand it to the owner only)
 //
 // Env: AUDITOR_SECRET (hex/decimal scalar) or AUDITOR_KEYFILE (JSON with {"auditor": "..."}),
 //      HYPERION (default https://test.proton.eosusa.io), RPC (default https://tn1.protonnz.com),
@@ -154,6 +155,23 @@ if (cmd === "ledger") {
   const ok = escrow === deposits - withdrawals + stray + pre && sum === deposits - withdrawals;
   console.log(ok ? "\nRECONCILED: escrow = deposits − withdrawals + stray; balances sum to the pool" : "\nMISMATCH");
   process.exitCode = ok ? 0 : 2;
+} else if (cmd === "recover") {
+  // ECIES on Baby Jubjub: blob = R (64 B, R = r·P_a) || secret XOR sha256(hex(r·H)); s·R = r·H
+  const { createHash } = await import("node:crypto");
+  const r = await (await fetch(`${RPC}/v1/chain/get_table_rows`, { method: "POST", body: JSON.stringify({ code: CONTRACT, scope: CONTRACT, table: "recovery", lower_bound: arg, upper_bound: arg, limit: 1, json: true }) })).json();
+  const row = r.rows?.[0];
+  if (!row || row.owner !== arg) { console.error(`${arg} has no recovery copy on chain`); process.exit(1); }
+  const blob = String(row.blob).replace(/^0x/, "");
+  if (blob.length !== 192) { console.error("unexpected blob length"); process.exit(1); }
+  const R = eg.ptFromHex(blob, 0);
+  const K = eg.toObj(eg.mul(R, loadSecret()));
+  const w32 = (n) => n.toString(16).padStart(64, "0");
+  const key = createHash("sha256").update(w32(K[0]) + w32(K[1])).digest();
+  const ct = Buffer.from(blob.slice(128), "hex");
+  const secret = Buffer.alloc(32);
+  for (let i = 0; i < 32; i++) secret[i] = ct[i] ^ key[i];
+  console.log(`recovered secret for ${arg} (give this to the account owner only, over a channel you trust):`);
+  console.log("0x" + secret.toString("hex"));
 } else {
   console.log("usage: auditor.mjs ledger [--from BLOCK] | reconcile | account NAME");
 }

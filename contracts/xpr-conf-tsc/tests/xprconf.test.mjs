@@ -179,5 +179,24 @@ lap("non-canonical coordinate rejected; canonical send accepted");
 await conf.actions.setpool(["4,XPR", "123"]).send("xprconf@active");
 if (String(conf.tables.limits(nameToBigInt("xprconf")).getTableRow(symScope()).pool) !== "123") throw new Error("setpool");
 lap("setpool ok");
+// --- recovery copy and committee restore ---
+const blob = Array.from({ length: 96 }, (_, i) => i & 0xff);
+await conf.actions.setrecovery(["bob", Buffer.from(blob).toString("hex")]).send("bob@active");
+const rr = conf.tables.recovery(nameToBigInt("xprconf")).getTableRow(nameToBigInt("bob"));
+if (!rr || rr.blob.length !== 192) throw new Error("recovery row");
+await expectToThrow(conf.actions.setrecovery(["bob", "00"]).send("bob@active"), "eosio_assert: blob must be 96 bytes");
+// restore only while paused, only by the contract
+await expectToThrow(conf.actions.restore(["bob", "100.0000 XPR", "test"]).send("xprconf@active"), "eosio_assert: restore is only possible while the token is paused");
+await conf.actions.configure(["4,XPR", eg.ptHex(auditor.P), "10000", "0", true]).send("xprconf@active");
+await expectToThrow(conf.actions.restore(["bob", "100.0000 XPR", "test"]).send("bob@active"), "missing required authority xprconf");
+const pubOf = (n) => BigInt(String(token.tables.accounts(nameToBigInt(n)).getTableRows().find((r) => String(r.balance).endsWith(" XPR"))?.balance ?? "0.0000 XPR").split(" ")[0].replace(".", ""));
+const bobBefore = pubOf("bob");
+await conf.actions.restore(["bob", "100.0000 XPR", "reconciliation 2026-09-07"]).send("xprconf@active");
+const bobAfter = pubOf("bob");
+if (bobAfter - bobBefore !== 1_000_000n) throw new Error(`restore paid ${bobAfter - bobBefore}`);
+const bobRow = conf.tables.accounts(symScope()).getTableRow(nameToBigInt("bob"));
+if (eg.decrypt64(eg.ctFromHex(bobRow.avail), bob.s) !== 0n || bobRow.pending_count !== 0) throw new Error("restore did not reset the boxes");
+await conf.actions.configure(["4,XPR", eg.ptHex(auditor.P), "10000", "0", false]).send("xprconf@active");
+lap("recovery copy stored; restore returns escrow only while paused and resets the boxes");
 console.log("T3 end-to-end passed");
 process.exit(0);

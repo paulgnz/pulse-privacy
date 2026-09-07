@@ -440,6 +440,16 @@ export function depositAction(s: Session, token: Token, amount: bigint) {
   };
 }
 
+export function recoveryAction(s: Session, blob: Hex) {
+  return { account: CONTRACT, name: "setrecovery", authorization: auth(s), data: { owner: s.auth.actor, blob: bare(blob) } };
+}
+
+/** whether the account keeps an encrypted recovery copy of its secret with the committee */
+export async function hasRecovery(actor: string): Promise<boolean> {
+  const r = await rpc<{ rows: { owner: string }[] }>("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "recovery", lower_bound: actor, upper_bound: actor, limit: 1, json: true });
+  return r.rows.length > 0 && r.rows[0].owner === actor;
+}
+
 export function applyPendingAction(s: Session, token: Token) {
   return { account: CONTRACT, name: "applypending", authorization: auth(s), data: { owner: s.auth.actor, sym: token.symStr } };
 }

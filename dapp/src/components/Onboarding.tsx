@@ -34,7 +34,7 @@ export interface OnboardingProps {
   connectError?: string;
   onConnect: () => Promise<void>;
   /** `derived`: the secret came from the wallet signature and lives in memory only */
-  onKeyReady: (kp: EncryptionKeypair, derived: boolean) => void;
+  onKeyReady: (kp: EncryptionKeypair, derived: boolean, keepRecovery?: boolean) => void;
   session: Session | null;
   /** returning session: derive again without the stability check, prompting at once */
   autoUnlock?: boolean;
@@ -135,6 +135,7 @@ const Key = (p: OnboardingProps) => {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [keepRecovery, setKeepRecovery] = useState(true);
   const [copied, setCopied] = useState(false);
   const [stage, setStage] = useState<string>("");
   const [nonDeterministic, setNonDeterministic] = useState(false);
@@ -273,7 +274,7 @@ const Key = (p: OnboardingProps) => {
     const kp = fresh ?? p.keypair;
     if (!kp || !p.actor) return;
     saveKeypair(p.actor, kp);
-    p.onKeyReady(kp, false);
+    p.onKeyReady(kp, false, keepRecovery);
   };
 
   const download = () => {
@@ -347,7 +348,7 @@ const Key = (p: OnboardingProps) => {
     return (
       <section className="step">
         <h2>Save your backup</h2>
-        <p className="lede">This is the key that opens your boxes. It is shown once. Without it you cannot read your confidential balance or build the proof that spends it, and no one can recover it for you.</p>
+        <p className="lede">This is the key that opens your boxes. Without it you cannot read your confidential balance or build the proof that spends it. Save it now, and keep an encrypted recovery copy with the XPR Network committee so a lost device is not a lost balance.</p>
         <div className="secret" aria-label="Your encryption secret">
           <code>{previewKey.secret}</code>
         </div>
@@ -359,6 +360,10 @@ const Key = (p: OnboardingProps) => {
             {copied ? "Copied" : "Copy secret"}
           </button>
         </div>
+        <label className="check">
+          <input type="checkbox" checked={keepRecovery} onChange={(e) => setKeepRecovery(e.target.checked)} />
+          <span>Keep an encrypted recovery copy with the XPR Network committee (recommended). Stored on chain with your registration; only the committee's viewing key can open it, and spending still needs your wallet.</span>
+        </label>
         <label className="check">
           <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
           <span>I have saved my backup somewhere safe.</span>
