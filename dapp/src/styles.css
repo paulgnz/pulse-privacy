@@ -318,3 +318,9 @@ details[open] summary { margin-bottom: 12px; }
   .redact.busy { background: #3b4048; }
   .figure.refreshing .digits { opacity: 0.5; }
 }
+
+/* token choice inside forms */
+.tokpick { display: flex; align-items: baseline; gap: 14px; margin: 4px 0 14px; }
+.tokpick .lbl { font-size: 13px; color: var(--graphite); }
+.tokpick button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.nav .tokens::before { content: "Token"; font-size: 13px; color: var(--graphite); align-self: center; margin-right: 2px; }

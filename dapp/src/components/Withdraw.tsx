@@ -2,19 +2,23 @@ import { useMemo, useState } from "react";
 import type { ConfState } from "../lib/client";
 import { fmtUnits, parseUnits } from "../lib/format";
 import { checkWithdrawal, isRound } from "../lib/privacy";
-import { AmountInput, EdgeNote, Field, Note, Progress } from "./ui";
+import { AmountInput, EdgeNote, Field, Note, Progress, TokenPicker } from "./ui";
 
 export const Withdraw = ({
   st,
   onWithdraw,
   busy,
   onClose,
+  tokens,
+  onSelectToken,
   onDone,
 }: {
   st: ConfState;
   onWithdraw: (amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
   busy: boolean;
   onClose: () => void;
+  tokens?: { code: string }[];
+  onSelectToken?: (code: string) => void;
   /** success: the parent shows the confirmation at the top of the statement and closes the form */
   onDone?: (msg: string) => void;
 }) => {
@@ -59,6 +63,7 @@ export const Withdraw = ({
   return (
     <div className="form" aria-label="Withdraw">
       <h3>Withdraw</h3>
+      {tokens && onSelectToken ? <TokenPicker tokens={tokens} current={T.code} onSelect={onSelectToken} /> : null}
       <p>Withdrawing moves {T.code} back out as a public transfer. Keep it for when you need public {T.code}; paying inside the contract is the private path.</p>
       <Field
         label="Amount"

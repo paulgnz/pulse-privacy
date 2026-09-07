@@ -19,6 +19,8 @@ export const Overview = ({
   onWithdraw,
   busy,
   refreshing = false,
+  tokens,
+  onSelectToken,
   onRegister,
   hasKey = false,
 }: {
@@ -35,6 +37,8 @@ export const Overview = ({
   /** register the encryption key for this token (already set up for another token) */
   onRegister?: () => Promise<unknown>;
   hasKey?: boolean;
+  tokens?: { code: string }[];
+  onSelectToken?: (code: string) => void;
 }) => {
   const [revealed, setRevealed] = useState<boolean>(() => {
     try {
@@ -136,9 +140,9 @@ export const Overview = ({
         </button>
       </div>
 
-      {form === "send" ? <Send st={st} onSend={onSend} busy={busy} onClose={() => setForm(null)} onDone={done} /> : null}
-      {form === "deposit" ? <Deposit st={st} publicBalance={publicBalance} onDeposit={onDeposit} busy={busy} onClose={() => setForm(null)} onDone={done} /> : null}
-      {form === "withdraw" ? <Withdraw st={st} onWithdraw={onWithdraw} busy={busy} onClose={() => setForm(null)} onDone={done} /> : null}
+      {form === "send" ? <Send st={st} onSend={onSend} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} /> : null}
+      {form === "deposit" ? <Deposit st={st} publicBalance={publicBalance} onDeposit={onDeposit} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} /> : null}
+      {form === "withdraw" ? <Withdraw st={st} onWithdraw={onWithdraw} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} /> : null}
     </section>
   );
 };

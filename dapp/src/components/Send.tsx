@@ -1,19 +1,23 @@
 import { useMemo, useState } from "react";
 import type { ConfState } from "../lib/client";
 import { fmtUnits, parseUnits } from "../lib/format";
-import { AmountInput, Field, Note, Progress } from "./ui";
+import { AmountInput, Field, Note, Progress, TokenPicker } from "./ui";
 
 export const Send = ({
   st,
   onSend,
   busy,
   onClose,
+  tokens,
+  onSelectToken,
   onDone,
 }: {
   st: ConfState;
   onSend: (to: string, amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
   busy: boolean;
   onClose: () => void;
+  tokens?: { code: string }[];
+  onSelectToken?: (code: string) => void;
   /** success: the parent shows the confirmation at the top of the statement and closes the form */
   onDone?: (msg: string) => void;
 }) => {
@@ -55,6 +59,7 @@ export const Send = ({
   return (
     <div className="form" aria-label="Send">
       <h3>Send</h3>
+      {tokens && onSelectToken ? <TokenPicker tokens={tokens} current={T.code} onSelect={onSelectToken} /> : null}
       <p>The chain will record that you paid this account, and when. The amount is a box only you, they and the auditor can open.</p>
       <Field
         label="To"

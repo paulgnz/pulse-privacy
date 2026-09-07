@@ -92,3 +92,18 @@ export const Line = ({ label, sub, children, hero }: { label: ReactNode; sub?: R
     <div className="value">{children}</div>
   </div>
 );
+
+/** Token choice inside a form: "Token  XPR  XMD" with the active one underlined. */
+export const TokenPicker = ({ tokens, current, onSelect }: { tokens: { code: string }[]; current: string; onSelect: (code: string) => void }) => {
+  if (tokens.length < 2) return null;
+  return (
+    <div className="tokpick" role="group" aria-label="Token">
+      <span className="lbl">Token</span>
+      {tokens.map((t) => (
+        <button key={t.code} type="button" className="textbtn" onClick={() => onSelect(t.code)} aria-pressed={t.code === current}>
+          {t.code}
+        </button>
+      ))}
+    </div>
+  );
+};
