@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SHIELD } from "../config";
-import { broadcast, deterministicSigner, getPublicBalance } from "../lib/chain";
+import { broadcast, describeLastError, deterministicSigner, getPublicBalance } from "../lib/chain";
 import type { Session } from "../lib/chain";
 import type { Pt } from "../lib/crypto/babyjub";
 import { eq } from "../lib/crypto/babyjub";
@@ -121,7 +121,8 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       setForm(null);
       await refresh();
     } catch (e) {
-      setNotice({ ok: false, text: `Not done. ${(e as Error).message}` });
+      const detail = describeLastError();
+      setNotice({ ok: false, text: `Not done. ${(e as Error).message}${detail ? ` Details: ${detail}` : ""}` });
     } finally { setBusy(false); setStage(null); }
   };
 

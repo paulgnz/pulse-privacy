@@ -502,13 +502,31 @@ export function friendlyError(e: unknown): Error {
   return e instanceof Error ? e : new Error(raw);
 }
 
+/** the last raw wallet or chain error, for diagnostics */
+export let lastRawError: unknown = null;
+
 export async function broadcast(s: Session, actions: unknown[]): Promise<string> {
   try {
     const r = (await s.transact({ actions }, { broadcast: true })) as { processed?: { id?: string }; transaction_id?: string };
     return r.transaction_id ?? r.processed?.id ?? "";
   } catch (e) {
+    lastRawError = e;
+    console.error("wallet/chain error", e);
     throw friendlyError(e);
   }
+}
+
+/** a compact description of the last raw error: type, message, and any json the wallet attached */
+export function describeLastError(): string {
+  const e = lastRawError as { message?: string; json?: unknown; stack?: string } | string | null;
+  if (!e) return "";
+  try {
+    if (typeof e === "string") return e;
+    const o: Record<string, unknown> = { type: e.constructor?.name, message: e.message };
+    if (e.json) o.json = e.json;
+    for (const k of Object.keys(e)) if (!(k in o)) o[k] = (e as Record<string, unknown>)[k];
+    return JSON.stringify(o).slice(0, 1500);
+  } catch { return String(e); }
 }
 
 export type { Ciphertext };
