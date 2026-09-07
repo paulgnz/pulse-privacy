@@ -1,0 +1,12 @@
+import { Blockchain } from "@proton/vert";
+const bc = new Blockchain();
+const c = bc.createContract("shbench", "/Users/paulgrey/dev/pulse-privacy/contracts/xpr-shield-tsc/assembly/target/shbench.contract");
+for (let i = 0; i < 400 && !c.actions.bench; i++) await new Promise((r) => setTimeout(r, 25));
+const time = async (n) => { const t = process.hrtime.bigint(); await c.actions.bench({ n }).send("shbench@active"); return Number(process.hrtime.bigint() - t) / 1e6; };
+await time(1); await time(1);
+const base = Math.min(await time(0), await time(0), await time(0));
+const h100 = Math.min(await time(100), await time(100), await time(100));
+const h1000 = Math.min(await time(1000), await time(1000));
+console.log(`vert: action overhead ${base.toFixed(2)} ms; 100 hashes ${h100.toFixed(2)} ms; 1000 hashes ${h1000.toFixed(2)} ms -> ${((h1000 - base) / 1000 * 1000).toFixed(0)} µs per Poseidon(2) in V8 wasm`);
+const cm = "11".repeat(32);
+const ti = process.hrtime.bigint(); await c.actions.insert({ cm1: cm, cm2: cm, index: 5 }).send("shbench@active"); console.log(`insert (21 hashes): ${(Number(process.hrtime.bigint() - ti) / 1e6).toFixed(2)} ms`);

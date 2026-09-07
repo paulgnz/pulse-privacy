@@ -1,0 +1,20 @@
+{
+  "name": "xpr-shield-tsc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shielded transfers for XPR Network (proton-tsc): notes, Poseidon Merkle tree, nullifiers, Groth16 join-split.",
+  "type": "module",
+  "scripts": {
+    "consts": "node scripts/gen-poseidon-consts.mjs",
+    "build:bench": "npx proton-asc ./assembly/shbench.contract.ts --target release",
+    "build": "npm run build:bench",
+    "test": "node tests/poseidon.test.mjs"
+  },
+  "dependencies": {
+    "@proton/vert": "^0.3.24",
+    "proton-tsc": "^0.3.58"
+  },
+  "devDependencies": {
+    "typescript": "^4.9.5"
+  }
+}
