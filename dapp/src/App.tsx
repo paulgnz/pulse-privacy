@@ -197,6 +197,14 @@ export default function App() {
     }
   }, []);
 
+  const simDone = useRef(false);
+  useEffect(() => {
+    if (!backend.isMock || !demo || !client || simDone.current) return;
+    const q = new URLSearchParams(location.search).get("sim");
+    if (!q) return;
+    simDone.current = true;
+    client.simulateIncoming("carol", BigInt(Math.round(Number(q) * 10000))).then(() => refresh({ history: false })).catch(() => { /* ignore */ });
+  }, [client, demo]);
   useEffect(() => {
     refresh();
     const t = setInterval(() => { if (document.visibilityState === "visible") refresh({ history: false }); }, 15000);
@@ -205,7 +213,7 @@ export default function App() {
   }, [refresh, tab]);
 
   // Notify on incoming confidential transfers: compare pending between refreshes.
-  const [received, setReceived] = useState<string | null>(null);
+  const [received, setReceived] = useState<{ msg: string; token: string } | null>(null);
   const prevPending = useRef<Record<string, { count: number; amount: bigint }>>({});
   useEffect(() => {
     if (!st) return;
@@ -219,7 +227,7 @@ export default function App() {
       if (!prev || cur.count <= prev.count) continue;
       const delta = cur.amount - prev.amount;
       const msg = delta > 0n ? `You received ${fmtUnits(delta, x.token)} ${x.token.code} inside the contract. It is in your pending box.` : `You received a confidential ${x.token.code} transfer. It is in your pending box.`;
-      setReceived(msg);
+      setReceived({ msg, token: x.token.code });
       try {
         if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("Confidential XPR", { body: msg });
       } catch { /* ignore */ }
@@ -466,8 +474,15 @@ export default function App() {
       {received ? (
         <Note level="ok">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 16 }}>
-            <span>{received}</span>
+            <span>{received.msg}</span>
             <span className="row" style={{ gap: 14 }}>
+              <button
+                className="textbtn"
+                disabled={busy}
+                onClick={() => { const code = received.token; setReceived(null); wrap(async () => { const c = clientFor(code); const tx = await c.applyPending(); trackTx(String(tx), { kind: "fold", token: c.token, onChain: { ciphertext: "●●●●" } }); event("folded", { token: code }); }); }}
+              >
+                {busy ? "Folding" : "Fold in now"}
+              </button>
               {typeof Notification !== "undefined" && Notification.permission === "default" ? (
                 <button className="textbtn quiet" onClick={askNotify}>Notify me on this device</button>
               ) : null}

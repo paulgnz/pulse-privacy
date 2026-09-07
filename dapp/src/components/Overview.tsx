@@ -4,7 +4,7 @@ import { EXPLORER } from "../config";
 import { Amount } from "./Amount";
 import { Deposit } from "./Deposit";
 import { Send } from "./Send";
-import { Line, Note, TokenIcon } from "./ui";
+import { Explain, Line, Note, TokenIcon } from "./ui";
 import { Withdraw } from "./Withdraw";
 
 type Form = "send" | "deposit" | "withdraw" | null;
@@ -123,10 +123,26 @@ export const Overview = ({
             {f.st.pendingCount > 0 ? (
               <Line
                 label={`Pending ${T.code}`}
-                sub={`${f.st.pendingCount} incoming ${f.st.pendingCount === 1 ? "transfer" : "transfers"} waiting in a separate box; folded before your next send`}
+                sub={
+                  <>
+                    {f.st.pendingCount} incoming {f.st.pendingCount === 1 ? "payment" : "payments"}, not yet in your balance
+                    <Explain label="Why is this separate?">
+                      <p>
+                        Payments to you land in a pending box rather than straight into your balance. That keeps your balance
+                        under your control alone: a payment you are in the middle of making can never be broken by someone
+                        paying you at the same moment, and nobody can spam your balance to interfere with it.
+                      </p>
+                      <p>
+                        Folding adds the pending box into your balance. It is one quick signature and nothing leaves the
+                        contract. If you do not fold, the app folds for you as part of your next send, so you never lose
+                        anything by waiting.
+                      </p>
+                    </Explain>
+                  </>
+                }
               >
                 <Amount value={f.st.pending} hidden revealed={revealed} size="mid" sign="+" busy={sweeping} token={T} />
-                <button className="textbtn" onClick={() => onFold(T.code)} disabled={busy}>
+                <button className="btn private small" onClick={() => onFold(T.code)} disabled={busy}>
                   {busy ? "Folding" : "Fold in now"}
                 </button>
               </Line>

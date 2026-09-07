@@ -115,6 +115,14 @@ export const EdgeNote = ({ check, onSuggest, token = XPR }: { check: EdgeCheck; 
 };
 
 /** Waiting on something outside the page (the wallet, the chain): a breathing dot and a line. */
+/** A short explanation behind a "Why…?" toggle; works on touch, unlike a hover tooltip. */
+export const Explain = ({ label, children }: { label: string; children: ReactNode }) => (
+  <details className="explain">
+    <summary>{label}</summary>
+    <div className="body">{children}</div>
+  </details>
+);
+
 export const Busy = ({ children }: { children: ReactNode }) => (
   <span className="busy" role="status">
     <span className="busy-dot" aria-hidden="true" />

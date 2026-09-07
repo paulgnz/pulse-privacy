@@ -118,6 +118,16 @@ export const About = ({ signedIn, onConnect }: { signedIn: boolean; onConnect?: 
     </section>
 
     <section>
+      <h2>Pending payments and folding</h2>
+      <p>
+        A payment to you lands in a pending box, not straight in your balance. Your balance changes only when you act, so a
+        proof you are building can never be spoiled by someone paying you at the same moment, and nobody can interfere with
+        your balance by sending you dust. Folding moves the pending box into your balance: one quick signature, nothing
+        leaves the contract. Fold when you like, or let the app fold for you as part of your next send.
+      </p>
+    </section>
+
+    <section>
       <h2>What is public and what is hidden</h2>
       <div className="cols">
         <div>
