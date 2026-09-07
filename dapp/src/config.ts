@@ -19,7 +19,8 @@ const NETWORKS: Record<"testnet" | "mainnet", Net> = {
   },
   mainnet: {
     chainId: "384da888112027f0321850a169f737c33e53b388aad48b5adace4bab97f437e0",
-    endpoints: ["https://proton.greymass.com", "https://proton.eosusa.io"],
+    // v5 nodes only; greymass (v3.1) was measured at 15 s per get_block and rejects sends at 30 ms
+    endpoints: ["https://api.protonnz.com", "https://proton.eosusa.io", "https://proton.cryptolions.io", "https://proton.eoscafeblock.com", "https://proton.genereos.io"],
     hyperions: ["https://hyperion-xpr-mainnet.protonnz.com", "https://proton.eosusa.io"],
     contract: "xprconf", // placeholder: the mainnet contract account is not created yet
     explorer: "https://explorer.xprnetwork.org",

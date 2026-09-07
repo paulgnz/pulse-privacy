@@ -31,7 +31,7 @@ export const Activity = ({ st, isMock }: { st: ConfState; isMock: boolean }) => 
       <h2>Activity</h2>
       <p className="lede">Each line is what the chain recorded. Amounts you can read are shown because this device holds your key.</p>
       {rows.length === 0 ? (
-        <div className="empty">No activity yet. Deposit to start.</div>
+        <div className="empty">{st.historyLoaded === false ? "Loading activity" : "No activity yet. Deposit to start."}</div>
       ) : (
         <>
           <div className="legend">

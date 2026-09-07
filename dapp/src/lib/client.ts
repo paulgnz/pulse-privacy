@@ -35,6 +35,8 @@ export interface ConfState {
   activity: ActivityItem[];
   incoming: IncomingEvent[];
   edgesSinceLastIncoming: number;
+  /** false while the ledger has not been fetched yet (statement shown first) */
+  historyLoaded?: boolean;
   config: PoolConfig;
   peers: { name: string; pubkey: Hex }[];
 }
@@ -134,9 +136,10 @@ export class ConfidentialClient {
 
   // ---------------------------------------------------------------- state
 
-  async state(): Promise<ConfState> {
+  /** `history: false` returns balances only (fast); the ledger is loaded separately. */
+  async state(opts: { history?: boolean } = {}): Promise<ConfState> {
     if (this.isMock) return this.mockState();
-    return this.realState();
+    return this.realState(opts.history !== false);
   }
 
   private async mockState(): Promise<ConfState> {
@@ -169,7 +172,7 @@ export class ConfidentialClient {
     };
   }
 
-  private async realState(): Promise<ConfState> {
+  private async realState(withHistory = true): Promise<ConfState> {
     const [row, cfgRow, all] = await Promise.all([chain.getConfAccount(this.actor), chain.getConfConfig(), chain.listConfAccounts()]);
     const cfg: PoolConfig = {
       withdrawGranularity: cfgRow?.withdrawGranularity ?? UNITS,
@@ -184,10 +187,14 @@ export class ConfidentialClient {
 
     // history: what happened to me, what I received, and how busy the pool has been since
     let history: chain.PoolAction[] = [];
-    try {
-      history = await chain.poolHistory(200);
-    } catch {
-      /* Hyperion down: balances still work, activity is empty */
+    let historyLoaded = false;
+    if (withHistory) {
+      try {
+        history = await chain.poolHistory(200);
+        historyLoaded = true;
+      } catch {
+        /* Hyperion down: balances still work, activity is empty */
+      }
     }
     const activity: ActivityItem[] = [];
     const incoming: IncomingEvent[] = [];
@@ -239,6 +246,7 @@ export class ConfidentialClient {
       activity: activity.sort((a, b) => b.ts - a.ts),
       incoming,
       edgesSinceLastIncoming,
+      historyLoaded,
       config: cfg,
       peers,
     };

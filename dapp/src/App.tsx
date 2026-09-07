@@ -94,14 +94,20 @@ export default function App() {
   const client = useMemo(() => (session ? new ConfidentialClient(backend, session, keypair) : null), [session, keypair]);
 
   const [refreshing, setRefreshing] = useState(false);
-  const refresh = useCallback(async () => {
+  // Two phases: balances first (fast, what the statement needs), then the ledger. A slow or
+  // down indexer must never hold the statement hostage.
+  const refresh = useCallback(async (opts: { history?: boolean } = { history: true }) => {
     if (!client) return;
     setRefreshing(true);
     try {
-      const [s, p, ms] = await Promise.all([client.state(), chain.getPublicBalance(client.actor).catch(() => null), client.mockAuditorSecret()]);
-      setSt(s);
+      const [quick, p, ms] = await Promise.all([client.state({ history: false }), chain.getPublicBalance(client.actor).catch(() => null), client.mockAuditorSecret()]);
+      setSt((prev) => (prev?.historyLoaded ? { ...quick, activity: prev.activity, incoming: prev.incoming, edgesSinceLastIncoming: prev.edgesSinceLastIncoming, historyLoaded: true } : quick));
       setPub(p);
       setMockSecret(ms);
+      if (opts.history !== false) {
+        const full = await client.state({ history: true });
+        setSt(full);
+      }
     } finally {
       setRefreshing(false);
     }
@@ -130,8 +136,9 @@ export default function App() {
 
   useEffect(() => {
     refresh();
-    const t = setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 15000);
-    return () => clearInterval(t);
+    const t = setInterval(() => { if (document.visibilityState === "visible") refresh({ history: false }); }, 15000);
+    const h = setInterval(() => { if (document.visibilityState === "visible") refresh({ history: true }); }, 60000);
+    return () => { clearInterval(t); clearInterval(h); };
   }, [refresh]);
 
   // Notify on incoming confidential transfers: compare pending between refreshes.

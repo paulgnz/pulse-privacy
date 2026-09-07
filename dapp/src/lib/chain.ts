@@ -296,8 +296,10 @@ export async function poolHistory(limit = 200): Promise<PoolAction[]> {
   const d = (await res.json()) as { actions: HyperionAction[] };
   // Indexers decode with whatever ABI they cached; the chain decodes with the current one.
   // For `send`, take the action data from the block itself (cached per transaction).
+  const badSend = (a: HyperionAction) =>
+    a.act.account === CONTRACT && a.act.name === "send" && String(a.act.data.t ?? "").replace(/^0x/i, "").length !== 1024;
   await Promise.all(
-    d.actions.filter((a) => a.act.account === CONTRACT && a.act.name === "send").map(async (a) => {
+    d.actions.filter(badSend).map(async (a) => {
       const fresh = await sendDataFromChain(a.block_num, a.trx_id);
       if (fresh) a.act.data = fresh;
     })
