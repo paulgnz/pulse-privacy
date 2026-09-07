@@ -466,3 +466,13 @@ details[open] summary { margin-bottom: 12px; }
   .statement .actions .btn { padding: 9px 14px; font-size: 14px; flex: 1; }
   .statement .form { scroll-margin-top: 12px; }
 }
+
+/* shielded setup progress */
+.progress { margin: 0 0 30px; }
+.progress-label { font-size: 14px; color: var(--ink); font-weight: 500; margin-bottom: 8px; }
+.progress-track { height: 6px; background: var(--rule-soft); border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--private); border-radius: 3px; transition: width 300ms ease; }
+@media (prefers-reduced-motion: reduce) { .progress-fill { transition: none; } }
+.progress-steps { list-style: none; margin: 10px 0 0; padding: 0; display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--graphite); }
+.progress-steps li.current { color: var(--ink); font-weight: 500; }
+.progress-steps li.done { text-decoration: line-through; text-decoration-color: var(--rule); }

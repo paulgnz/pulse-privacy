@@ -28,6 +28,21 @@ type Form = "send" | "deposit" | "withdraw" | null;
  * the wallet; the relay permission submits the proof. Only deposits and the one-time
  * registration are wallet transactions.
  */
+/** setup progress: "Step k of n", a filled track, and the step names. The list adapts to the
+ *  wallet: the confirming signature only exists for wallets that sign differently each time,
+ *  and registration only for accounts not yet on chain. */
+const SetupProgress = ({ steps, current }: { steps: string[]; current: number }) => (
+  <div className="progress" role="group" aria-label="Setup progress">
+    <div className="progress-label">Step {current + 1} of {steps.length}<span className="muted"> · {steps[current]}</span></div>
+    <div className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={steps.length} aria-valuenow={current} aria-valuetext={`Step ${current + 1} of ${steps.length}: ${steps[current]}`}>
+      <div className="progress-fill" style={{ width: `${(current / steps.length) * 100}%` }} />
+    </div>
+    <ol className="progress-steps">
+      {steps.map((label, i) => <li key={label} className={i < current ? "done" : i === current ? "current" : ""}>{label}</li>)}
+    </ol>
+  </div>
+);
+
 export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session: Session | null; onConnect: () => void; connectBusy: boolean; tokens: Token[] }) => {
   const actor = session?.auth.actor ?? "";
   const [keys, setKeys] = useState<ShieldKeys | null>(null);
@@ -196,10 +211,15 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     </>
   );
 
+  // the setup steps for this wallet and account
+  const twoSignatures = !!session && !deterministicSigner(session) && !registered;
+  const setupSteps = ["Connect wallet", registered ? "Unlock your key" : "Create your key", ...(twoSignatures ? ["Confirm your key"] : []), ...(registered ? [] : ["Register"])];
+
   if (!session) {
     return (
       <section className="statement">
         {intro}
+        <SetupProgress steps={["Connect wallet", "Create your key", "Register"]} current={0} />
         <div className="row">
           <button className="btn private" onClick={onConnect} disabled={connectBusy}>{connectBusy ? "Connecting" : "Connect wallet"}</button>
         </div>
@@ -213,7 +233,8 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     return (
       <section className="statement">
         {intro}
-        <h3>Set up shielded payments for {actor}</h3>
+        <SetupProgress steps={setupSteps} current={firstAsk !== null ? 2 : 1} />
+        <h3>{registered ? `Unlock shielded payments for ${actor}` : `Set up shielded payments for ${actor}`}</h3>
         <p className="muted">One signature derives your shielded key from your wallet. Nothing is sent to the chain by that signature, and the same wallet derives the same key on any device. The key reads your notes and builds proofs; moving anything still needs your wallet's signature.</p>
         {notice ? <Note level={notice.ok ? "ok" : "error"}>{notice.text}</Note> : null}
         <div className="row" style={{ marginTop: 14 }}>
@@ -227,6 +248,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     return (
       <section className="statement">
         {intro}
+        <SetupProgress steps={setupSteps} current={setupSteps.length - 1} />
         <h3>Register your shielded key</h3>
         <p className="muted">Publishes the public half of your key under your account name, so people can pay you by name. One wallet signature; it is the only time your account and this key appear together.</p>
         {savedSecret ? (
