@@ -128,13 +128,15 @@ replaced the relay model). Then read fully: `circuits/shielded/joinsplit.circom`
 and the changes to `dapp/src/lib/unlock.ts`. Skim `contracts/xpr-shield-tsc/tests/testnet-demo.mjs`.
 
 Context: a second contract, `xprshield` (XPR testnet only), keeps sealed notes
-`(pk, v, token, rho, r)` with `cm = Poseidon(pk.x, pk.y, v, token, rho, r)` in a depth-20
+`(pk, v, token, r)` with `cm = Poseidon(pk.x, pk.y, v, token, r)` in a depth-20
 Poseidon Merkle tree maintained on chain (insertions in pairs; the contract carries its own
 Montgomery field arithmetic and Poseidon in AssemblyScript). Spending is a Groth16 join-split
-(two inputs, two outputs, 29,523 constraints, 33 public signals) whose `spend(owner, proof,
-publics)` action the owner's wallet signs: the contract requires the owner's authority, inserts
-the owner's registered key, the owner's name and the auditor key into the verifier input,
-records nullifiers `Poseidon(nk, leafIndex)`, and pays withdrawals to the owner only. Outputs
+(two inputs, two outputs, 28,477 constraints, 27 public signals) whose `spend(owner, proof,
+publics, amount, token_id, root_seq)` action the owner's wallet signs: the contract requires
+the owner's authority, decompresses the two ephemeral keys (Tonelli–Shanks square root in
+`fr.ts`, `curve.ts`), looks the root up by sequence, inserts the owner's registered key, the
+owner's name and the auditor key into the verifier input, records nullifiers
+`Poseidon(nk, leafIndex)`, and pays withdrawals to the owner only. The action is 785 bytes. Outputs
 are encrypted to the receiver and to the auditor with `Poseidon`-based stream encryption over
 an ECDH shared point; the ciphertexts and ephemeral keys live in an `outputs` table so
 receivers rebuild their notes from tables alone. Keys derive from a wallet signature
@@ -143,7 +145,7 @@ Visible: the initiator, deposits, withdrawals. The auditor opens every note.
 
 Try to break it:
 1. Circuit soundness: every relation in §2.3 enforced with `===`; the dummy-input path
-   (`enabled1 = 0`); range checks and the packed word `v + token·2^64`; token consistency;
+   (`enabled1 = 0`); range checks and the packed word `v + token·2^64 (+ parity·2^72)`; token consistency;
    the binding of `sender`, `to`, `senderPk`; whether any public output can be chosen freely
    by a malicious prover; whether an output note can be made undecryptable or ambiguous for
    the receiver or the auditor (off-curve or low-order `outPk`, chosen `esk`).
@@ -156,6 +158,8 @@ Try to break it:
    accounting; the testnet-only `reset`; anything that lets an attacker steal, freeze or
    inflate funds, spend another account's notes, or make the auditor unable to read a note.
 5. Field arithmetic: the Montgomery multiplication in `fr.ts` (CIOS, 8 × 32-bit limbs), the
+   inverse and the square root, point decompression in `curve.ts` (can a chosen compressed
+   word make the contract accept a point that is not the prover's, or waste CPU), the
    canonical checks on inputs, `onCurve`, the conversions; any input that overflows or
    escapes reduction.
 6. Client: key derivation domain separation; what a browser-held key can do without the
