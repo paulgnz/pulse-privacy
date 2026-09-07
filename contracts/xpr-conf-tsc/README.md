@@ -15,7 +15,7 @@ AssemblyScript with `proton-tsc`, because XPR testnet (Leap v5.0.3) already has 
 | T5 auditor CLI | — |
 
 Testnet account: `xprconf` (created 2026-09-07, funded by `paul123`, 200 KB RAM, key in the
-proton CLI keychain on Paul's Mac). Explorer: <https://testnet.explorer.xprnetwork.org/account/xprconf>
+proton CLI keychain on the operator's machine). Explorer: <https://testnet.explorer.xprnetwork.org/account/xprconf>
 
 ## Layout
 

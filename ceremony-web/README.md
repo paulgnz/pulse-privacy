@@ -9,7 +9,7 @@ records the contribution after re-hashing the file and recovering the signer key
 
 | piece | where |
 |---|---|
-| Vercel project | `pulse-privacy-ceremony` (team paulgnzs-projects), production https://pulse-privacy-ceremony.vercel.app |
+| Vercel project | `pulse-privacy-ceremony`, production https://ceremony.private.protonnz.com |
 | Blob store | `pulse-privacy-ceremony` (`store_IuzwDMO30XvPiahz`, syd1), connected to the project → `BLOB_READ_WRITE_TOKEN` |
 | coordinator secret | `ADMIN_TOKEN` (project env + `.env.local`) for `POST /api/admin` |
 | state | Blob `state/<version>-<time>.json` (append-only; latest by name); files `p1/NN-actor.ptau`, `p2/NN-actor.zkey` |

@@ -107,7 +107,7 @@ ciphertext validity/equality, so the Bulletproofs path lands at **≈ 1.2–2 ms
    per transfer bill ≈ 1.6 ms. Acceptable, though the same 600× over-billing applies; if the
    contract stores affine points it is ≈ 10 ms billed per transfer, so store projective/extended
    coordinates or normalise once per action.
-4. **Side finding for Glenn (separate from this track):** `CPU_SCALE = 143` under-bills DB-heavy
+4. **Side finding for the PulseVM maintainers (separate from this track):** `CPU_SCALE = 143` under-bills DB-heavy
    and massively over-bills compute-heavy contracts. Any contract doing hashing or big-int
    arithmetic in a loop (bridges, light clients, on-chain crypto) will hit this. Worth a
    per-opcode-class recalibration or a different cost table for arithmetic ops.

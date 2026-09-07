@@ -99,7 +99,7 @@ Mainnet config (chain id, endpoints, Hyperion list with `hyperion-xpr-mainnet.pr
 is in `src/config.ts`; the mainnet contract account does not exist yet and mainnet is gated on
 the real ceremony (docs §12). Hyperion reads fail over across the list.
 
-Vercel project `pulse-privacy` (team paulgnzs-projects), production alias
+Vercel project `pulse-privacy`, production alias
 <https://private.protonnz.com>. Deploy with `vercel --prod` from `dapp/` (the directory is
 linked; `.vercel/` is gitignored). `vercel.json` sets an immutable
 cache on `/circuit/*`, and the SPA rewrite.

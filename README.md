@@ -1,33 +1,87 @@
-# pulse-privacy
+# Confidential XPR
 
-Confidential transfers with auditability for PulseVM / XPR Network: hidden amounts, visible
-parties, mandatory auditor viewing key. Not a mixer.
+Confidential transfers with auditability on XPR Network: hidden amounts, visible parties, and a
+viewing key held by the XPR Network committee. Confidential, not anonymous.
 
-Start with [docs/01-design.md](docs/01-design.md) — the ELI5 walk-through, the answer to
-"bolt-on or private chain" (bolt-on), the full cryptographic/contract design, and the corrections to
-the scoping page. [docs/00-scoping.md](docs/00-scoping.md) is the original scoping record, mirrored
-from migration wiki page 64. Numbers come from [bench/README.md](bench/README.md).
+**Live, early access:** <https://private.protonnz.com> (mainnet) and
+<https://testnet.private.protonnz.com> (testnet). Contract account `xprconf` on both networks.
+Trusted-setup ceremony: <https://ceremony.private.protonnz.com>.
 
-**Live:** mainnet (early access, capped) at <https://private.protonnz.com>, testnet at
-<https://testnet.private.protonnz.com>. Contract account `xprconf` on both networks. Mainnet runs
-on the rehearsal proving key until the ceremony (`ceremony/`) replaces it with `setvk`; caps:
-pool 20,000 XPR, per deposit 1,000 XPR. Unaudited. Deploys from `main` via two Vercel projects.
+## What it does
 
-Explainer film (ELI5 + engineer layer, 140 s, Brian VO): Remotion module
-`~/dev/remotion-videos/src/ConfidentialTransfers/` → `out/ConfidentialTransfers.mp4`.
+You deposit ordinary XPR or XMD into a contract. From then on your balance and every payment you
+make are stored as encrypted numbers. The chain still records who paid whom and when. It no longer
+shows how much. Three parties can read an amount: you, the other party, and the designated auditor.
+Withdrawing turns the balance back into ordinary tokens.
 
-Order of operations: design doc ✓ → benchmark ✓ (Mac; `.95` box pending) → Glenn message
-(draft in design doc §10) → intrinsic PR on `paulgnz/pulsevm` (`feat/crypto-primitives`) → contract.
+- **Boxes you can add without opening.** Balances and payments are twisted ElGamal ciphertexts on
+  Baby Jubjub. The contract adds and subtracts them without decrypting.
+- **A proof with every payment.** A Groth16 proof (bn254, 46,874 constraints) shows the amount is
+  in range, the sender is not overdrawn, and every copy of the box holds the same number. XPR
+  Network verifies it on chain in about 12 ms using Leap's `CRYPTO_PRIMITIVES` intrinsics. Proving
+  takes about two seconds in the browser.
+- **Two keyholes on every box.** Each payment is encrypted to the receiver and to the auditor, and
+  the proof enforces it. A payment the auditor cannot read cannot be created.
+- **Your wallet is the key.** The user's encryption key is derived from a WebAuth signature over a
+  fixed, never-broadcast message. There is nothing extra to back up.
+- **Pending box.** Incoming payments land in a separate box and are folded into the balance by the
+  receiver, so a balance changes only when its owner acts.
 
-Layout (empty until the phase that fills it):
+The full design, including the ELI5 walk-through, the threat model and the edge-privacy analysis,
+is in [docs/01-design.md](docs/01-design.md). The mainnet operations record is
+[docs/02-mainnet-runbook.md](docs/02-mainnet-runbook.md).
 
-- `docs/` — scoping (00), design doc incl. threat model and key management (01), mainnet runbook (02)
-- `ceremony/` — trusted-setup tooling (contribute / verify / finalize) and, once run, the public transcript
-- `bench/` — Groth16-bn254 vs Bulletproofs verifier micro-benchmarks, native and in WASM under
-  wasmer with pulsevm's metering (`bench/`, `bench/wasm-guest/`, `bench/wasm-host/`)
-- `circuits/` — confidential-transfer circuit + ceremony artefacts
-- `contracts/xpr-conf-tsc/` — testnet build in proton-tsc: the confidential token is **live on XPR testnet account `xprconf`** (deposit → proven send → proven withdraw exercised); `contracts/` later also holds the pulse-cdt-rust port
-- `circuits/` — the transfer circuit (circom), the ElGamal client library, ceremony rehearsal
-- `dapp/` — the front end (WebAuth login, balances, send/receive/withdraw, auditor mode)
-- `prover/` — Rust crate consumed by `pulse-wallet/core`
-- `tools/` — auditor CLI
+## Status
+
+This is early access. Read this before holding value in it.
+
+| | |
+|---|---|
+| Proving key | From a one-person rehearsal until the public ceremony completes. Anyone can contribute at the ceremony site. |
+| Audit | None yet. |
+| Caps, set on chain | XPR: 1,000,000 per deposit, 100,000,000 in the contract. XMD: 10,000 per deposit, 100,000 in the contract. Withdrawals in whole units. |
+| Contract owner | `admin.proton@committee` (3 of 6). |
+| Auditor key | Held for the committee. The public key is in the contract's config. |
+
+## Repository
+
+| directory | what it is |
+|---|---|
+| `contracts/xpr-conf-tsc/` | The contract, in proton-tsc (AssemblyScript): tables, actions, the Groth16 verifier and Baby Jubjub arithmetic over the chain's `alt_bn128_*` and `mod_exp` intrinsics. Tests run under vert. |
+| `circuits/` | The transfer circuit (circom 2.2), the ElGamal client library, and the setup scripts. Withdrawals reuse the transfer circuit. |
+| `dapp/` | The web app: Vite, React, `@proton/web-sdk`, snarkjs in the browser. Statement, send, deposit, withdraw, activity, auditor and settings. Design notes in `dapp/DESIGN.md`. |
+| `ceremony/` | Trusted-setup tooling: contribute, verify, finalize with an XPR block beacon. Becomes the public transcript once the ceremony has run. |
+| `ceremony-web/` | The browser-based contribution site (Vercel functions and Blob). |
+| `tools/auditor-cli/` | Reads the ledger with the viewing key and reconciles escrow against deposits and withdrawals. |
+| `bench/` | Groth16 versus Bulletproofs verifier benchmarks, native and in WASM under metering. |
+| `docs/` | Design doc and mainnet runbook. |
+
+## Building and running
+
+Each part has its own README. In short:
+
+```sh
+# circuit: compile, run the rehearsal setup, test
+cd circuits && npm install && npm run compile && npm run setup && npm test
+
+# contract: build with proton-tsc, test under vert
+cd contracts/xpr-conf-tsc && npm install && npm run build && npm test
+
+# web app: simulated backend, no wallet needed
+cd dapp && npm install && VITE_CRYPTO=mock npm run dev
+# real backend against testnet
+cd dapp && npm run dev
+```
+
+The dapp reads its network from `VITE_NETWORK` (`testnet` by default, `mainnet` for the main
+site). Chain writes from scripts sign through the `proton` CLI keychain; no private key is ever
+passed to a script or committed here.
+
+## Security
+
+Please report vulnerabilities privately through GitHub's security advisories for this repository
+rather than in a public issue. See [SECURITY.md](SECURITY.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).

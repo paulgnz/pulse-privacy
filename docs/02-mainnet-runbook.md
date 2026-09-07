@@ -4,7 +4,7 @@ Status: **early access live (2026-09-07)** with caps, on the rehearsal proving k
 gates in §12 of the design doc still stand before the caps are raised: the multi-party ceremony
 (`ceremony/`, then `setvk`) and an external audit. Deployed: account `xprconf` (created by
 `paul123`, 350 KB RAM), code `8e4fa44f…`, `init` with the committee's auditor key
-(secret held off-chain by Paul for the committee), `setlimits` pool 20,000 / deposit 1,000 XPR,
+(secret held off-chain for the committee), `setlimits` pool 20,000 / deposit 1,000 XPR,
 whole-XPR withdrawals. Owner of `xprconf` is `admin.proton@committee` (3-of-6) since tx `346f2250…`; active stays on the operational key until the ceremony key is installed and caps are settled, then moves to the committee too.
 
 ## 1. What ships
@@ -63,7 +63,7 @@ against mainnet, before announcing.
 | token | symbol | contract | withdraw granularity | caps (pool / per deposit) | mainnet init tx |
 |---|---|---|---|---|---|
 | XPR | 4,XPR | eosio.token | 1 XPR | 100,000,000 / 1,000,000 XPR (set 2026-09-07, tx a26aea8a…) | d320e3db… |
-| XMD (Metal Dollar) | 6,XMD | xmd.token | 1 XMD | 100,000 / 10,000 XMD (set 2026-09-07 at Paul's decision, tx 692b5c96…) | d53cbbfd… |
+| XMD (Metal Dollar) | 6,XMD | xmd.token | 1 XMD | 100,000 / 10,000 XMD (set 2026-09-07, tx 692b5c96…) | d53cbbfd… |
 
 Adding a token = one `init` (same vk, same auditor key) + one `setlimits`. The circuit is
 token-agnostic; amounts are 64-bit units. Testnet has both tokens too.

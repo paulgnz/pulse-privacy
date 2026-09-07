@@ -426,7 +426,7 @@ int32 k1_recover    (sig, sig_len, dig, dig_len, pub, pub_len)
 
 Rust-native (`ark-bn254` / `ark-ec`, or `blst`-style constant-time if #64's BLS crate makes that the
 house library), behind `ProtocolFeature::CryptoPrimitives => 2`, with Leap's unit-test vectors ported.
-This closes wiki/49 row 1 and, incidentally, is a **migration-parity item**: XPR mainnet contracts can
+This closes the missing-intrinsics item and, incidentally, is a **migration-parity item**: XPR mainnet contracts can
 call these today and PulseVM would fail to run them.
 
 ### 5.2 Pricing the intrinsics
@@ -446,7 +446,7 @@ A 40-input Groth16 verify then bills ≈ 40 × 84 + 4 × 210 + 420 ≈ 4.6 ms, �
 To be re-measured on the `.95` box before the PR; the point costs are consensus-relevant and must be
 part of the protocol feature.
 
-### 5.3 Metering finding (side issue, worth its own note to Glenn)
+### 5.3 Metering finding (side issue, worth its own note to the PulseVM maintainers)
 
 `CPU_SCALE = 143` was calibrated on `placeorder` (DB-heavy). Measured on pure field arithmetic it
 over-bills by ≈ 600× (2.85 ms wall → 1.76 s billed). Any compute-heavy contract (hashing loops,
@@ -514,7 +514,7 @@ Out of scope: network-level unlinkability, private execution, hiding from the au
 1. **Circuit tooling:** circom + `ark-circom` in the wallet (recommended) vs pure arkworks R1CS
    (fewer moving parts, weaker ceremony tooling). Decide at the start of Phase 2.
 2. **Pairing crate alignment with #64 (Warp):** `ark-bn254` is the natural fit for Groth16; if #64
-   brings `blst` for BLS12-381 there is no bn254 overlap anyway. Confirm with Glenn.
+   brings `blst` for BLS12-381 there is no bn254 overlap anyway. Confirm with the PulseVM maintainers.
 3. ~~Ship a demo on XPR testnet first?~~ **Decided 2026-09-07: yes.** See §11.
 4. **Auditor: one key per symbol or one per chain?** Table supports per symbol; policy question.
 5. **Point cost of intrinsics** (§5.2): numbers from the `.95` box before proposing.
@@ -527,13 +527,13 @@ Out of scope: network-level unlinkability, private execution, hiding from the au
 |---|---|---|
 | "Proof verification in plain WASM is 100×+ the native cost" | 3–4× wall-clock under pulsevm's wasmer-LLVM | the *reason* intrinsics are mandatory is metering (600× over-billing), not raw speed |
 | "CPU billing: producer wall-clock, replayed via `explicit_billed_cpu_time`" | pulsevm bills metering points ÷ `CPU_SCALE` (143); wall-clock is not the billed quantity | intrinsics need fixed point prices; the cost table needs recalibration (§5.3) |
-| none of the crypto intrinsics exist (wiki/49 row 1) | true for PulseVM; **XPR mainnet has `CRYPTO_PRIMITIVES` since block 220,936,766 (Leap v3.1.2)** | Phase 1 is a migration-parity item, and a Leap testnet demo is possible now |
+| none of the crypto intrinsics exist | true for PulseVM; **XPR mainnet has `CRYPTO_PRIMITIVES` since block 220,936,766 (Leap v3.1.2)** | Phase 1 is a migration-parity item, and a Leap testnet demo is possible now |
 | amounts "48-bit like Solana" implied by the Bulletproofs comparison | XPR supply is 2⁴⁸·² units | 2 × 32-bit chunks (§2.3) |
 | Groth16 verify ≈ 1–2 ms | 0.8 ms (1 public input) to 2.4 ms (40) native; 4.6 ms billed at proposed prices | fine |
 
 ---
 
-## 10. Revised ask for Glenn (one paragraph, replaces scoping §6)
+## 10. The ask to the PulseVM maintainers (one paragraph)
 
 We want to add Leap's `CRYPTO_PRIMITIVES` host functions (`alt_bn128_add/mul/pair`, `mod_exp`,
 `blake2_f`, `sha3`, `keccak`, `k1_recover`) as PulseVM's first post-genesis gated feature
@@ -625,7 +625,7 @@ vk and dapp carry over unchanged.
 The testnet build proves the mechanism. Three things make it unsafe for value today, in order of
 severity:
 
-1. **The ceremony is a rehearsal with one contributor (Paul's laptop).** Whoever holds that
+1. **The ceremony is a rehearsal with one contributor (the coordinator's laptop).** Whoever holds that
    contribution's randomness can forge proofs and drain the escrow. Before any mainnet deployment:
    the published Hermez Powers-of-Tau (2^16 is enough; 46,874 constraints) plus a phase-2 with
    ≥ 5 independent contributors (Metallicus, ≥ 3 block producers, one external), published
