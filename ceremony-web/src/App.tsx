@@ -80,6 +80,7 @@ export function App() {
       setStep("locking");
       const ts = Date.now();
       const lockSig = await signAttestation(session, lockNoteFor(state.phase, (state.head.index ?? 0) + 1, ts));
+      if (/^SIG_WA_/.test(lockSig)) throw new Error("your wallet signed with a passkey (WebAuthn). The ceremony can only verify signatures made with your account's standard key. Sign out, then sign in with WebAuth on a device that holds your account's private key, and take your turn again.");
       const lr = await fetch("/api/lock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actor, permission: session.auth.permission, ts, signature: lockSig }) });
       const lj = (await lr.json()) as { error?: string; head?: Head; phase?: 1 | 2; index?: number; token?: string };
       if (!lr.ok) throw new Error(lj.error ?? "could not take a turn");

@@ -70,6 +70,7 @@ export async function accountKeys(actor: string): Promise<string[]> {
 
 /** returns the recovered key if the signature is by one of the account's keys, else throws */
 export async function verifyAttestation(actor: string, permission: string, note: string, signature: string): Promise<string> {
+  if (/^SIG_WA_/.test(signature)) throw new Error("your wallet signed with a passkey (WebAuthn). The ceremony can only verify signatures made with your account's standard key: sign in with WebAuth on a device that holds your account's private key and try again");
   const tx = Transaction.from(attestationTransaction(actor, permission, note), [{ contract: CONTRACT, abi: VIEWKEY_ABI }]);
   const digest = tx.signingDigest(CHAIN_ID);
   const recovered = Signature.from(signature).recoverDigest(digest).toString();
