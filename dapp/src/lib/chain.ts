@@ -305,6 +305,8 @@ interface HyperionAction {
   block_num: number;
   trx_id: string;
   global_sequence: number;
+  /** position of the action inside its transaction; the same for every receiver's copy of a notification */
+  action_ordinal?: number;
   act: { account: string; name: string; data: Record<string, unknown> };
   receipts?: { receiver: string }[];
 }
@@ -377,7 +379,9 @@ export async function poolHistory(limit = 200, token: Token = XPR): Promise<Pool
   const seen = new Set<string>();
   const out: PoolAction[] = [];
   for (const a of d.actions) {
-    const k = `${a.trx_id}/${a.global_sequence}`;
+    // one economic event per action, however many accounts were notified of it: a token transfer
+    // reaches the token contract, the sender and us, and the indexer may return each copy
+    const k = `${a.trx_id}/${a.action_ordinal ?? `${a.act.account}/${a.act.name}/${JSON.stringify(a.act.data)}`}`;
     if (seen.has(k)) continue;
     seen.add(k);
     const ts = Date.parse(a.timestamp.endsWith("Z") ? a.timestamp : a.timestamp + "Z");
