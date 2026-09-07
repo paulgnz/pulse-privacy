@@ -1,5 +1,6 @@
 import { CONTRACT, EXPLORER, NETWORK_LABEL } from "../config";
 import { Excerpt } from "./Brand";
+import { Walkthrough } from "./Walkthrough";
 
 /** How it works. Facts follow docs/01-design.md; written for a user. */
 export const About = ({ signedIn, onConnect }: { signedIn: boolean; onConnect?: () => void }) => (
@@ -39,6 +40,14 @@ export const About = ({ signedIn, onConnect }: { signedIn: boolean; onConnect?: 
         Each box is made to open with the recipient's key and with the auditor's key. That is part of what the proof checks, so a
         payment the auditor cannot read cannot be created. This is why the system is confidential rather than anonymous.
       </p>
+    </section>
+
+    <section>
+      <h2>Watch it happen</h2>
+      <p>
+        Alice deposits, sends to Bob, Bob withdraws a round amount, and the auditor reads it all. Twenty-four seconds, on a loop.
+      </p>
+      <Walkthrough />
     </section>
 
     <section>

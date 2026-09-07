@@ -142,6 +142,12 @@ export default function App() {
       if (opts.history !== false) {
         const full = await client.state({ history: true });
         setSt(full);
+        // Activity shows every token together: load the other tokens' ledgers in the background.
+        const others = tokens.filter((t) => t.code !== client.token.code);
+        const rows = await Promise.all(
+          others.map((t) => new ConfidentialClient(backend, client.session, client.keypair, t).state({ history: true }).then((x) => x.activity).catch(() => []))
+        );
+        setOtherActivity(rows.flat());
       }
     } finally {
       setRefreshing(false);
@@ -223,6 +229,7 @@ export default function App() {
 
   // Optimistic ledger rows for actions we just sent, until the indexer has them.
   const [optimistic, setOptimistic] = useState<ActivityItem[]>([]);
+  const [otherActivity, setOtherActivity] = useState<ActivityItem[]>([]);
   const pollTimers = useRef<number[]>([]);
   const trackTx = (txid: string, item: Omit<ActivityItem, "id" | "ts" | "onChain"> & { onChain?: Partial<ActivityItem["onChain"]> }) => {
     if (!txid) return;
@@ -432,7 +439,7 @@ export default function App() {
           tokens={tokens} onSelectToken={chooseToken}
         />
       ) : tab === "activity" ? (
-        <Activity st={optimistic.length ? { ...st, activity: [...optimistic, ...st.activity] } : st} isMock={backend.isMock} />
+        <Activity st={{ ...st, activity: [...optimistic, ...st.activity, ...otherActivity].sort((a, b) => b.ts - a.ts) }} isMock={backend.isMock} />
       ) : tab === "settings" ? (
         <Settings
           actor={actor}

@@ -331,3 +331,25 @@ details[open] summary { margin-bottom: 12px; }
   .topbar .right { justify-content: flex-start; row-gap: 8px; width: 100%; }
   .topbar .right .who { padding-left: 0; border-left: 0; margin-left: auto; }
 }
+
+/* ---- Watch it happen (About) ---- */
+.walkthrough { margin-top: 18px; max-width: var(--measure); }
+.walkthrough .wt-scroll { overflow-x: auto; }
+.walkthrough svg { display: block; min-width: 600px; font-family: var(--font); }
+.walkthrough .wt-name { font-size: 15px; font-weight: 600; fill: var(--ink); }
+.walkthrough .wt-label { font-size: 13px; fill: var(--graphite); }
+.walkthrough .wt-num { font-size: 15px; fill: var(--ink); font-variant-numeric: tabular-nums lining-nums; }
+.walkthrough .wt-escrow { font-size: 17px; font-weight: 500; }
+.walkthrough .wt-move { font-weight: 500; }
+.walkthrough .wt-tag { font-size: 11px; fill: var(--private); }
+.walkthrough .wt-bar { fill: var(--ink); }
+.walkthrough .wt-contract { fill: var(--sheet); stroke: var(--ink); stroke-width: 1; }
+.walkthrough .wt-rule { stroke: var(--rule); stroke-width: 1; }
+.walkthrough .wt-auditor { fill: var(--auditor); }
+.walkthrough .wt-key { fill: none; stroke: var(--auditor); stroke-width: 2; stroke-linecap: round; }
+.walkthrough .wt-bar-row { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
+.walkthrough .wt-caption { max-width: 56ch; }
+.walkthrough .wt-step { color: var(--graphite); font-size: 13px; margin-right: 10px; font-variant-numeric: tabular-nums; }
+.walkthrough .wt-controls { display: flex; gap: 14px; }
+.walkthrough .wt-captions { margin: 10px 0 0; padding-left: 20px; }
+.walkthrough .wt-captions li { margin: 4px 0; }
