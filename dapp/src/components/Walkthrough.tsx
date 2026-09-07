@@ -17,7 +17,7 @@ const ease = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) /
 /** 0 → 1 between t0 and t1, eased */
 const seg = (t: number, t0: number, t1: number) => ease(clamp((t - t0) / (t1 - t0)));
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 
 // layout (viewBox 720 × 330)
 const W = 720;
@@ -171,9 +171,12 @@ export const Walkthrough = () => {
 
           {/* scene 1: travelling deposit figure */}
           {dep > 0 && !depDone ? (
-            <text x={depX} y={depY} className="wt-num wt-move" textAnchor="middle">
-              {fmt(5000)} XPR
-            </text>
+            <g>
+              <image href="/token-xpr.png" x={depX - 72} y={depY - 15} width={18} height={18} />
+              <text x={depX + 8} y={depY} className="wt-num wt-move" textAnchor="middle">
+                {fmt(5000)} XPR
+              </text>
+            </g>
           ) : null}
 
           {/* scene 2: travelling box with proof tag */}
@@ -188,9 +191,12 @@ export const Walkthrough = () => {
 
           {/* scene 3: travelling withdrawal figure */}
           {wd > 0 && !wdDone ? (
-            <text x={wdX} y={wdY} className="wt-num wt-move" textAnchor="middle">
-              {fmt(1000)} XPR
-            </text>
+            <g>
+              <image href="/token-xpr.png" x={wdX - 72} y={wdY - 15} width={18} height={18} />
+              <text x={wdX + 8} y={wdY} className="wt-num wt-move" textAnchor="middle">
+                {fmt(1000)} XPR
+              </text>
+            </g>
           ) : null}
 
           {/* scene 4: the auditor's key */}

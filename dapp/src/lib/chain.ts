@@ -257,6 +257,22 @@ export async function listTokens(): Promise<Token[]> {
   return sortTokens(r.rows.map((c) => parseConfig(c).token));
 }
 
+/** Soft-launch limits per token (units): per-deposit cap, pool cap and the pool's current size. 0 = no cap. */
+export interface PoolLimits { token: Token; maxPool: bigint; maxDeposit: bigint; pool: bigint; withdrawGranularity: bigint }
+export async function listLimits(): Promise<PoolLimits[]> {
+  const [cfg, lim] = await Promise.all([
+    rpc<{ rows: RawConfigRow[] }>("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "config", limit: 100, json: true }),
+    rpc<{ rows: { sym: string | number; max_pool: string | number; max_deposit: string | number; pool: string | number }[] }>("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "limits", limit: 100, json: true }),
+  ]);
+  const out: PoolLimits[] = [];
+  for (const c of cfg.rows) {
+    const p = parseConfig(c);
+    const l = lim.rows.find((r) => String(r.sym) === String(c.sym));
+    out.push({ token: p.token, withdrawGranularity: p.withdrawGranularity, maxPool: BigInt(l?.max_pool ?? 0), maxDeposit: BigInt(l?.max_deposit ?? 0), pool: BigInt(l?.pool ?? 0) });
+  }
+  return sortTokens(out.map((o) => o.token)).map((t) => out.find((o) => o.token.code === t.code)!);
+}
+
 // ---------------------------------------------------------------- Hyperion history
 
 export interface PoolAction {

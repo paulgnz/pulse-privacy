@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { EdgeCheck } from "../lib/privacy";
 import { fmtUnits, zeroPlaceholder } from "../lib/format";
 import { XPR, type Token } from "../lib/token";
@@ -11,6 +11,18 @@ export const Field = ({ label, hint, error, children }: { label: string; hint?: 
   </div>
 );
 
+/** The token's coin, 20 px, from public/token-<code>.png; hidden if there is no image. */
+export const TokenIcon = ({ code, size = 20 }: { code: string; size?: number }) => (
+  <img
+    className="tokicon"
+    src={`/token-${code.toLowerCase()}.png`}
+    alt=""
+    width={size}
+    height={size}
+    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+  />
+);
+
 export const AmountInput = ({
   value,
   onChange,
@@ -18,6 +30,8 @@ export const AmountInput = ({
   autoFocus,
   id,
   token = XPR,
+  tokens,
+  onSelectToken,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -25,12 +39,50 @@ export const AmountInput = ({
   autoFocus?: boolean;
   id?: string;
   token?: Token;
-}) => (
-  <div className="amount-input">
-    <input id={id} className="num" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder ?? zeroPlaceholder(token)} inputMode="decimal" autoFocus={autoFocus} />
-    <span className="unit">{token.code}</span>
-  </div>
-);
+  /** more than one: the unit becomes a menu that switches the form's token */
+  tokens?: { code: string }[];
+  onSelectToken?: (code: string) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    addEventListener("mousedown", away);
+    addEventListener("keydown", esc);
+    return () => { removeEventListener("mousedown", away); removeEventListener("keydown", esc); };
+  }, [open]);
+  const menu = !!tokens && tokens.length > 1 && !!onSelectToken;
+  return (
+    <div className={`amount-input ${menu ? "has-menu" : ""}`} ref={wrap}>
+      <input id={id} className="num" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder ?? zeroPlaceholder(token)} inputMode="decimal" autoFocus={autoFocus} />
+      {menu ? (
+        <>
+          <button type="button" className="unit unit-menu" onClick={() => setOpen((o: boolean) => !o)} aria-haspopup="listbox" aria-expanded={open} aria-label={`Token: ${token.code}`}>
+            <TokenIcon code={token.code} size={18} />
+            {token.code}
+            <span className="chev" aria-hidden="true" />
+          </button>
+          {open ? (
+            <ul className="unit-list" role="listbox" aria-label="Token">
+              {tokens!.map((t) => (
+                <li key={t.code} role="option" aria-selected={t.code === token.code}>
+                  <button type="button" onClick={() => { onSelectToken!(t.code); setOpen(false); }}>
+                    <TokenIcon code={t.code} size={18} />
+                    {t.code}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : (
+        <span className="unit">{token.code}</span>
+      )}
+    </div>
+  );
+};
 
 export const Note = ({ level, children }: { level: "ok" | "info" | "warn" | "error"; children: ReactNode }) => (
   <div className={`note ${level}`} role={level === "error" ? "alert" : undefined}>
@@ -101,6 +153,7 @@ export const TokenPicker = ({ tokens, current, onSelect }: { tokens: { code: str
       <span className="lbl">Token</span>
       {tokens.map((t) => (
         <button key={t.code} type="button" className="textbtn" onClick={() => onSelect(t.code)} aria-pressed={t.code === current}>
+          <TokenIcon code={t.code} size={16} />
           {t.code}
         </button>
       ))}

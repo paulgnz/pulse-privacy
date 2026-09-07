@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { ConfState } from "../lib/client";
 import { fmtUnits, parseUnits } from "../lib/format";
 import { checkWithdrawal, isRound } from "../lib/privacy";
-import { AmountInput, EdgeNote, Field, Note, Progress, TokenPicker } from "./ui";
+import { AmountInput, EdgeNote, Field, Note, Progress } from "./ui";
 
 export const Withdraw = ({
   st,
@@ -63,14 +63,13 @@ export const Withdraw = ({
   return (
     <div className="form" aria-label="Withdraw">
       <h3>Withdraw</h3>
-      {tokens && onSelectToken ? <TokenPicker tokens={tokens} current={T.code} onSelect={onSelectToken} /> : null}
       <p>Withdrawing moves {T.code} back out as a public transfer. Keep it for when you need public {T.code}; paying inside the contract is the private path.</p>
       <Field
         label="Amount"
         error={over ? `More than you can spend. You have ${fmtUnits(spendable, T)} ${T.code}.` : chainRejects ? `The contract accepts whole multiples of ${fmtUnits(g, T, { trim: true })} ${T.code}.` : undefined}
         hint={`You can withdraw up to ${fmtUnits(spendable, T)} ${T.code}${g > 0n ? `, in multiples of ${fmtUnits(g, T, { trim: true })}` : ""}.`}
       >
-        <AmountInput value={amt} onChange={setAmt} autoFocus token={T} />
+        <AmountInput value={amt} onChange={setAmt} autoFocus token={T} tokens={tokens} onSelectToken={onSelectToken} />
       </Field>
       {!chainRejects && check ? <EdgeNote check={check} token={T} onSuggest={(a) => setAmt(fmtUnits(a, T, { trim: true }).replace(/,/g, ""))} /> : null}
       {needsAck ? (

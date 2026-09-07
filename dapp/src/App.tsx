@@ -118,6 +118,9 @@ export default function App() {
 
   const client = useMemo(() => (session ? new ConfidentialClient(backend, session, keypair, token) : null), [session, keypair, token]);
 
+  // The other tokens' figures and ledgers (the statement shows every token on one page).
+  const [others, setOthers] = useState<Record<string, { st: ConfState; pub: bigint | null }>>({});
+  const otherActivity = useMemo(() => Object.values(others).flatMap((o) => o.st.activity), [others]);
   const [refreshing, setRefreshing] = useState(false);
   // Two phases: balances first (fast, what the statement needs), then the ledger. A slow or
   // down indexer must never hold the statement hostage.
@@ -125,7 +128,20 @@ export default function App() {
     if (!client) return;
     setRefreshing(true);
     try {
-      const [quick, p, ms] = await Promise.all([client.state({ history: false }), chain.getPublicBalance(client.actor, client.token).catch(() => null), client.mockAuditorSecret()]);
+      const otherTokens = tokens.filter((t) => t.code !== client.token.code);
+      const loadOthers = (history: boolean) =>
+        Promise.all(
+          otherTokens.map(async (t) => {
+            const c = new ConfidentialClient(backend, client.session, client.keypair, t);
+            const [os, op] = await Promise.all([c.state({ history }), chain.getPublicBalance(client.actor, t).catch(() => null)]);
+            return [t.code, { st: os, pub: op }] as const;
+          })
+        ).then((rows) => setOthers((prev) => {
+          const next = { ...prev };
+          for (const [code, v] of rows) next[code] = history || !prev[code]?.st.historyLoaded ? v : { st: { ...v.st, activity: prev[code].st.activity, incoming: prev[code].st.incoming, historyLoaded: true }, pub: v.pub };
+          return next;
+        })).catch(() => { /* keep what we have */ });
+      const [quick, p, ms] = await Promise.all([client.state({ history: false }), chain.getPublicBalance(client.actor, client.token).catch(() => null), client.mockAuditorSecret(), loadOthers(false)]);
       setSt((prev) => (prev?.historyLoaded && prev.token.code === quick.token.code ? { ...quick, activity: prev.activity, incoming: prev.incoming, edgesSinceLastIncoming: prev.edgesSinceLastIncoming, historyLoaded: true } : quick));
       setPub(p);
       setMockSecret(ms);
@@ -142,12 +158,8 @@ export default function App() {
       if (opts.history !== false) {
         const full = await client.state({ history: true });
         setSt(full);
-        // Activity shows every token together: load the other tokens' ledgers in the background.
-        const others = tokens.filter((t) => t.code !== client.token.code);
-        const rows = await Promise.all(
-          others.map((t) => new ConfidentialClient(backend, client.session, client.keypair, t).state({ history: true }).then((x) => x.activity).catch(() => []))
-        );
-        setOtherActivity(rows.flat());
+        // The statement and Activity show every token together: the others load in the background.
+        await loadOthers(true);
       }
     } finally {
       setRefreshing(false);
@@ -184,21 +196,26 @@ export default function App() {
 
   // Notify on incoming confidential transfers: compare pending between refreshes.
   const [received, setReceived] = useState<string | null>(null);
-  const prevPending = useRef<{ count: number; amount: bigint; token: string } | null>(null);
+  const prevPending = useRef<Record<string, { count: number; amount: bigint }>>({});
   useEffect(() => {
     if (!st) return;
-    const cur = { count: st.pendingCount, amount: st.pending, token: st.token.code };
-    const prev = prevPending.current;
-    prevPending.current = cur;
-    if (!prev || prev.token !== cur.token || cur.count <= prev.count) return;
-    const delta = cur.amount - prev.amount;
-    const msg = delta > 0n ? `You received ${fmtUnits(delta, st.token)} ${st.token.code} inside the contract. It is in your pending box.` : `You received a confidential ${st.token.code} transfer. It is in your pending box.`;
-    setReceived(msg);
-    document.title = `(${cur.count}) Confidential XPR`;
-    try {
-      if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("Confidential XPR", { body: msg });
-    } catch { /* ignore */ }
-  }, [st]);
+    const all = [st, ...Object.values(others).map((o) => o.st)];
+    let total = 0;
+    for (const x of all) {
+      const cur = { count: x.pendingCount, amount: x.pending };
+      total += cur.count;
+      const prev = prevPending.current[x.token.code];
+      prevPending.current[x.token.code] = cur;
+      if (!prev || cur.count <= prev.count) continue;
+      const delta = cur.amount - prev.amount;
+      const msg = delta > 0n ? `You received ${fmtUnits(delta, x.token)} ${x.token.code} inside the contract. It is in your pending box.` : `You received a confidential ${x.token.code} transfer. It is in your pending box.`;
+      setReceived(msg);
+      try {
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("Confidential XPR", { body: msg });
+      } catch { /* ignore */ }
+    }
+    if (total > 0) document.title = `(${total}) Confidential XPR`;
+  }, [st, others]);
   useEffect(() => { if (!received) document.title = "Confidential XPR"; }, [received]);
   const askNotify = async () => { try { await Notification.requestPermission(); } catch { /* ignore */ } };
 
@@ -229,7 +246,6 @@ export default function App() {
 
   // Optimistic ledger rows for actions we just sent, until the indexer has them.
   const [optimistic, setOptimistic] = useState<ActivityItem[]>([]);
-  const [otherActivity, setOtherActivity] = useState<ActivityItem[]>([]);
   const pollTimers = useRef<number[]>([]);
   const trackTx = (txid: string, item: Omit<ActivityItem, "id" | "ts" | "onChain"> & { onChain?: Partial<ActivityItem["onChain"]> }) => {
     if (!txid) return;
@@ -253,9 +269,24 @@ export default function App() {
     }
   };
 
+  /** a client for any configured token (fold or register on a token that is not the form's) */
+  const clientFor = (code: string) => (code === client?.token.code ? client! : new ConfidentialClient(backend, session!, keypair, tokens.find((t) => t.code === code) ?? tokens[0]));
+  // Every token's figures for the statement, in the contract's order. The form's token comes
+  // from `st`; the rest from the background load, sweeping until they arrive.
+  const figures = useMemo(() => {
+    if (!st) return [];
+    return tokens.map((t) => {
+      if (t.code === st.token.code) return { st, publicBalance: pub };
+      const o = others[t.code];
+      if (o) return { st: o.st, publicBalance: o.pub };
+      return { st: { ...st, token: t, registered: false, balance: 0n, pending: 0n, pendingCount: 0, activity: [], incoming: [] }, publicBalance: null, loading: true };
+    });
+  }, [st, pub, others, tokens]);
+  const pendingTotal = figures.reduce((n, f) => n + f.st.pendingCount, 0);
+
   // First-run wizard: resume at the first incomplete step; returning users skip it.
   const keyMatches = !!keypair && (!st?.registered || !st.pubkey || st.pubkey.toLowerCase() === keypair.pubkey.toLowerCase());
-  const registeredSomewhere = !!st?.registered || Object.values(registeredFor).some(Boolean);
+  const registeredSomewhere = !!st?.registered || Object.values(registeredFor).some(Boolean) || Object.values(others).some((o) => o.st.registered);
   const step: Step | null = preview
     ? preview.step
     : !session
@@ -320,8 +351,11 @@ export default function App() {
 
   const foot = (
     <div className="foot">
-      {backend.isMock ? "Simulation. " : ""}
-      Running on {NETWORK_LABEL}. Contract <a href={`${EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>.
+      <span>
+        {backend.isMock ? "Simulation. " : ""}
+        Running on {NETWORK_LABEL}. Contract <a href={`${EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>.
+      </span>
+      <a className="credit" href="https://protonnz.com" target="_blank" rel="noreferrer">Made by protonnz</a>
     </div>
   );
 
@@ -395,18 +429,9 @@ export default function App() {
             aria-current={k === tab ? "page" : undefined}
           >
             {label}
-            {k === "overview" && st && st.pendingCount > 0 ? ` (${st.pendingCount} pending)` : ""}
+            {k === "overview" && st && pendingTotal > 0 ? ` (${pendingTotal} pending)` : ""}
           </a>
         ))}
-        {tokens.length > 1 && tab !== "activity" ? (
-          <span className="tokens" role="group" aria-label="Token">
-            {tokens.map((t) => (
-              <button key={t.code} onClick={() => chooseToken(t.code)} aria-pressed={t.code === token.code} title={`Confidential ${t.code}`}>
-                {t.code}
-              </button>
-            ))}
-          </span>
-        ) : null}
       </nav>
 
       {received ? (
@@ -426,15 +451,15 @@ export default function App() {
         <div className="empty">Loading your statement</div>
       ) : tab === "overview" ? (
         <Overview
-          st={st.token.code === token.code ? st : { ...st, token, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], historyLoaded: false }}
+          st={st.token.code === token.code ? st : others[token.code]?.st ?? { ...st, token, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], historyLoaded: false }}
+          figures={figures}
           hasKey={!!keypair}
-          onRegister={() => wrap(() => client.register())}
-          publicBalance={pub}
+          onRegister={(code) => wrap(() => clientFor(code).register())}
           onGo={(t) => setTab(t as Tab)}
-          onFold={() => wrap(async () => { const tx = await client.applyPending(); trackTx(String(tx), { kind: "fold", onChain: { ciphertext: "●●●●" } }); return tx; })}
-          onSend={(to, amount, p) => wrap(async () => { const tx = await client.send(to, amount, p); trackTx(tx, { kind: "send", amount, counterparty: to }); return tx; })}
-          onDeposit={(a) => wrap(async () => { const tx = await client.deposit(a); trackTx(tx, { kind: "deposit", amount: a, onChain: { public: true } }); return tx; })}
-          onWithdraw={(a, p) => wrap(async () => { const tx = await client.withdraw(a, p); trackTx(tx, { kind: "withdraw", amount: a, onChain: { public: true } }); return tx; })}
+          onFold={(code) => wrap(async () => { const c = clientFor(code); const tx = await c.applyPending(); trackTx(String(tx), { kind: "fold", token: c.token, onChain: { ciphertext: "●●●●" } }); return tx; })}
+          onSend={(to, amount, p) => wrap(async () => { const tx = await client.send(to, amount, p); trackTx(tx, { kind: "send", amount, counterparty: to, token: client.token }); return tx; })}
+          onDeposit={(a) => wrap(async () => { const tx = await client.deposit(a); trackTx(tx, { kind: "deposit", amount: a, token: client.token, onChain: { public: true } }); return tx; })}
+          onWithdraw={(a, p) => wrap(async () => { const tx = await client.withdraw(a, p); trackTx(tx, { kind: "withdraw", amount: a, token: client.token, onChain: { public: true } }); return tx; })}
           busy={busy} refreshing={refreshing || st.token.code !== token.code}
           tokens={tokens} onSelectToken={chooseToken}
         />

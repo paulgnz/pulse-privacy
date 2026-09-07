@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ConfState } from "../lib/client";
 import { fmtUnits, parseUnits } from "../lib/format";
-import { AmountInput, Field, Note, Progress, TokenPicker } from "./ui";
+import { AmountInput, Field, Note, Progress } from "./ui";
 
 export const Send = ({
   st,
@@ -59,7 +59,6 @@ export const Send = ({
   return (
     <div className="form" aria-label="Send">
       <h3>Send</h3>
-      {tokens && onSelectToken ? <TokenPicker tokens={tokens} current={T.code} onSelect={onSelectToken} /> : null}
       <p>The chain will record that you paid this account, and when. The amount is a box only you, they and the auditor can open.</p>
       <Field
         label="To"
@@ -85,7 +84,7 @@ export const Send = ({
         error={over ? `More than you can spend. You have ${fmtUnits(spendable, T)} ${T.code}.` : undefined}
         hint={`You can spend ${fmtUnits(spendable, T)} ${T.code}${st.pending > 0n ? ", after pending is folded in" : ""}.`}
       >
-        <AmountInput value={amt} onChange={setAmt} token={T} />
+        <AmountInput value={amt} onChange={setAmt} token={T} tokens={tokens} onSelectToken={onSelectToken} />
       </Field>
       {prog ? (
         <Progress fraction={prog.f} stage={prog.s} />
