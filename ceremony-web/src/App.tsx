@@ -260,7 +260,7 @@ export function App() {
         {step !== "idle" && step !== "done" ? (
           <ol className="steps">
             <li className={step === "locking" ? "now" : "done"}>Taking your turn{turn ? `: contribution ${turn.index} of phase ${turn.phase}` : ""}{step === "locking" ? " (sign in your wallet to claim it)" : ""}</li>
-            <li className={step === "downloading" ? "now" : ["entropy", "computing", ...AFTER_COMPUTE].includes(step) ? "done" : ""}>Downloading the current file ({turn?.phase === 1 ? "about 36 MB" : "about 25 MB"})</li>
+            <li className={step === "downloading" ? "now" : ["entropy", "computing", ...AFTER_COMPUTE].includes(step) ? "done" : ""}>Downloading the current file ({turn?.phase === 1 ? "about 25 MB" : "about 25 MB"})</li>
             <li className={step === "entropy" ? "now" : ["computing", ...AFTER_COMPUTE].includes(step) ? "done" : ""}>
               Adding your randomness
               {step === "entropy" ? (

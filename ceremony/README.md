@@ -13,7 +13,7 @@ Two phases, same contributors, same one-line command:
 | 2 | circuit-specific, for `circuits/transfer/transfer.circom` (46,874 constraints) | `finalize.mjs setup` after phase 1 | `node contribute.mjs prev.zkey NN-you.zkey --name "You @ Org"` |
 
 Each contribution is sequential (you receive the previous file, add your randomness, pass the
-result on) and takes a minute or two on a laptop. Files are ≈ 36 MB (ptau) and ≈ 25 MB (zkey).
+result on) and takes a minute or two on a laptop. Files are ≈ 25 MB (ptau) and ≈ 25 MB (zkey).
 
 ## For contributors
 
