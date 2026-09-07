@@ -5,7 +5,7 @@ import * as chain from "./lib/chain";
 import type { Session } from "./lib/chain";
 import { ConfidentialClient, MOCK_TOKENS, type ActivityItem, type ConfState } from "./lib/client";
 import { event } from "./lib/stats";
-import { isBackedUp, markBackedUp, recoveryBlob } from "./lib/keys";
+import { isBackedUp, markBackedUp, passphraseBlob, recoveryBlob } from "./lib/keys";
 import { XPR, rememberToken, rememberedToken, type Token } from "./lib/token";
 import { selectBackend } from "./lib/crypto";
 import type { EncryptionKeypair, Hex } from "./lib/crypto/types";
@@ -80,11 +80,15 @@ export default function App() {
   const [recoveryOnChain, setRecoveryOnChain] = useState<boolean | null>(null);
   const [backedUp, setBackedUp] = useState(false);
   const wantRecovery = useRef(true);
+  const pendingPassphrase = useRef<string | undefined>(undefined);
+  const [backupOnChain, setBackupOnChain] = useState<boolean | null>(null);
+  const backupFor = async () => (!keyDerived && keypair && pendingPassphrase.current ? passphraseBlob(keypair.secret, pendingPassphrase.current) : undefined);
   const recoveryFor = async () => (!keyDerived && keypair && wantRecovery.current && st?.config.auditorPubkey ? recoveryBlob(keypair.secret, st.config.auditorPubkey) : undefined);
   useEffect(() => {
     if (!session || keyDerived || !keypair || backend.isMock) { setRecoveryOnChain(null); return; }
     setBackedUp(isBackedUp(session.auth.actor));
     chain.hasRecovery(session.auth.actor).then(setRecoveryOnChain).catch(() => setRecoveryOnChain(null));
+    chain.getBackup(session.auth.actor).then((b) => setBackupOnChain(!!b)).catch(() => setBackupOnChain(null));
   }, [session, keypair, keyDerived, st?.registered]);
   const [pub, setPub] = useState<bigint | null>(null);
   const [busy, setBusy] = useState(false);
@@ -436,33 +440,38 @@ export default function App() {
             connectError={loginErr}
             onConnect={doLogin}
             onAbout={() => navigate("/about")}
-            onKeyReady={(kp, derived, keepRecovery = true) => {
+            onKeyReady={(kp, derived, keepRecovery = true, passphrase) => {
               setKeypair(kp);
               setKeyDerived(derived);
               wantRecovery.current = keepRecovery;
+              pendingPassphrase.current = passphrase;
             }}
             session={session}
             autoUnlock={restored && !keypair && !!st?.registered}
             onRegister={async (onStage) => {
               if (!client) throw new Error("not connected");
               const blob = await recoveryFor();
+              const backup = await backupFor();
               await wrap(async () => {
-                await client.register(blob);
+                await client.register(blob, backup);
                 onStage?.("confirming");
               });
               if (blob) setRecoveryOnChain(true);
+              if (backup) { setBackupOnChain(true); pendingPassphrase.current = undefined; }
               event("registered");
               setJustRegistered(true);
             }}
             onRegisterAndDeposit={async (amount, onStage) => {
               if (!client) throw new Error("not connected");
               const blob = await recoveryFor();
+              const backup = await backupFor();
               await wrap(async () => {
-                const tx = await client.registerAndDeposit(amount, blob);
+                const tx = await client.registerAndDeposit(amount, blob, backup);
                 onStage?.("confirming");
                 trackTx(tx, { kind: "deposit", amount, token: client.token, onChain: { public: true } });
               });
               if (blob) setRecoveryOnChain(true);
+              if (backup) { setBackupOnChain(true); pendingPassphrase.current = undefined; }
               event("registered");
               event("deposited", { token: client.token.code });
               setJustRegistered(true);
@@ -530,7 +539,7 @@ export default function App() {
           figures={figures}
           hasKey={!!keypair}
           onRegister={(code) => wrap(async () => { const r = await clientFor(code).register(); event("registered"); return r; })}
-          backupNeeded={!keyDerived && !!keypair && !!st?.registered && recoveryOnChain === false && !backedUp}
+          backupNeeded={!keyDerived && !!keypair && !!st?.registered && recoveryOnChain === false && backupOnChain === false && !backedUp}
           onStoreRecovery={async () => {
             if (!keypair || !st?.config.auditorPubkey) return;
             const blob = await recoveryBlob(keypair.secret, st.config.auditorPubkey);
@@ -577,6 +586,13 @@ export default function App() {
             setRecoveryOnChain(true);
           }}
           onExported={() => { markBackedUp(actor); setBackedUp(true); }}
+          backupOnChain={backupOnChain}
+          onStoreBackup={async (passphrase) => {
+            if (!keypair) return;
+            const blob = await passphraseBlob(keypair.secret, passphrase);
+            await wrap(() => client.storeBackup(blob));
+            setBackupOnChain(true);
+          }}
           onSimulateIncoming={(from, a) => wrap(() => client.simulateIncoming(from, a))}
           onSimulatePool={(n) => wrap(() => client.simulatePoolActivity(n))}
           onResetMock={() => wrap(() => client.resetMock())}

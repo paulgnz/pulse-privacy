@@ -444,6 +444,17 @@ export function recoveryAction(s: Session, blob: Hex) {
   return { account: CONTRACT, name: "setrecovery", authorization: auth(s), data: { owner: s.auth.actor, blob: bare(blob) } };
 }
 
+export function backupAction(s: Session, blob: Hex) {
+  return { account: CONTRACT, name: "setbackup", authorization: auth(s), data: { owner: s.auth.actor, blob: bare(blob) } };
+}
+
+/** the account's passphrase-protected backup blob, hex, or null */
+export async function getBackup(actor: string): Promise<string | null> {
+  const r = await rpc<{ rows: { owner: string; blob: string }[] }>("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "backups", lower_bound: actor, upper_bound: actor, limit: 1, json: true });
+  const row = r.rows[0];
+  return row && row.owner === actor ? row.blob : null;
+}
+
 /** whether the account keeps an encrypted recovery copy of its secret with the committee */
 export async function hasRecovery(actor: string): Promise<boolean> {
   const r = await rpc<{ rows: { owner: string }[] }>("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "recovery", lower_bound: actor, upper_bound: actor, limit: 1, json: true });

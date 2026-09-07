@@ -198,5 +198,13 @@ const bobRow = conf.tables.accounts(symScope()).getTableRow(nameToBigInt("bob"))
 if (eg.decrypt64(eg.ctFromHex(bobRow.avail), bob.s) !== 0n || bobRow.pending_count !== 0) throw new Error("restore did not reset the boxes");
 await conf.actions.configure(["4,XPR", eg.ptHex(auditor.P), "10000", "0", false]).send("xprconf@active");
 lap("recovery copy stored; restore returns escrow only while paused and resets the boxes");
+// --- passphrase backup ---
+const pb = Array.from({ length: 76 }, (_, i) => (i * 7) & 0xff);
+await conf.actions.setbackup(["bob", Buffer.from(pb).toString("hex")]).send("bob@active");
+if (conf.tables.backups(nameToBigInt("xprconf")).getTableRow(nameToBigInt("bob")).blob.length !== 152) throw new Error("backup row");
+await expectToThrow(conf.actions.setbackup(["bob", "00"]).send("bob@active"), "eosio_assert: blob must be 60 to 160 bytes");
+await conf.actions.delbackup(["bob"]).send("bob@active");
+if (conf.tables.backups(nameToBigInt("xprconf")).getTableRow(nameToBigInt("bob"))) throw new Error("backup not deleted");
+lap("passphrase backup stored and deleted");
 console.log("T3 end-to-end passed");
 process.exit(0);

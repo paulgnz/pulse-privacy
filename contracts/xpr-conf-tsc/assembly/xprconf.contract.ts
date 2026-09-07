@@ -84,6 +84,21 @@ class Recovery extends Table {
   }
 }
 
+/** The owner's encryption secret encrypted with a passphrase only the owner knows (PBKDF2 + AES-GCM), so any device can restore it. */
+@table("backups")
+class Backup extends Table {
+  constructor(
+    public owner: Name = new Name(),
+    public blob: u8[] = []
+  ) {
+    super();
+  }
+  @primary
+  get primary(): u64 {
+    return this.owner.N;
+  }
+}
+
 @table("accounts")
 class Account extends Table {
   constructor(
@@ -128,6 +143,7 @@ class XprConf extends Contract {
   configs: TableStore<Config> = new TableStore<Config>(this.receiver);
   limits: TableStore<Limits> = new TableStore<Limits>(this.receiver);
   recovery: TableStore<Recovery> = new TableStore<Recovery>(this.receiver);
+  backups: TableStore<Backup> = new TableStore<Backup>(this.receiver);
 
   accountsOf(sym: u64): TableStore<Account> {
     return new TableStore<Account>(this.receiver, Name.fromU64(sym));
@@ -198,6 +214,27 @@ class XprConf extends Contract {
       r.blob = blob;
       this.recovery.update(r, owner);
     }
+  }
+
+  /** Keep a passphrase-encrypted copy of the encryption secret (salt, nonce, AES-GCM ciphertext; at most 160 bytes). */
+  @action("setbackup")
+  setbackup(owner: Name, blob: u8[]): void {
+    requireAuth(owner);
+    check(blob.length >= 60 && blob.length <= 160, "blob must be 60 to 160 bytes");
+    const b = this.backups.get(owner.N);
+    if (b == null) this.backups.store(new Backup(owner, blob), owner);
+    else {
+      b.blob = blob;
+      this.backups.update(b, owner);
+    }
+  }
+
+  @action("delbackup")
+  delbackup(owner: Name): void {
+    requireAuth(owner);
+    const b = this.backups.get(owner.N);
+    check(b != null, "no backup");
+    this.backups.remove(b!);
   }
 
   @action("delrecovery")

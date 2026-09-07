@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ConfState } from "../lib/client";
 import type { EncryptionKeypair } from "../lib/crypto/types";
-import { exportBlob } from "../lib/keys";
+import { MIN_PASSPHRASE, exportBlob } from "../lib/keys";
 import { parseUnits, shortHex } from "../lib/format";
 import { Field, Note } from "./ui";
 
@@ -18,6 +18,8 @@ export const Settings = ({
   recoveryOnChain = null,
   onStoreRecovery,
   onExported,
+  backupOnChain = null,
+  onStoreBackup,
   onSimulateIncoming,
   onSimulatePool,
   onResetMock,
@@ -37,6 +39,8 @@ export const Settings = ({
   recoveryOnChain?: boolean | null;
   onStoreRecovery?: () => Promise<unknown>;
   onExported?: () => void;
+  backupOnChain?: boolean | null;
+  onStoreBackup?: (passphrase: string) => Promise<unknown>;
   onSimulateIncoming: (from: string, amount: bigint) => Promise<void>;
   onSimulatePool: (n: number) => Promise<void>;
   onResetMock: () => Promise<void>;
@@ -78,6 +82,7 @@ export const Settings = ({
   };
 
   const payMe = `${location.origin}/?to=${actor}`;
+  const [pass, setPass] = useState("");
   const [linkCopied, setLinkCopied] = useState(false);
 
   return (
@@ -89,6 +94,22 @@ export const Settings = ({
         ) : (
           <>
             <p className="lede">This is a saved key. It opens your boxes, is separate from your wallet's signing key, and stays in this browser.</p>
+            {onStoreBackup ? (
+              <div className="kv" style={{ alignItems: "center" }}>
+                <span className="k">Passphrase backup</span>
+                <span>{backupOnChain ? "On chain. Restore this key on any device with the passphrase." : "None. Set one to restore this key on another device without a file."}</span>
+              </div>
+            ) : null}
+            {onStoreBackup ? (
+              <div className="row" style={{ marginBottom: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
+                <Field label={backupOnChain ? "New passphrase" : "Passphrase"} hint={`At least ${MIN_PASSPHRASE} characters.`}>
+                  <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="new-password" />
+                </Field>
+                <button className="btn secondary" onClick={() => run(() => onStoreBackup(pass).then(() => setPass("")), "Passphrase backup stored on chain.")} disabled={busy || pass.length < MIN_PASSPHRASE}>
+                  {busy ? "Storing" : backupOnChain ? "Change passphrase" : "Set passphrase"}
+                </button>
+              </div>
+            ) : null}
             {recoveryOnChain ? (
               <Note level="ok">
                 <p>An encrypted recovery copy of this key is kept with the XPR Network committee. If this browser is lost, the committee can return the key to you after you prove you own the account. Exporting the key file as well is still a good idea.</p>

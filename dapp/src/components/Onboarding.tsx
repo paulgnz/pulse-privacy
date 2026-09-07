@@ -3,7 +3,8 @@ import type { ConfState } from "../lib/client";
 import type { CryptoBackend, EncryptionKeypair, Hex } from "../lib/crypto/types";
 import { amountProblem, fmtUnits, parseUnits } from "../lib/format";
 import { XPR, type Token } from "../lib/token";
-import { exportBlob, saveKeypair } from "../lib/keys";
+import { MIN_PASSPHRASE, exportBlob, openPassphraseBlob, saveKeypair } from "../lib/keys";
+import * as chain from "../lib/chain";
 import { checkDeposit } from "../lib/privacy";
 import { unlockOnce } from "../lib/unlock";
 import { deterministicSigner, type Session } from "../lib/chain";
@@ -12,7 +13,7 @@ import { NETWORK } from "../config";
 import { Walkthrough } from "./Walkthrough";
 
 export type Step = "connect" | "key" | "register" | "deposit";
-export type KeyMode = "unlock" | "unlock-pending" | "confirm" | "confirm-pending" | "legacy" | "legacy-pending" | "unlock-done" | "import" | "create" | "backup";
+export type KeyMode = "unlock" | "unlock-pending" | "confirm" | "confirm-pending" | "legacy" | "legacy-pending" | "unlock-done" | "import" | "create" | "backup" | "passphrase";
 const STEPS: [Step, string][] = [
   ["connect", "Connect wallet"],
   ["key", "Unlock"],
@@ -34,7 +35,7 @@ export interface OnboardingProps {
   connectError?: string;
   onConnect: () => Promise<void>;
   /** `derived`: the secret came from the wallet signature and lives in memory only */
-  onKeyReady: (kp: EncryptionKeypair, derived: boolean, keepRecovery?: boolean) => void;
+  onKeyReady: (kp: EncryptionKeypair, derived: boolean, keepRecovery?: boolean, passphrase?: string) => void;
   session: Session | null;
   /** returning session: derive again without the stability check, prompting at once */
   autoUnlock?: boolean;
@@ -136,6 +137,37 @@ const Key = (p: OnboardingProps) => {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [keepRecovery, setKeepRecovery] = useState(true);
+  const [pass1, setPass1] = useState("");
+  const [pass2, setPass2] = useState("");
+  const [backupBlob, setBackupBlob] = useState<string | null>(null);
+  const [passIn, setPassIn] = useState("");
+  const passOk = pass1.length === 0 || (pass1.length >= MIN_PASSPHRASE && pass1 === pass2);
+  // a returning device that cannot derive the key: is there a passphrase backup on chain?
+  const tryPassphrase = async (): Promise<boolean> => {
+    if (p.isMock || !p.actor) return false;
+    const b = await chain.getBackup(p.actor).catch(() => null);
+    if (!b) return false;
+    setBackupBlob(b);
+    setMode("passphrase");
+    return true;
+  };
+  const restoreWithPassphrase = async () => {
+    if (!backupBlob || !p.actor) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const secret = await openPassphraseBlob(backupBlob, passIn);
+      const pubkey = await p.backend.pubkeyOf(secret);
+      if (chainKey && pubkey.toLowerCase() !== chainKey.toLowerCase()) throw new Error("this backup does not hold the key registered for this account");
+      const kp = { secret, pubkey };
+      saveKeypair(p.actor, kp);
+      p.onKeyReady(kp, false);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const [copied, setCopied] = useState(false);
   const [stage, setStage] = useState<string>("");
   const [nonDeterministic, setNonDeterministic] = useState(false);
@@ -166,6 +198,7 @@ const Key = (p: OnboardingProps) => {
     if (chainKey && pubkey.toLowerCase() !== chainKey.toLowerCase()) {
       if (!fromLegacy) { setMode("legacy"); return; } // registered before the message changed?
       setMismatch(true);
+      if (await tryPassphrase()) return;
       setMode("import");
       return;
     }
@@ -217,6 +250,7 @@ const Key = (p: OnboardingProps) => {
       const r = await unlockOnce(p.session);
       if (r.signature !== firstSig.signature) {
         setNonDeterministic(true);
+        if (chainKey && (await tryPassphrase())) return;
         setMode("create");
         return;
       }
@@ -274,7 +308,7 @@ const Key = (p: OnboardingProps) => {
     const kp = fresh ?? p.keypair;
     if (!kp || !p.actor) return;
     saveKeypair(p.actor, kp);
-    p.onKeyReady(kp, false, keepRecovery);
+    p.onKeyReady(kp, false, keepRecovery, pass1.length >= MIN_PASSPHRASE ? pass1 : undefined);
   };
 
   const download = () => {
@@ -360,6 +394,12 @@ const Key = (p: OnboardingProps) => {
             {copied ? "Copied" : "Copy secret"}
           </button>
         </div>
+        <Field label="Passphrase, for restoring this key on another device (recommended)" hint={`At least ${MIN_PASSPHRASE} characters. Stored on chain encrypted with it; nobody can reset it for you.`} error={!passOk ? (pass1.length < MIN_PASSPHRASE ? `Use at least ${MIN_PASSPHRASE} characters.` : "The two entries differ.") : undefined}>
+          <input type="password" value={pass1} onChange={(e) => setPass1(e.target.value)} placeholder="a long phrase you will remember" autoComplete="new-password" />
+        </Field>
+        <Field label="Passphrase again">
+          <input type="password" value={pass2} onChange={(e) => setPass2(e.target.value)} autoComplete="new-password" />
+        </Field>
         <label className="check">
           <input type="checkbox" checked={keepRecovery} onChange={(e) => setKeepRecovery(e.target.checked)} />
           <span>Keep an encrypted recovery copy with the XPR Network committee (recommended). Stored on chain with your registration; only the committee's viewing key can open it, and spending still needs your wallet.</span>
@@ -369,12 +409,30 @@ const Key = (p: OnboardingProps) => {
           <span>I have saved my backup somewhere safe.</span>
         </label>
         <div className="row">
-          <button className="btn private" onClick={finishBackup} disabled={!saved}>
+          <button className="btn private" onClick={finishBackup} disabled={!saved || !passOk}>
             Continue
           </button>
           <button className="textbtn quiet" onClick={() => setMode("create")}>
             Back
           </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (mode === "passphrase") {
+    return (
+      <section className="step">
+        <h2>Restore your key</h2>
+        <p className="lede">{p.actor} keeps a passphrase-protected copy of its encryption key on chain. Enter the passphrase to restore the key on this device.</p>
+        <Field label="Passphrase" error={err ?? undefined}>
+          <input type="password" value={passIn} onChange={(e) => setPassIn(e.target.value)} autoFocus autoComplete="current-password" />
+        </Field>
+        <div className="row">
+          <button className="btn private" onClick={restoreWithPassphrase} disabled={!passIn || busy}>
+            {busy ? "Restoring" : "Restore"}
+          </button>
+          <button className="textbtn quiet" onClick={() => setMode("import")}>I have the key file instead</button>
         </div>
       </section>
     );

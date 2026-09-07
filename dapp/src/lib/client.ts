@@ -297,7 +297,7 @@ export class ConfidentialClient {
     return this.keypair;
   }
 
-  async register(recoveryBlob?: Hex): Promise<string> {
+  async register(recoveryBlob?: Hex, backupBlob?: Hex): Promise<string> {
     const kp = this.need();
     if (this.isMock) {
       const pool = await loadPool(this.backend, this.token);
@@ -322,6 +322,7 @@ export class ConfidentialClient {
     }
     const actions: unknown[] = [chain.registerAction(this.session, this.token, kp.pubkey)];
     if (recoveryBlob) actions.push(chain.recoveryAction(this.session, recoveryBlob));
+    if (backupBlob) actions.push(chain.backupAction(this.session, backupBlob));
     return chain.broadcast(this.session, actions);
   }
 
@@ -331,18 +332,25 @@ export class ConfidentialClient {
     return chain.broadcast(this.session, [chain.recoveryAction(this.session, blob)]);
   }
 
+  /** store (or replace) the passphrase-protected backup; one signature */
+  async storeBackup(blob: Hex): Promise<string> {
+    if (this.isMock) return "mock";
+    return chain.broadcast(this.session, [chain.backupAction(this.session, blob)]);
+  }
+
   /** First run: publish the key and make the first deposit in one transaction (one signature). */
-  async registerAndDeposit(amount: bigint, recoveryBlob?: Hex): Promise<string> {
+  async registerAndDeposit(amount: bigint, recoveryBlob?: Hex, backupBlob?: Hex): Promise<string> {
     if (amount <= 0n) throw new Error("amount must be positive");
     const kp = this.need();
     if (this.isMock) {
-      await this.register(recoveryBlob);
+      await this.register(recoveryBlob, backupBlob);
       return this.deposit(amount);
     }
     // no network call between the tap and the signing request: on a phone the wallet hand-off
     // has to happen inside the tap, and the contract rejects a duplicate registration itself
     const actions: unknown[] = [chain.registerAction(this.session, this.token, kp.pubkey)];
     if (recoveryBlob) actions.push(chain.recoveryAction(this.session, recoveryBlob));
+    if (backupBlob) actions.push(chain.backupAction(this.session, backupBlob));
     actions.push(chain.depositAction(this.session, this.token, amount));
     return chain.broadcast(this.session, actions);
   }

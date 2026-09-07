@@ -50,6 +50,42 @@ export async function recoveryBlob(secret: Hex, auditorPubkey: Hex): Promise<Hex
   return `0x${ptHex(R)}${ct}` as Hex;
 }
 
+const PBKDF2_ROUNDS = 600_000;
+const hexToBytes = (h: string) => Uint8Array.from(h.replace(/^0x/, "").match(/../g)!.map((b) => parseInt(b, 16)));
+const bytesToHex = (u8: Uint8Array) => Array.from(u8, (b) => b.toString(16).padStart(2, "0")).join("");
+async function passphraseKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase.normalize("NFKC")), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: salt as BufferSource, iterations: PBKDF2_ROUNDS }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+
+/**
+ * The secret encrypted with a passphrase only the owner knows: 16-byte salt, 12-byte nonce,
+ * 48-byte AES-GCM ciphertext (76 bytes). Stored on chain so any device can restore the key
+ * from the passphrase alone. Brute force is slowed by 600,000 PBKDF2 rounds; the passphrase
+ * itself has to be long.
+ */
+export async function passphraseBlob(secret: Hex, passphrase: string): Promise<Hex> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const key = await passphraseKey(passphrase, salt);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce as BufferSource }, key, hexToBytes(secret.replace(/^0x/, "").padStart(64, "0")) as BufferSource));
+  return `0x${bytesToHex(salt)}${bytesToHex(nonce)}${bytesToHex(ct)}` as Hex;
+}
+
+export async function openPassphraseBlob(blob: string, passphrase: string): Promise<Hex> {
+  const b = hexToBytes(blob);
+  if (b.length !== 76) throw new Error("unexpected backup format");
+  const key = await passphraseKey(passphrase, b.slice(0, 16));
+  try {
+    const pt = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: b.slice(16, 28) as BufferSource }, key, b.slice(28) as BufferSource));
+    return `0x${bytesToHex(pt)}` as Hex;
+  } catch {
+    throw new Error("that passphrase does not open the backup");
+  }
+}
+
+export const MIN_PASSPHRASE = 10;
+
 export async function createKeypair(actor: string, backend: CryptoBackend): Promise<EncryptionKeypair> {
   const kp = await backend.generateKeypair();
   saveKeypair(actor, kp);
