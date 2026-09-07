@@ -147,5 +147,37 @@ await conf.actions.send(["alice", "6,XMD", "bob", eg.ptHex(alice.P), eg.ptHex(bo
 const bx = conf.tables.accounts(xmdScope()).getTableRow(nameToBigInt("bob"));
 if (!bx || eg.decrypt64(eg.ctFromHex(bx.pending), bob.s) !== 2_500_000n) throw new Error("bob did not receive XMD via auto-registration");
 lap("register once, receive any token: alice auto-registered for XMD by deposit, bob by receiving 2.5 XMD");
+// --- review findings: forged points must be rejected before proof verification ---
+const ax2 = conf.tables.accounts(xmdScope()).getTableRow(nameToBigInt("alice"));
+const b2 = eg.ctFromHex(ax2.avail);
+const v2 = [eg.bsgs32(eg.decryptPoint(b2[0].C, b2[0].D, alice.s)), eg.bsgs32(eg.decryptPoint(b2[1].C, b2[1].D, alice.s))];
+const gw = eg.buildTransferWitness({ sender: alice, receiverP: bob.P, auditorP: auditor.P, bold: b2, voldChunks: v2, v: 1_000_000n, nonce: BigInt(ax2.nonce), senderName: nameToBigInt("alice"), receiverName: nameToBigInt("bob") });
+const gp = await snarkjs.groth16.fullProve(gw.input, WASM, ZKEY);
+const tGood = eg.tHex(gw.T);
+// an off-curve key with the same compressed form as bob's (same y, same sign of x)
+const bobO = eg.toObj(bob.P);
+const forgedP = eg.toPt([bobO[0] ^ 2n, bobO[1]]);
+if (eg.compressHex(forgedP) !== eg.compressHex(bob.P)) throw new Error("forged key should compress like bob's");
+await expectToThrow(
+  conf.actions.send(["alice", "6,XMD", "bob", eg.ptHex(alice.P), eg.ptHex(forgedP), eg.ptHex(auditor.P), tGood, eg.ctHex(gw.Bnew), encodeProof(gp.proof)]).send("alice@active"),
+  "eosio_assert: pr does not match the receiver's registered key"
+);
+lap("off-curve receiver key rejected (before the proof is looked at)");
+// a non-canonical coordinate (word + p) reduces to the same scalar for the verifier but is not a point
+const P_BJ = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+const w0 = BigInt("0x" + tGood.slice(0, 64)) + P_BJ;
+const tBad = w0.toString(16).padStart(64, "0") + tGood.slice(64);
+await expectToThrow(
+  conf.actions.send(["alice", "6,XMD", "bob", eg.ptHex(alice.P), eg.ptHex(bob.P), eg.ptHex(auditor.P), tBad, eg.ctHex(gw.Bnew), encodeProof(gp.proof)]).send("alice@active"),
+  "eosio_assert: t contains a point that is not on the curve"
+);
+// and the untouched transaction still goes through
+await conf.actions.send(["alice", "6,XMD", "bob", eg.ptHex(alice.P), eg.ptHex(bob.P), eg.ptHex(auditor.P), tGood, eg.ctHex(gw.Bnew), encodeProof(gp.proof)]).send("alice@active");
+lap("non-canonical coordinate rejected; canonical send accepted");
+
+// --- setpool corrects the counter ---
+await conf.actions.setpool(["4,XPR", "123"]).send("xprconf@active");
+if (String(conf.tables.limits(nameToBigInt("xprconf")).getTableRow(symScope()).pool) !== "123") throw new Error("setpool");
+lap("setpool ok");
 console.log("T3 end-to-end passed");
 process.exit(0);

@@ -12,7 +12,7 @@ import {
 } from "proton-tsc";
 import { sendTransferTokens } from "proton-tsc/token";
 import { groth16Verify } from "./groth16";
-import { Pt, add, compress, keyMatches, mulG32, onCurve, u64Word } from "./babyjub";
+import { Pt, add, allOnCurve, compress, keyMatches, mulG32, onCurve, u64Word } from "./babyjub";
 
 // xpr.conf — confidential token (testnet build, design doc §4).
 //
@@ -169,6 +169,17 @@ class XprConf extends Contract {
   }
 
   /** soft-launch caps (0 = off). Applies from the next deposit; `pool` tracks deposits − withdrawals. */
+  /** Set the pool counter to the actual escrow for a token (the counter starts at 0 when limits are first set). */
+  @action("setpool")
+  setpool(sym: Symbol, pool: u64): void {
+    requireAuth(this.receiver);
+    this.configOf(sym);
+    const l = this.limits.get(sym.raw());
+    check(l != null, "no limits row");
+    l!.pool = pool;
+    this.limits.update(l!, this.receiver);
+  }
+
   @action("setlimits")
   setlimits(sym: Symbol, max_pool: u64, max_deposit: u64): void {
     requireAuth(this.receiver);
@@ -296,6 +307,10 @@ class XprConf extends Contract {
     check(t.length == T_LEN, "t must be 512 bytes");
     check(b_new.length == CT_LEN, "b_new must be 256 bytes");
     check(proof.length == PROOF_LEN, "proof must be 256 bytes");
+    // the verifier reduces coordinates mod the field, so a non-canonical or off-curve point would
+    // still verify and then corrupt the boxes it is added into: every point must be canonical and on the curve
+    check(allOnCurve(t), "t contains a point that is not on the curve");
+    check(allOnCurve(b_new), "b_new contains a point that is not on the curve");
     const accounts = this.accountsOf(sym.raw());
     const sAcc = accounts.get(from.N);
     check(sAcc != null, "sender not registered");
@@ -335,6 +350,7 @@ class XprConf extends Contract {
     if (c.withdraw_granularity > 0) check(v % c.withdraw_granularity == 0, "withdrawal must be a multiple of the granularity");
     check(b_new.length == CT_LEN, "b_new must be 256 bytes");
     check(proof.length == PROOF_LEN, "proof must be 256 bytes");
+    check(allOnCurve(b_new), "b_new contains a point that is not on the curve");
     const accounts = this.accountsOf(quantity.symbol.raw());
     const acc = accounts.get(owner.N);
     check(acc != null, "not registered");

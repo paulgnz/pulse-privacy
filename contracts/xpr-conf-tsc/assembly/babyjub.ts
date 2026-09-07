@@ -144,9 +144,23 @@ function bytesEq(a: u8[], b: u8[]): bool {
 }
 
 /** `stored` is 32 B (compressed) or 64 B (legacy full); `full` is the 64 B point supplied by the action. */
+/**
+ * The supplied full key must be the on-curve point the stored key names. Comparing only the
+ * compressed form (y and the sign of x) would accept any x on the same side of the field, and an
+ * off-curve point fed into the receiver's or auditor's handle yields a box nobody can open.
+ */
 export function keyMatches(stored: u8[], full: u8[]): bool {
   if (full.length != 64) return false;
+  const P = Pt.fromBytes(full, 0);
+  if (!onCurve(P) || P.eq(Pt.inf())) return false;
   if (stored.length == 64) return bytesEq(stored, full);
   if (stored.length != 32) return false;
-  return bytesEq(compress(Pt.fromBytes(full, 0)), stored);
+  return bytesEq(compress(P), stored);
+}
+
+/** every 64-byte point in `bytes` is a canonical (coordinates < p) point on the curve */
+export function allOnCurve(bytes: u8[]): bool {
+  if (bytes.length % 64 != 0) return false;
+  for (let i = 0; i < bytes.length; i += 64) if (!onCurve(Pt.fromBytes(bytes, i))) return false;
+  return true;
 }
