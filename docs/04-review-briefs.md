@@ -114,3 +114,53 @@ Try to break it:
 4. The attestation and lock signatures: replay across index, phase, file, or time; the key set checked against.
 5. The upload token, the admin endpoint, and the beacon.
 6. Anything that lets a single party know all randomness or make the transcript unverifiable.
+
+---
+
+## Brief 5: the shielded mode (signed sender, sealed receiver)
+
+Read first: `docs/06-shielded-design.md`, especially §2, §3 and §8 (the revision that
+replaced the relay model). Then read fully: `circuits/shielded/joinsplit.circom`,
+`circuits/lib/notes.mjs`, `circuits/test/joinsplit.test.mjs`,
+`contracts/xpr-shield-tsc/assembly/{xprshield.contract.ts, fr.ts, poseidon.ts, groth16.ts}`,
+`contracts/xpr-shield-tsc/tests/{poseidon.test.mjs, xprshield.test.mjs}`,
+`dapp/src/lib/shield/{notes.ts, poseidon.ts, chain.ts}`, `dapp/src/components/Shielded.tsx`,
+and the changes to `dapp/src/lib/unlock.ts`. Skim `contracts/xpr-shield-tsc/tests/testnet-demo.mjs`.
+
+Context: a second contract, `xprshield` (XPR testnet only), keeps sealed notes
+`(pk, v, token, rho, r)` with `cm = Poseidon(pk.x, pk.y, v, token, rho, r)` in a depth-20
+Poseidon Merkle tree maintained on chain (insertions in pairs; the contract carries its own
+Montgomery field arithmetic and Poseidon in AssemblyScript). Spending is a Groth16 join-split
+(two inputs, two outputs, 29,523 constraints, 33 public signals) whose `spend(owner, proof,
+publics)` action the owner's wallet signs: the contract requires the owner's authority, inserts
+the owner's registered key, the owner's name and the auditor key into the verifier input,
+records nullifiers `Poseidon(nk, leafIndex)`, and pays withdrawals to the owner only. Outputs
+are encrypted to the receiver and to the auditor with `Poseidon`-based stream encryption over
+an ECDH shared point; the ciphertexts and ephemeral keys live in an `outputs` table so
+receivers rebuild their notes from tables alone. Keys derive from a wallet signature
+(`viewkey`) with a separate hash domain. Hidden: receiver, amount, which notes were spent.
+Visible: the initiator, deposits, withdrawals. The auditor opens every note.
+
+Try to break it:
+1. Circuit soundness: every relation in §2.3 enforced with `===`; the dummy-input path
+   (`enabled1 = 0`); range checks and the packed word `v + token·2^64`; token consistency;
+   the binding of `sender`, `to`, `senderPk`; whether any public output can be chosen freely
+   by a malicious prover; whether an output note can be made undecryptable or ambiguous for
+   the receiver or the auditor (off-curve or low-order `outPk`, chosen `esk`).
+2. Nullifiers: uniqueness across deposits and transfers; the contract keys nullifiers and
+   roots by their low 64 bits and refuses collisions; is that a denial-of-service vector.
+3. The tree: pair insertion, the frontier, the zero chain, the 128-root ring; can a proof be
+   replayed, can a stale root be abused, can the on-chain Poseidon diverge from circomlibjs.
+4. Contract authority and accounting: `require_auth(owner)` with the registered-key check;
+   RAM billing to the owner; deposit memo parsing and the `tokens` caps; withdrawal
+   accounting; the testnet-only `reset`; anything that lets an attacker steal, freeze or
+   inflate funds, spend another account's notes, or make the auditor unable to read a note.
+5. Field arithmetic: the Montgomery multiplication in `fr.ts` (CIOS, 8 × 32-bit limbs), the
+   canonical checks on inputs, `onCurve`, the conversions; any input that overflows or
+   escapes reduction.
+6. Client: key derivation domain separation; what a browser-held key can do without the
+   wallet (it should be read-only); randomness for `rho`, `r`, `esk`; note selection and the
+   two-input limit; scanning from tables; anything that leaks an amount or a receiver to a
+   log, URL, storage or network call.
+7. Privacy claims in §8.2: what a chain observer actually learns from a `spend` action, its
+   size and its timing, and whether the design doc understates it.
