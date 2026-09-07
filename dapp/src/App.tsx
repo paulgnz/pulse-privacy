@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_NETWORK, SHIELD } from "./config";
+import { APP, CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_APP, OTHER_NETWORK, SHIELD } from "./config";
 import { fmtUnits } from "./lib/format";
 import * as chain from "./lib/chain";
 import type { Session } from "./lib/chain";
@@ -32,7 +32,13 @@ const backend = selectBackend();
 
 /** path-based routes: "/" is the app, "/about" is How it works */
 type Route = "app" | "about" | "shielded";
-const routeOf = (path: string): Route => { const p = path.replace(/\/+$/, ""); return p === "/about" ? "about" : p === "/shielded" && SHIELD.enabled ? "shielded" : "app"; };
+// the shield site serves the shielded page at "/" and the confidential statement at "/private"
+const routeOf = (path: string): Route => {
+  const p = path.replace(/\/+$/, "");
+  if (p === "/about") return "about";
+  if (APP === "shield") return p === "/private" ? "app" : SHIELD.enabled ? "shielded" : "app";
+  return p === "/shielded" && SHIELD.enabled ? "shielded" : "app";
+};
 
 /**
  * Simulated session: only with the simulated backend, and only when asked for
@@ -374,7 +380,7 @@ export default function App() {
           <>
             {inApp && route === "about" ? link("/", "Statement", false) : null}
             {link("/about", "How it works", route === "about")}
-            {SHIELD.enabled ? link("/shielded", "Shielded", route === "shielded") : null}
+            {APP === "shield" ? <a className="textbtn quiet" href={OTHER_APP.url}>{OTHER_APP.label}</a> : SHIELD.enabled ? link("/shielded", "Shielded", route === "shielded") : null}
             <a className="textbtn quiet netswitch" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
               Switch to {OTHER_NETWORK.label.toLowerCase()}
             </a>
@@ -389,7 +395,7 @@ export default function App() {
         ) : (
           <>
             {link("/about", "How it works", route === "about")}
-            {SHIELD.enabled ? link("/shielded", "Shielded", route === "shielded") : null}
+            {APP === "shield" ? <a className="textbtn quiet" href={OTHER_APP.url}>{OTHER_APP.label}</a> : SHIELD.enabled ? link("/shielded", "Shielded", route === "shielded") : null}
             <a className="textbtn quiet netswitch" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
               Switch to {OTHER_NETWORK.label.toLowerCase()}
             </a>
