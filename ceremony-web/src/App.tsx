@@ -165,6 +165,7 @@ export function App() {
         access: "public",
         handleUploadUrl: "/api/upload-token",
         multipart: true,
+        allowOverwrite: true, // a retry after a failed attempt; the server refuses it once the file is recorded
         contentType: "application/octet-stream",
         clientPayload: JSON.stringify({ actor }),
       });
