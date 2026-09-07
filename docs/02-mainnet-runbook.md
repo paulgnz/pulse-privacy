@@ -51,6 +51,16 @@ Then: set `VITE_NETWORK=mainnet` on the Vercel project, redeploy, and run one re
 deposit → send → withdraw with small amounts from two accounts, and `auditor.mjs reconcile`
 against mainnet, before announcing.
 
+## 4a. Tokens
+
+| token | symbol | contract | withdraw granularity | caps (pool / per deposit) | mainnet init tx |
+|---|---|---|---|---|---|
+| XPR | 4,XPR | eosio.token | 1 XPR | 20,000 / 1,000 XPR | d320e3db… |
+| XMD (Metal Dollar) | 6,XMD | xmd.token | 1 XMD | 20,000 / 1,000 XMD | d53cbbfd… |
+
+Adding a token = one `init` (same vk, same auditor key) + one `setlimits`. The circuit is
+token-agnostic; amounts are 64-bit units. Testnet has both tokens too.
+
 ## 4b. Measured on mainnet (Leap v3.1.2, 2026-09-07)
 
 | action | CPU |
