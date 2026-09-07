@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ConfState } from "../lib/client";
 import { amountProblem, fmtUnits, parseUnits } from "../lib/format";
-import { checkWithdrawal, isRound } from "../lib/privacy";
+import { roundDown, checkWithdrawal, isRound } from "../lib/privacy";
 import { AmountInput, EdgeNote, Field, Note, Progress } from "./ui";
 
 export const Withdraw = ({
@@ -21,11 +21,15 @@ export const Withdraw = ({
   onSelectToken?: (code: string) => void;
   /** success: the parent shows the confirmation at the top of the statement and closes the form */
   onDone?: (msg: string, txid?: string) => void;
+  /** every token's figures, for "withdraw everything" */
+  allTokens?: { st: ConfState; publicBalance: bigint | null }[];
+  onWithdrawAll?: (code: string, amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
 }) => {
   const [amt, setAmt] = useState("");
   const [prog, setProg] = useState<{ f: number; s: string } | null>(null);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [ack, setAck] = useState(false);
+  const [allBusy, setAllBusy] = useState<string | null>(null);
 
   const T = st.token;
   const parsed = useMemo(() => {
@@ -42,6 +46,31 @@ export const Withdraw = ({
   const chainRejects = parsed !== null && g > 0n && !isRound(parsed, g, T.units);
   const needsAck = check?.level === "warn" && !chainRejects;
   const can = !!parsed && parsed > 0n && !over && !chainRejects && !busy && (!needsAck || ack);
+  const maxAmount = roundDown(spendable, g, T.units);
+  const setMax = () => setAmt(fmtUnits(maxAmount, T, { trim: true }).replace(/,/g, ""));
+  // other tokens with something to withdraw
+  const othersWithBalance = (allTokens ?? []).filter((f) => f.st.token.code !== T.code && f.st.balance + f.st.pending > 0n);
+  const withdrawAll = async () => {
+    if (!onWithdrawAll) return;
+    setResult(null);
+    const list = [{ st, publicBalance: null as bigint | null }, ...othersWithBalance].filter((f) => f.st.balance + f.st.pending > 0n);
+    try {
+      for (const f of list) {
+        const a = roundDown(f.st.balance + f.st.pending, f.st.config.withdrawGranularity, f.st.token.units);
+        if (a <= 0n) continue;
+        setAllBusy(f.st.token.code);
+        setProg({ f: 0, s: `Withdrawing ${fmtUnits(a, f.st.token)} ${f.st.token.code}` });
+        await onWithdrawAll(f.st.token.code, a, (fr, s) => setProg({ f: fr, s: `${f.st.token.code}: ${s}` }));
+      }
+      const done = `Withdrew everything to your public balance: ${list.map((f) => `${fmtUnits(roundDown(f.st.balance + f.st.pending, f.st.config.withdrawGranularity, f.st.token.units), f.st.token)} ${f.st.token.code}`).join(", ")}.`;
+      if (onDone) onDone(done); else setResult({ ok: true, msg: done });
+    } catch (e) {
+      setResult({ ok: false, msg: `Stopped. ${(e as Error).message}` });
+    } finally {
+      setAllBusy(null);
+      setProg(null);
+    }
+  };
 
   const go = async () => {
     if (!parsed) return;
@@ -69,7 +98,10 @@ export const Withdraw = ({
         error={over ? `More than you can spend. You have ${fmtUnits(spendable, T)} ${T.code}.` : chainRejects ? `The contract accepts whole multiples of ${fmtUnits(g, T, { trim: true })} ${T.code}.` : amountProblem(amt, T) ?? undefined}
         hint={`You can withdraw up to ${fmtUnits(spendable, T)} ${T.code}${g > 0n ? `, in multiples of ${fmtUnits(g, T, { trim: true })}` : ""}.`}
       >
-        <AmountInput value={amt} onChange={setAmt} autoFocus token={T} tokens={tokens} onSelectToken={onSelectToken} />
+        <div className="row" style={{ gap: 12, alignItems: "center" }}>
+          <AmountInput value={amt} onChange={setAmt} autoFocus token={T} tokens={tokens} onSelectToken={onSelectToken} />
+          <button type="button" className="textbtn" onClick={setMax} disabled={maxAmount <= 0n}>Max</button>
+        </div>
       </Field>
       {!chainRejects && check ? <EdgeNote check={check} token={T} onSuggest={(a) => setAmt(fmtUnits(a, T, { trim: true }).replace(/,/g, ""))} /> : null}
       {needsAck ? (
@@ -97,6 +129,13 @@ export const Withdraw = ({
         <span className="k">Incoming transfers on record</span>
         <span className="num">{st.incoming.length}</span>
       </div>
+      {onWithdrawAll && othersWithBalance.length && !prog ? (
+        <div className="row" style={{ marginBottom: 16 }}>
+          <button className="textbtn" onClick={withdrawAll} disabled={busy || !!allBusy}>
+            Withdraw everything ({[T, ...othersWithBalance.map((f) => f.st.token)].map((t) => t.code).join(" and ")}), one signature per token
+          </button>
+        </div>
+      ) : null}
       <p className="small muted">Inside, amounts are hidden by cryptography. At the edge they are hidden by round numbers, time and volume. Splitting a withdrawal does not help; an observer sums.</p>
     </div>
   );

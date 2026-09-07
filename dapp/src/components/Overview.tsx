@@ -34,6 +34,7 @@ export const Overview = ({
   hasKey = false,
   backupNeeded = false,
   onStoreRecovery,
+  onWithdrawToken,
 }: {
   /** the token the forms act on */
   st: ConfState;
@@ -53,6 +54,7 @@ export const Overview = ({
   /** a saved key with no recovery copy on chain and no export yet: losing this browser loses the funds */
   backupNeeded?: boolean;
   onStoreRecovery?: () => Promise<unknown>;
+  onWithdrawToken?: (code: string, amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
   tokens?: { code: string }[];
   onSelectToken?: (code: string) => void;
 }) => {
@@ -220,7 +222,7 @@ export const Overview = ({
 
           {form === "send" ? <Send st={st} onSend={onSend} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} /> : null}
           {form === "deposit" ? <Deposit st={st} publicBalance={figures.find((f) => f.st.token.code === st.token.code)?.publicBalance ?? null} onDeposit={onDeposit} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} /> : null}
-          {form === "withdraw" ? <Withdraw st={st} onWithdraw={onWithdraw} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} /> : null}
+          {form === "withdraw" ? <Withdraw st={st} onWithdraw={onWithdraw} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} allTokens={figures.filter((f) => f.st.registered)} onWithdrawAll={onWithdrawToken} /> : null}
         </>
       ) : (
         <p className="muted" style={{ marginTop: 20 }}>

@@ -88,7 +88,10 @@ export const Send = ({
         error={over ? `More than you can spend. You have ${fmtUnits(spendable, T)} ${T.code}.` : amountProblem(amt, T) ?? undefined}
         hint={`You can spend ${fmtUnits(spendable, T)} ${T.code}${st.pending > 0n ? ", after pending is folded in" : ""}.`}
       >
-        <AmountInput value={amt} onChange={setAmt} token={T} tokens={tokens} onSelectToken={onSelectToken} />
+        <div className="row" style={{ gap: 12, alignItems: "center" }}>
+          <AmountInput value={amt} onChange={setAmt} token={T} tokens={tokens} onSelectToken={onSelectToken} />
+          <button type="button" className="textbtn" onClick={() => setAmt(fmtUnits(spendable, T, { trim: true }).replace(/,/g, ""))} disabled={spendable <= 0n}>Max</button>
+        </div>
       </Field>
       {prog ? (
         <Progress fraction={prog.f} stage={prog.s} />
