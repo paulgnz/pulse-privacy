@@ -44,10 +44,10 @@ export const Withdraw = ({
   const spendable = st.balance + st.pending;
   const over = parsed !== null && parsed > spendable;
   const g = st.config.withdrawGranularity;
-  const check = parsed ? checkWithdrawal(parsed, st.incoming, st.edgesSinceLastIncoming, st.config) : null;
   // the whole balance is always allowed: the contract waives the whole-unit rule when the box
   // ends up empty (it can see that), so "Max" is the exact balance and closes the box
   const closing = parsed !== null && parsed === spendable && spendable > 0n;
+  const check = parsed ? checkWithdrawal(parsed, st.incoming, st.edgesSinceLastIncoming, st.config, Date.now(), closing) : null;
   const chainRejects = parsed !== null && g > 0n && !closing && !isRound(parsed, g, T.units);
   const needsAck = check?.level === "warn" && !chainRejects;
   const can = !!parsed && parsed > 0n && !over && !chainRejects && !busy && (!needsAck || ack);

@@ -65,13 +65,15 @@ export function checkWithdrawal(
   incoming: IncomingEvent[],
   edgesSinceLastIncoming: number,
   cfg: PoolConfig,
-  now = Date.now()
+  now = Date.now(),
+  /** the whole balance, leaving the box empty: the contract waives the whole-unit rule, and the amount is revealed anyway */
+  closing = false
 ): EdgeCheck {
   const reasons: string[] = [];
   let level: EdgeCheck["level"] = "ok";
   const recent = incoming.filter((e) => now - e.ts < RECENT_MS).sort((a, b) => b.ts - a.ts);
 
-  if (!isRound(amount, cfg.withdrawGranularity, cfg.units)) {
+  if (!closing && !isRound(amount, cfg.withdrawGranularity, cfg.units)) {
     reasons.push(
       cfg.withdrawGranularity > 0n
         ? "The contract only accepts withdrawals in whole multiples of the configured granularity."
@@ -98,7 +100,7 @@ export function checkWithdrawal(
     if (level === "ok") level = "notice";
   }
 
-  const suggested = niceAmount(amount, cfg.units);
+  const suggested = closing ? amount : niceAmount(amount, cfg.units);
   return {
     level,
     reasons,
