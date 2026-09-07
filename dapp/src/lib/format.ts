@@ -38,7 +38,7 @@ export function amountProblem(s: string, token: Prec = XPR): string | null {
     return null;
   } catch (e) {
     const precision = precOf(token);
-    const code = "code" in token ? (token as Token).code : "this token";
+    const code = typeof token === "object" ? token.code : "this token";
     if (String((e as Error).message).startsWith("at most")) return `${code} has ${precision} decimal places. Use at most ${precision} digits after the point.`;
     return "Enter a number, like 12.5.";
   }
