@@ -63,7 +63,7 @@ against mainnet, before announcing.
 | token | symbol | contract | withdraw granularity | caps (pool / per deposit) | mainnet init tx |
 |---|---|---|---|---|---|
 | XPR | 4,XPR | eosio.token | 1 XPR | 1,000,000 / 1,000 XPR (raised 2026-09-07, tx 1dc40735…) | d320e3db… |
-| XMD (Metal Dollar) | 6,XMD | xmd.token | 1 XMD | 10,000 / 1,000 XMD (tx 4ec38ec7…) | d53cbbfd… |
+| XMD (Metal Dollar) | 6,XMD | xmd.token | 1 XMD | 10,000 / 5,000 XMD (per-deposit raised 2026-09-07, tx ec7d28cf…) | d53cbbfd… |
 
 Adding a token = one `init` (same vk, same auditor key) + one `setlimits`. The circuit is
 token-agnostic; amounts are 64-bit units. Testnet has both tokens too.
