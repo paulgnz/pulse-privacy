@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_NETWORK } from "./config";
+import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_NETWORK, SHIELD } from "./config";
 import { fmtUnits } from "./lib/format";
 import * as chain from "./lib/chain";
 import type { Session } from "./lib/chain";
@@ -11,6 +11,7 @@ import { selectBackend } from "./lib/crypto";
 import type { EncryptionKeypair, Hex } from "./lib/crypto/types";
 import { createKeypair, forgetKeypair, importSecret, loadKeypair } from "./lib/keys";
 import { About } from "./components/About";
+import { Shielded } from "./components/Shielded";
 import { Note } from "./components/ui";
 import { Activity } from "./components/Activity";
 import { Auditor } from "./components/Auditor";
@@ -30,8 +31,8 @@ type Tab = (typeof TABS)[number][0];
 const backend = selectBackend();
 
 /** path-based routes: "/" is the app, "/about" is How it works */
-type Route = "app" | "about";
-const routeOf = (path: string): Route => (path.replace(/\/+$/, "") === "/about" ? "about" : "app");
+type Route = "app" | "about" | "shielded";
+const routeOf = (path: string): Route => { const p = path.replace(/\/+$/, ""); return p === "/about" ? "about" : p === "/shielded" && SHIELD.enabled ? "shielded" : "app"; };
 
 /**
  * Simulated session: only with the simulated backend, and only when asked for
@@ -373,6 +374,7 @@ export default function App() {
           <>
             {inApp && route === "about" ? link("/", "Statement", false) : null}
             {link("/about", "How it works", route === "about")}
+            {SHIELD.enabled ? link("/shielded", "Shielded", route === "shielded") : null}
             <a className="textbtn quiet netswitch" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
               Switch to {OTHER_NETWORK.label.toLowerCase()}
             </a>
@@ -387,6 +389,7 @@ export default function App() {
         ) : (
           <>
             {link("/about", "How it works", route === "about")}
+            {SHIELD.enabled ? link("/shielded", "Shielded", route === "shielded") : null}
             <a className="textbtn quiet netswitch" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
               Switch to {OTHER_NETWORK.label.toLowerCase()}
             </a>
@@ -403,7 +406,7 @@ export default function App() {
     <div className="foot">
       <span>
         {backend.isMock ? "Simulation. " : ""}
-        Running on {NETWORK_LABEL}. Contract <a href={`${EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>. <a href={OTHER_NETWORK.url}>Switch to {OTHER_NETWORK.label.toLowerCase()}</a>.
+        Running on {NETWORK_LABEL}. Contract <a href={`${EXPLORER}/account/${route === "shielded" ? SHIELD.contract : CONTRACT}`}>{route === "shielded" ? SHIELD.contract : CONTRACT}</a>. <a href={OTHER_NETWORK.url}>Switch to {OTHER_NETWORK.label.toLowerCase()}</a>.
       </span>
       <a className="credit" href="https://protonnz.com" target="_blank" rel="noreferrer">Made by protonnz</a>
     </div>
@@ -414,6 +417,15 @@ export default function App() {
       <div className="page">
         {header}
         <About signedIn={!!session} onConnect={session ? undefined : doLogin} />
+        {foot}
+      </div>
+    );
+  }
+  if (route === "shielded") {
+    return (
+      <div className="page">
+        {header}
+        <Shielded session={session} onConnect={doLogin} connectBusy={loginBusy} tokens={tokens} />
         {foot}
       </div>
     );

@@ -44,5 +44,13 @@ export const OTHER_NETWORK = NETWORK === "mainnet"
 export const NETWORK_LABEL = NETWORK === "mainnet" ? "XPR Network" : "XPR Network testnet";
 export const APP_NAME = "Confidential XPR";
 
+/**
+ * The shielded contract (docs/06): testnet only for now. The relay key is public by design: it
+ * can only submit proofs under xprshield@relay, which is linked to the transfer action alone.
+ */
+export const SHIELD = NETWORK === "testnet"
+  ? { enabled: true, contract: "xprshield", relayKey: "PVT_K1_ne985hZeQ2eUuDghEaBbnTEqUjTsn33Fhxx9zd71Qga8uL4Fz" }
+  : { enabled: false, contract: "", relayKey: "" };
+
 /** "real" (default) proves in the browser and broadcasts to the contract; VITE_CRYPTO=mock simulates. */
 export const CRYPTO_MODE: "mock" | "real" = (import.meta.env.VITE_CRYPTO as "mock" | "real") === "mock" ? "mock" : "real";

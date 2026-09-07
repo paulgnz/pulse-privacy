@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import "./lib/shield/debug";
 import "./styles.css";
 import { inject } from "@vercel/analytics";
 import { NETWORK } from "./config";

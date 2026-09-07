@@ -14,11 +14,14 @@ const DOMAIN = "pulse-privacy/elgamal/v1";
 /** Shown by the wallet in the signing prompt. Part of the signed message: changing it changes the key. */
 export const VIEWKEY_NOTE = "Derives your Confidential XPR viewing key on private.protonnz.com. Never sent to the chain. Moves nothing.";
 
+/** Shown by the wallet when deriving the shielded spending key: a different message, so a different key. */
+export const SHIELD_NOTE = "Derives your shielded spending key for Confidential XPR (testnet). Never sent to the chain. Moves nothing.";
+
 /** The fixed transaction. Every field is constant so the signing digest is constant. */
-export function unlockTransaction(actor: string, permission: string, legacy = false) {
+export function unlockTransaction(actor: string, permission: string, legacy = false, contract = CONTRACT, note = VIEWKEY_NOTE) {
   const action = legacy
-    ? { account: CONTRACT, name: "unlock", authorization: [{ actor, permission }], data: { owner: actor } }
-    : { account: CONTRACT, name: "viewkey", authorization: [{ actor, permission }], data: { owner: actor, note: VIEWKEY_NOTE } };
+    ? { account: contract, name: "unlock", authorization: [{ actor, permission }], data: { owner: actor } }
+    : { account: contract, name: "viewkey", authorization: [{ actor, permission }], data: { owner: actor, note } };
   return {
     expiration: "2035-01-01T00:00:00",
     ref_block_num: 0,
@@ -34,8 +37,8 @@ export function unlockTransaction(actor: string, permission: string, legacy = fa
 
 type TransactFn = (args: { transaction: unknown }, opts: { broadcast: boolean }) => Promise<{ signatures: { toString(): string }[] }>;
 
-async function signOnce(session: Session, legacy = false): Promise<string> {
-  const r = await (session.transact as unknown as TransactFn)({ transaction: unlockTransaction(session.auth.actor, session.auth.permission, legacy) }, { broadcast: false });
+async function signOnce(session: Session, legacy = false, contract = CONTRACT, note = VIEWKEY_NOTE): Promise<string> {
+  const r = await (session.transact as unknown as TransactFn)({ transaction: unlockTransaction(session.auth.actor, session.auth.permission, legacy, contract, note) }, { broadcast: false });
   const sig = r.signatures?.[0];
   if (!sig) throw new Error("The wallet returned no signature.");
   return sig.toString();
@@ -46,9 +49,9 @@ async function sha256(data: Uint8Array): Promise<Uint8Array> {
 }
 
 /** secret = SHA-256(domain ‖ chainId ‖ actor ‖ signature) expanded to 512 bits, reduced mod l. */
-export async function deriveSecret(signature: string, actor: string): Promise<Hex> {
+export async function deriveSecret(signature: string, actor: string, domain = DOMAIN): Promise<Hex> {
   const enc = new TextEncoder();
-  const seed = enc.encode(`${DOMAIN}|${CHAIN_ID}|${actor}|${signature}`);
+  const seed = enc.encode(`${domain}|${CHAIN_ID}|${actor}|${signature}`);
   const h1 = await sha256(seed);
   const h2 = await sha256(new Uint8Array([...h1, 1]));
   const bytes = new Uint8Array([...h1, ...h2]);
@@ -63,6 +66,13 @@ export async function deriveSecret(signature: string, actor: string): Promise<He
  * must invoke this directly from a click handler and never chain two calls from one click.
  * First-time setup calls it twice from two separate clicks and compares the signatures.
  */
+/** the shielded spending key: one signature over xprshield::viewkey, its own domain in the hash */
+export async function unlockShield(session: Session, contract: string): Promise<bigint> {
+  const signature = await signOnce(session, false, contract, SHIELD_NOTE);
+  const secret = await deriveSecret(signature, session.auth.actor, "pulse-privacy/shield/v1");
+  return BigInt(secret);
+}
+
 export async function unlockOnce(session: Session, legacy = false): Promise<{ signature: string; secret: Hex }> {
   const signature = await signOnce(session, legacy);
   return { signature, secret: await deriveSecret(signature, session.auth.actor) };
