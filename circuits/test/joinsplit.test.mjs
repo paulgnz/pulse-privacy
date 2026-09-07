@@ -35,8 +35,9 @@ lap(`tree has ${tree.size} notes, root ${N.hex32(tree.root).slice(0, 12)}…`);
 
 // alice pays bob 1,234 XPR using both notes; change back to alice
 const AMOUNT = 12_340_000n;
+const ALICE = N.nameToU64("alice");
 const js = N.buildJoinSplit({
-  keys: alice, tree, auditorPk: auditor.pk,
+  keys: alice, tree, auditorPk: auditor.pk, sender: ALICE,
   inputs: [{ note: a1, index: i1 }, { note: a2, index: i2 }],
   outputs: [{ pk: bob.pk, v: AMOUNT }, { pk: alice.pk, v: a1.v + a2.v - AMOUNT }],
 });
@@ -44,13 +45,13 @@ await satisfies(js.input);
 lap("witness ok: two inputs, two outputs");
 
 // single input (dummy second)
-const js1 = N.buildJoinSplit({ keys: alice, tree, auditorPk: auditor.pk, inputs: [{ note: a2, index: i2 }], outputs: [{ pk: bob.pk, v: 1_000_000n }, { pk: alice.pk, v: 6_000_000n }] });
+const js1 = N.buildJoinSplit({ keys: alice, tree, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: a2, index: i2 }], outputs: [{ pk: bob.pk, v: 1_000_000n }, { pk: alice.pk, v: 6_000_000n }] });
 await satisfies(js1.input);
 assert.equal(js1.expected.nf[1], 0n);
 lap("witness ok: one input, dummy second (nf = 0)");
 
 // withdrawal of 500 XPR to "bob" (name bound)
-const jw = N.buildJoinSplit({ keys: alice, tree, auditorPk: auditor.pk, inputs: [{ note: a2, index: i2 }], outputs: [{ pk: alice.pk, v: 0n }, { pk: alice.pk, v: a2.v - 5_000_000n }], vPub: 5_000_000n, tokenPub: N.TOKENS.XPR, to: N.nameToU64("bob") });
+const jw = N.buildJoinSplit({ keys: alice, tree, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: a2, index: i2 }], outputs: [{ pk: alice.pk, v: 0n }, { pk: alice.pk, v: a2.v - 5_000_000n }], vPub: 5_000_000n, tokenPub: N.TOKENS.XPR, to: ALICE });
 await satisfies(jw.input);
 lap("witness ok: withdrawal with the destination bound");
 
@@ -59,8 +60,9 @@ const found = N.tryDecryptReceiver(bob, js.expected.epk[0], js.expected.cr[0], j
 assert.ok(found && found.v === AMOUNT && found.token === N.TOKENS.XPR, "bob decrypts his note");
 assert.equal(N.tryDecryptReceiver(bob, js.expected.epk[1], js.expected.cr[1], js.expected.cm[1]), null, "bob cannot claim alice's change");
 const aud = N.decryptAuditor(auditor.ask, js.expected.epk[0], js.expected.ca[0], js.expected.cm[0]);
-assert.ok(aud.valid && aud.v === AMOUNT && aud.pk[0] === bob.pk[0] && aud.sender[0] === alice.pk[0], "auditor reads sender, receiver, amount");
-lap(`bob reads ${found.v} units; auditor reads ${aud.v} units from alice's key to bob's key`);
+assert.ok(aud.valid && aud.v === AMOUNT && aud.token === N.TOKENS.XPR && aud.pk[0] === bob.pk[0], "auditor reads receiver and amount");
+assert.deepEqual(js.expected.senderPk, alice.pk, "the sender's key is a public output");
+lap(`bob reads ${found.v} units; auditor reads ${aud.v} units to bob's key; sender key public`);
 
 // negatives
 const bad = (mut) => { const x = structuredClone(js.input); mut(x); return x; };
@@ -69,7 +71,7 @@ await refuses(bad((x) => { x.outV[0] = x.outV[0] + 1n; }), "values do not balanc
 await refuses(bad((x) => { x.ask = bob.ask; }), "not the owner");
 await refuses(bad((x) => { x.inIndex[0] = BigInt(i2); }), "wrong leaf index");
 {
-  const x = structuredClone(jw.input); x.to = N.nameToU64("mallory");
+  const x = structuredClone(jw.input); x.to = N.nameToU64("mallory"); x.sender = N.nameToU64("mallory");
   // the witness itself still computes (to is only bound); the proof would carry the other name
   await satisfies(x);
   assert.notEqual(x.to, jw.input.to);
@@ -87,13 +89,17 @@ lap(`proof generated (${publicSignals.length} public signals)`);
 const vk = JSON.parse(readFileSync(B("joinsplit_vk.json"), "utf8"));
 assert.ok(await snarkjs.groth16.verify(vk, publicSignals, proof), "snarkjs verify");
 lap("snarkjs verify ok");
-const expectedSignals = N.publicSignals(js.expected, { root: tree.root, A: auditor.pk });
+const expectedSignals = N.publicSignals(js.expected, { root: tree.root, sender: ALICE, A: auditor.pk });
 assert.deepEqual(publicSignals.map(BigInt), expectedSignals, "public signal order matches the library");
 lap("public signals match the library's recomputation");
 // a wrong destination on a withdrawal proof fails verification
 const { proof: pw, publicSignals: psw } = await snarkjs.groth16.fullProve(jw.input, wasm, B("joinsplit_final.zkey"));
-const redirected = psw.slice(); redirected[psw.length - 3] = N.nameToU64("mallory").toString();
+const redirected = psw.slice(); redirected[psw.length - 4] = N.nameToU64("mallory").toString();
 assert.equal(await snarkjs.groth16.verify(vk, redirected, pw), false, "redirected withdrawal rejected");
-lap("redirected withdrawal proof rejected");
-console.log("S2 join-split passed");
+const resigned = psw.slice(); resigned[psw.length - 3] = N.nameToU64("mallory").toString();
+assert.equal(await snarkjs.groth16.verify(vk, resigned, pw), false, "proof bound to another signer rejected");
+const swappedKey = psw.slice(); swappedKey[24] = bob.pk[0].toString(); swappedKey[25] = bob.pk[1].toString();
+assert.equal(await snarkjs.groth16.verify(vk, swappedKey, pw), false, "sender key cannot be substituted");
+lap("redirected destination, other signer and substituted sender key all rejected");
+console.log("S7 join-split (signed sender) passed");
 process.exit(0);

@@ -7,9 +7,14 @@ pragma circom 2.1.0;
 // Encryption to a point P with ephemeral esk: k = Poseidon((esk·P).x, (esk·P).y),
 // c[m] = plain[m] + Poseidon(k, m).
 //
+// Revision 2 (docs/06 §8): the sender's wallet signs the action, so the sender's key is a
+// public output the contract checks against the sender's registration, and the sender's
+// account name is bound. Value and token pack into one word (v + token·2^64); the auditor
+// ciphertext no longer carries the sender key (the action names the sender).
+//
 // Public signals, in snarkjs order (outputs first, then public inputs):
-//   nf[2] cm[2] epk[2][2] cr[2][4] ca[2][8]                 (outputs, 32)
-//   root vPub tokenPub to A[2]                              (public inputs, 6)
+//   nf[2] cm[2] epk[2][2] cr[2][3] ca[2][5] senderPk[2]     (outputs, 26)
+//   root vPub tokenPub to sender A[2]                       (public inputs, 7)
 //
 // Input 0 is always a real note. Input 1 may be disabled (enabled1 = 0): then it carries no
 // value, is not checked against the tree, and its nullifier is 0 (the contract skips zeros).
@@ -112,18 +117,22 @@ template JoinSplit(depth) {
     signal input vPub;
     signal input tokenPub;
     signal input to;
+    signal input sender;
     signal input A[2];
 
     // ---- outputs (public) ----
     signal output nf[2];
     signal output cm[2];
     signal output epk[2][2];
-    signal output cr[2][4];
-    signal output ca[2][8];
+    signal output cr[2][3];
+    signal output ca[2][5];
+    signal output senderPk[2];
 
     // 1. keys
     component pk = BabyPbk();
     pk.in <== ask;
+    senderPk[0] <== pk.Ax;
+    senderPk[1] <== pk.Ay;
     component nkh = Poseidon(2);
     nkh.inputs[0] <== ask;
     nkh.inputs[1] <== 0;
@@ -182,8 +191,9 @@ template JoinSplit(depth) {
     pubRange.in <== vPub;
     inV[0] + inV[1] === outV[0] + outV[1] + vPub;
     vPub * (tokenPub - token) === 0;
-    // `to` is only bound, so a relayer cannot redirect a withdrawal
+    // `to` and `sender` are only bound: the proof is for one signer and one destination
     signal toBound <== to * to;
+    signal senderBound <== sender * sender;
 
     // 4. outputs: commitment and the two encryptions
     component outCheck[2];
@@ -193,6 +203,7 @@ template JoinSplit(depth) {
     component sa[2];
     component er[2];
     component ea[2];
+    signal packed[2];
     for (var j = 0; j < 2; j++) {
         outCheck[j] = BabyCheck();
         outCheck[j].x <== outPk[j][0];
@@ -216,32 +227,29 @@ template JoinSplit(depth) {
         sr[j].e <== esk[j];
         sr[j].p[0] <== outPk[j][0];
         sr[j].p[1] <== outPk[j][1];
-        er[j] = Encrypt(4);
+        packed[j] <== outV[j] + token * 18446744073709551616;
+        er[j] = Encrypt(3);
         er[j].shared[0] <== sr[j].out[0];
         er[j].shared[1] <== sr[j].out[1];
-        er[j].plain[0] <== outV[j];
-        er[j].plain[1] <== token;
-        er[j].plain[2] <== outRho[j];
-        er[j].plain[3] <== outR[j];
-        for (var m = 0; m < 4; m++) cr[j][m] <== er[j].c[m];
+        er[j].plain[0] <== packed[j];
+        er[j].plain[1] <== outRho[j];
+        er[j].plain[2] <== outR[j];
+        for (var m = 0; m < 3; m++) cr[j][m] <== er[j].c[m];
 
         sa[j] = MulPoint();
         sa[j].e <== esk[j];
         sa[j].p[0] <== A[0];
         sa[j].p[1] <== A[1];
-        ea[j] = Encrypt(8);
+        ea[j] = Encrypt(5);
         ea[j].shared[0] <== sa[j].out[0];
         ea[j].shared[1] <== sa[j].out[1];
         ea[j].plain[0] <== outPk[j][0];
         ea[j].plain[1] <== outPk[j][1];
-        ea[j].plain[2] <== outV[j];
-        ea[j].plain[3] <== token;
-        ea[j].plain[4] <== outRho[j];
-        ea[j].plain[5] <== outR[j];
-        ea[j].plain[6] <== pk.Ax;
-        ea[j].plain[7] <== pk.Ay;
-        for (var m = 0; m < 8; m++) ca[j][m] <== ea[j].c[m];
+        ea[j].plain[2] <== packed[j];
+        ea[j].plain[3] <== outRho[j];
+        ea[j].plain[4] <== outR[j];
+        for (var m = 0; m < 5; m++) ca[j][m] <== ea[j].c[m];
     }
 }
 
-component main {public [root, vPub, tokenPub, to, A]} = JoinSplit(20);
+component main {public [root, vPub, tokenPub, to, sender, A]} = JoinSplit(20);

@@ -334,7 +334,7 @@ Until then `xprshield` on testnet is the proving ground and `xprconf` is untouch
 
 | # | milestone | done when |
 |---|---|---|
-| S7 | circuit revision: `senderPk` output, `sender` bound; library, tests, rehearsal setup | `npm run test:shielded` green with 41 public signals |
+| S7 | circuit revision: `senderPk` output, `sender` bound; library, tests, rehearsal setup. **Done 2026-09-08**: 29,523 constraints, **33 public signals** (value and token packed into one word; the auditor ciphertext dropped the sender key since the action names the sender; 26 outputs + 7 inputs); the action carries 28 words, the contract supplies `senderPk`, `sender` and `A`. Test adds: another signer, a substituted sender key and a redirected destination are all rejected | `npm run test:shielded` green |
 | S8 | contract revision: signed `transfer`, key check, sender-paid RAM, relay removed; vert tests including "right key, wrong signer" and "wrong key, right signer" | tests green |
 | S9 | testnet redeploy of `xprshield`, demo script signs as the sender, auditor still names both parties | a transfer on the explorer shows the sender's authorisation and no receiver |
 | S10 | dapp: wallet-signed send and withdraw, relay key removed, copy updated | a tester pays another tester from a phone |

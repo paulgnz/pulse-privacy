@@ -94,18 +94,24 @@ function decryptWith(shared, c) {
 }
 const ecdh = (scalar, point) => pt(bj.mulPointEscalar([F.e(point[0]), F.e(point[1])], BigInt(scalar)));
 
+const TWO64 = 1n << 64n;
+export const pack = (v, token) => BigInt(v) + BigInt(token) * TWO64;
+export const unpack = (w) => [w % TWO64, w / TWO64];
+
 /** receiver side: recover a note from (epk, cr) with own key; null if it is not ours */
 export function tryDecryptReceiver(keys, epk, cr, cmOnChain) {
-  const [v, token, rho, r] = decryptWith(ecdh(keys.ask, epk), cr);
+  const [packed, rho, r] = decryptWith(ecdh(keys.ask, epk), cr);
+  const [v, token] = unpack(packed);
   const n = { pk: keys.pk, v, token, rho, r };
   n.cm = commitment(n);
   return n.cm === BigInt(cmOnChain) ? n : null;
 }
 
-/** auditor side: recover receiver key, note and sender key from (epk, ca) */
+/** auditor side: recover receiver key and note from (epk, ca); the sender is named by the action */
 export function decryptAuditor(auditorAsk, epk, ca, cmOnChain) {
-  const [pkx, pky, v, token, rho, r, sx, sy] = decryptWith(ecdh(auditorAsk, epk), ca);
-  const n = { pk: [pkx, pky], v, token, rho, r, sender: [sx, sy] };
+  const [pkx, pky, packed, rho, r] = decryptWith(ecdh(auditorAsk, epk), ca);
+  const [v, token] = unpack(packed);
+  const n = { pk: [pkx, pky], v, token, rho, r };
   n.cm = commitment(n);
   n.valid = n.cm === BigInt(cmOnChain);
   return n;
@@ -116,7 +122,8 @@ export function decryptAuditor(auditorAsk, epk, ca, cmOnChain) {
  * {pk, v, rho?, r?}; `tree`: the Tree the inputs sit in; `vPub`, `tokenPub`, `to` for withdrawals.
  * Returns { input (circuit signals), expected (public signals we can recompute), outNotes }.
  */
-export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, vPub = 0n, tokenPub = 0n, to = 0n }) {
+export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender, vPub = 0n, tokenPub = 0n, to = 0n }) {
+  if (sender === undefined) throw new Error("sender (account name as u64) is required");
   if (inputs.length < 1 || inputs.length > 2) throw new Error("1 or 2 inputs");
   if (outputs.length !== 2) throw new Error("exactly 2 outputs");
   const token = inputs[0].note.token;
@@ -146,6 +153,7 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, vPub = 
     vPub: BigInt(vPub),
     tokenPub: BigInt(tokenPub),
     to: BigInt(to),
+    sender: BigInt(sender),
     A: auditorPk,
   };
 
@@ -153,17 +161,30 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, vPub = 
     nf: ins.map((i) => (i ? nullifier(keys.nk, i.index) : 0n)),
     cm: outNotes.map((n) => n.cm),
     epk: esk.map((e) => pt(bj.mulPointEscalar(B8, e))),
-    cr: outNotes.map((n, j) => encryptWith(ecdh(esk[j], n.pk), [n.v, n.token, n.rho, n.r])),
-    ca: outNotes.map((n, j) => encryptWith(ecdh(esk[j], auditorPk), [n.pk[0], n.pk[1], n.v, n.token, n.rho, n.r, keys.pk[0], keys.pk[1]])),
+    cr: outNotes.map((n, j) => encryptWith(ecdh(esk[j], n.pk), [pack(n.v, n.token), n.rho, n.r])),
+    ca: outNotes.map((n, j) => encryptWith(ecdh(esk[j], auditorPk), [n.pk[0], n.pk[1], pack(n.v, n.token), n.rho, n.r])),
+    senderPk: keys.pk,
   };
   return { input, expected, outNotes };
 }
 
-/** public signals in the circuit's order: nf[2] cm[2] epk[2][2] cr[2][4] ca[2][8] root vPub tokenPub to A[2] */
-export function publicSignals(expected, { root, vPub = 0n, tokenPub = 0n, to = 0n, A }) {
+/** public signals in the circuit's order: nf[2] cm[2] epk[2][2] cr[2][3] ca[2][5] senderPk[2] root vPub tokenPub to sender A[2] */
+export function publicSignals(expected, { root, vPub = 0n, tokenPub = 0n, to = 0n, sender, A }) {
+  return [
+    ...expected.nf, ...expected.cm, ...expected.epk.flat(), ...expected.cr.flat(), ...expected.ca.flat(), ...expected.senderPk,
+    root, BigInt(vPub), BigInt(tokenPub), BigInt(to), BigInt(sender), ...A,
+  ].map((x) => BigInt(x));
+}
+
+/**
+ * What the sender puts in the action (the contract supplies senderPk from the registration,
+ * sender from the authorisation and A from its config): the 26 outputs minus senderPk, then
+ * root, vPub, tokenPub, to = 28 words.
+ */
+export function actionPublics(expected, { root, vPub = 0n, tokenPub = 0n, to = 0n }) {
   return [
     ...expected.nf, ...expected.cm, ...expected.epk.flat(), ...expected.cr.flat(), ...expected.ca.flat(),
-    root, BigInt(vPub), BigInt(tokenPub), BigInt(to), ...A,
+    root, BigInt(vPub), BigInt(tokenPub), BigInt(to),
   ].map((x) => BigInt(x));
 }
 
@@ -182,7 +203,7 @@ export function nameToU64(name) {
 export const hex32 = (x) => BigInt(x).toString(16).padStart(64, "0");
 
 const api = {
-  init, keygen, newNote, commitment, nullifier, Tree, buildJoinSplit, publicSignals,
+  init, keygen, newNote, commitment, nullifier, Tree, buildJoinSplit, publicSignals, actionPublics, pack, unpack,
   tryDecryptReceiver, decryptAuditor, randField, randScalar, nameToU64, hex32, TOKENS, DEPTH,
   get F() { return F; }, get bj() { return bj; }, get B8() { return B8; },
 };
