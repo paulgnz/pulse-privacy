@@ -81,6 +81,33 @@ API nodes reject transactions over their `max-transaction-time` (30 ms by defaul
 30,171 µs on a loaded node. Mitigation in the dapp: sign once, broadcast through a list of nodes,
 retry on "executing for too long". Longer term: fewer public inputs / native point adds.
 
+## 4c. Recovery and restore (code `dc7ab97d…`, 2026-09-07)
+
+Two paths exist for a user who cannot open their boxes.
+
+**Recovery copy.** Accounts that sign in with a passkey get a saved key. At registration (or later
+from Settings) the app stores a 96-byte copy of that key on chain, encrypted to the auditor's
+viewing key (`setrecovery`; ECIES on Baby Jubjub: R = r·P_a, secret XOR sha256(r·H)). To return it:
+
+```sh
+# the owner proves control of the account (a signed message naming the request), then
+AUDITOR_KEYFILE=~/.pulse-privacy/mainnet-auditor.json RPC=https://api.protonnz.com \
+  node tools/auditor-cli/auditor.mjs recover <account>
+# hand the printed secret to the owner over a channel you trust; they import it in Settings
+```
+
+**Restore.** If a key is beyond recovery, the committee returns the balance from escrow:
+
+1. `configure` the token with `paused = true`.
+2. `node tools/auditor-cli/auditor.mjs reconcile` (and `account <name>`) to reconstruct the
+   account's balance from the auditor ledger; publish the reconciliation.
+3. `proton action xprconf restore '{"owner":"<name>","quantity":"<amount> XPR","memo":"<reconciliation ref>"}' xprconf`
+   (contract authority; the committee once the active key moves). The account's boxes are reset,
+   the pool counter reduced, and the transfer is public with the memo.
+4. `configure` back to `paused = false`.
+
+`restore` refuses to run while the token is not paused, so it can never be used quietly.
+
 ## 5. After launch
 
 - Watch `auditor.mjs reconcile` daily; escrow must equal deposits − withdrawals.

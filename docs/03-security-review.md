@@ -78,6 +78,17 @@ operational findings. Each was reproduced against the code and fixed the same da
 | 7 | ceremony, low | Moving to phase 2 recorded the last contribution instead of the prepared phase-1 result. | The phase-2 transition names the prepared file explicitly and records its hash. |
 | 8 | ceremony, low | The setup record was counted as a contribution and failed its own chain check. | Start files carry index 0 and form the base of the chain. |
 
+## Added after the reviews (same day)
+
+- **Committee restore** (`restore`, contract code `dc7ab97d…`): paused-only, contract authority,
+  returns an account's balance from escrow as a public transfer with a memo and resets its
+  boxes. Procedure in the runbook §4c.
+- **Recovery copy** for saved keys: an ECIES copy of the secret encrypted to the auditor's key,
+  stored on chain with the registration (`setrecovery`), returned by the committee after the
+  owner proves control of the account. Gives the committee nothing new: it already reads every
+  amount, and spending still needs the wallet's signature. Saved-key users see a warning on the
+  statement until they have a recovery copy or an export.
+
 ## Still to do before raising the caps
 
 External audit of the contract, the circuit and the client library; the circuit change above;
