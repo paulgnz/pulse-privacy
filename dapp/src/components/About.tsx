@@ -98,7 +98,7 @@ export const About = ({ signedIn, onConnect }: { signedIn: boolean; onConnect?: 
     <section>
       <h2>Watch it happen</h2>
       <p>
-        Follow a deposit, a confidential payment and a withdrawal. Play the example, or choose any step to explore it.
+        See Alice pay Bob, then compare what they can read with what the public sees.
       </p>
       <Walkthrough />
     </section>
