@@ -6,7 +6,7 @@ import { lockActive, readState, writeState, type Attestation } from "./_lib/stat
 import { noteFor, verifyAttestation, attestationTransaction } from "./_lib/verify.js";
 import { extendsChain, fetchToTmp, ptauContributions, verifyFile, zkeyContributions } from "./_lib/chain.js";
 
-export const config = { maxDuration: 300, memory: 3009 };
+export const config = { maxDuration: 300, memory: 2048 };
 
 /**
  * POST { actor, permission, phase, index, inputSha256, outputSha256, signature }

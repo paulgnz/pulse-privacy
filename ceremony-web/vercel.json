@@ -1,12 +1,8 @@
 {
   "functions": {
     "api/**/*.ts": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
-    "api/contribute.ts": {
       "maxDuration": 300,
-      "memory": 3009
+      "memory": 1024
     }
   },
   "rewrites": [
