@@ -6,7 +6,8 @@ join-split proof per payment. The sender's wallet signs each payment, so the cha
 initiated it; the receiver, the amount and which notes were spent stay hidden (docs/06 §8). The
 auditor's key opens every note.
 
-Deployed on XPR **testnet** as account `xprshield` (2026-09-08). Not on mainnet.
+Deployed on XPR **testnet** as account `xprshield` (2026-09-08). Not on mainnet yet; it will
+launch as its own mainnet account, not merged into `xprconf` (docs/06 §8.4).
 
 ## Files
 

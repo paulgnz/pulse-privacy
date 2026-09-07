@@ -230,9 +230,10 @@ summation, and reconciles escrow against deposits and withdrawals, as today.
 ## 6. Relation to `xprconf`
 
 `xprconf` stays as it is: it is simpler, cheaper per transfer, and its ledger is readable by
-name. The shielded contract is a separate product with its own escrow. If it proves out, a
-migration path is "withdraw from one, deposit into the other". They share the registration
-idea, the key derivation, the auditor key, the dapp shell and the ceremony's phase 1.
+name. The shielded contract is a separate account with its own escrow, on testnet and on
+mainnet (§8.4). Moving value between them is a public withdrawal and a deposit. They share the
+registration idea, the key derivation, the auditor key, the dapp shell and the ceremony's
+phase 1.
 
 ## 7. Milestones
 
@@ -313,35 +314,47 @@ sees that you paid, not whom or how much".
 **Receiving.** Registered accounts only, as today: the sender looks the receiver's key up by
 name, and the auditor maps keys back to names.
 
-**Testnet.** `xprshield` is redeployed with the new contract and proving key. The test notes
-there are worthless, so the tables are simply reset (new account state via a fresh `init`
-after clearing, or a fresh account if clearing is awkward).
+**Testnet.** `xprshield` is redeployed with the new contract and proving key; the tables are
+reset (testnet-only `reset` action).
 
-### 8.4 Merging into `xprconf` (decided in principle)
+### 8.4 Two contracts, one product (decided 2026-09-08, replacing the merge plan)
 
-Once the shielded mode is reviewed and stable on testnet, it is folded into `xprconf` as a
-second mode rather than shipped as a second contract:
+The shielded contract launches on its own mainnet account, `xprshield`, and is not folded into
+`xprconf`. The reasons, in order:
 
-- **Tables and actions are added, none changed.** The current tables keep deserialising; the
-  shielded ones (`keys`, `leaves`, `tree`, `roots`, `nullifiers`, `outputs`, `tokens`) sit
-  beside them. Shielded actions get distinct names (`shregister`, `shtransfer`, deposits by
-  memo prefix `shield:` next to `conf:`).
-- **One wallet signature, two keys.** The existing `viewkey` signature derives both the ElGamal
-  key and the shielded key with different hash domains, so setup stays one prompt.
-- **One escrow, two ledgers.** Deposits and withdrawals of each mode are counted separately in
-  the existing `limits` rows and the shielded `tokens` rows; the auditor reconciles both.
-- **Moving between modes** is a public withdrawal followed by a deposit, or a dedicated action
-  that does both in one transaction with the amount visible. Nothing moves between modes
-  privately, by design.
-- **Size.** About 28 KB plus 78 KB of WASM, so roughly 1.1 MB of RAM on mainnet, which the
-  account already holds.
-- **The dapp** gains a "Shielded" tab beside the statement, the auditor page reads both
-  ledgers, and the About page explains the two modes: confidential (names visible, amount
-  hidden) and shielded (receiver and amount hidden).
+- **Blast radius.** `xprconf` holds users' money and has been through two reviews; the shielded
+  code is new. In one contract they would share an escrow, so a shielded bug could reach
+  deposits made by people who never used shielded mode. Separate accounts confine a bug to the
+  contract it lives in.
+- **Operations.** The shielded contract can be paused, upgraded or retired without touching the
+  one people rely on, and the committee reviews and hashes one new contract rather than a merge.
+- **Nothing is saved by merging.** The circuits, proving keys and ceremonies are separate either
+  way.
 
-Until then `xprshield` on testnet is the proving ground and `xprconf` is untouched.
+What the merge would have given, one product for the user, lives in the app instead: the same
+wallet signature derives both keys (different hash domains); one "Shielded" tab beside the
+statement; the auditor page and CLI read both ledgers; the same auditor public key is set on
+both contracts; the app bundles the shielded registration with the first shielded deposit so
+the extra account is invisible. Cross-references: `xprconf` and `xprshield` share the design
+of registration, the key derivation, the auditor key and the ceremony's phase 1.
 
-### 8.5 Milestones, revised
+Before mainnet: the testnet-only `reset` action is removed and a paused-only `restore` added
+to match `xprconf`; the account is created and owned by the committee
+(`admin.proton@committee`) with deployment permitted, about 800 KB of RAM, both tokens and
+conservative caps.
+
+### 8.5 Whether `xprconf` is eventually deprecated
+
+Not decided, and not needed now. The two modes answer different needs: confidential (parties
+visible, amount hidden) suits payments where both sides should be on record, such as invoices
+and payroll, and it is cheaper, simpler and has no note management; shielded hides the
+receiver and costs a little more per payment. Both keep full auditability. Usage decides. If
+shielded mode absorbs nearly all traffic, the retirement path for `xprconf` is: pause deposits
+(the `paused` flag already refuses them), keep withdrawals and the auditor working
+indefinitely so nobody is ever locked in, and remove it from the app's first screen. Revisit
+after a few months of both running.
+
+### 8.6 Milestones, revised
 
 | # | milestone | done when |
 |---|---|---|
@@ -349,4 +362,5 @@ Until then `xprshield` on testnet is the proving ground and `xprconf` is untouch
 | S8 | contract revision: signed `transfer`, key check, sender-paid RAM, relay removed; vert tests including "right key, wrong signer" and "wrong key, right signer". **Done 2026-09-08**: `transfer(sender, proof, publics)` with `require_auth`, the verifier input assembled on chain from the 28 action words plus the registered key, the sender name and the auditor key; withdrawals to self only; a testnet-only `reset`. Tests: wrong signer, another account presenting alice's proof, alice signing a proof made with bob's key, foreign auditor key, unregistered sender, redirected withdrawal, reset and re-init | tests green |
 | S9 | testnet redeploy of `xprshield`, demo script signs as the sender, auditor still names both parties. **Done 2026-09-08**: contract redeployed, tables reset and re-initialised with the revision-2 verifying key, the relay permission unlinked and deleted; paul123 deposited 500 XPR (8.4 ms), signed a shielded 123.4 XPR payment to testclient1 (tx `f13cf7f9…`, **14.2 ms CPU**, 28 public words in the action), testclient1 withdrew 100 XPR to itself (tx `28baaa69…`, 14.1 ms); `audit` names the receiver from the auditor key and the sender from the action | a transfer on the explorer shows the sender's authorisation and no receiver |
 | S10 | dapp: wallet-signed send and withdraw, relay key removed, copy updated. **Built 2026-09-08** (lesson: `/circuit/` files are cached for a year, so a new circuit needs a new file name; the first tester hit the old circuit and saw the prover's "Signal sender not found"): `prepareSend` / `prepareWithdraw` build the proof on the device and return the `transfer` action for the wallet; the relay key and the signing library are gone from the bundle; the derived key is memory-only for K1 wallets. Headless check against testnet: the browser's proof verifies against the circuit's key with the 33 words the contract assembles, and fails for another signer; the action carries 28 words and names paul123 as both sender and signer. **Closed 2026-09-08**: a tester's wallet-signed 1 XPR payment from the site reached paul123 (tx `4def499b…`; paul123's scan shows the new note) | a tester pays another tester from a phone |
-| S11 | review briefs for the shielded circuit and contract; phase-2 ceremony for the join-split circuit; then the merge into `xprconf` per §8.4 and the mainnet decision | |
+| S11 | Codex review (Brief 5) and fixes; circuit frozen; `reset` removed and `restore` added; phase-2 ceremony for the join-split circuit; `setvk` | review closed, ceremony verified |
+| S12 | mainnet account `xprshield` under the committee; contract deployed and hashed; tokens and caps set; the mainnet site's Shielded tab enabled; auditor tooling reading both ledgers | a shielded payment on mainnet |
