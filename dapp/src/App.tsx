@@ -6,8 +6,10 @@ import { ConfidentialClient, type ConfState } from "./lib/client";
 import { selectBackend } from "./lib/crypto";
 import type { EncryptionKeypair, Hex } from "./lib/crypto/types";
 import { createKeypair, forgetKeypair, importSecret, loadKeypair } from "./lib/keys";
+import { About } from "./components/About";
 import { Activity } from "./components/Activity";
 import { Auditor } from "./components/Auditor";
+import { Brand } from "./components/Brand";
 import { Onboarding, type KeyMode, type Step } from "./components/Onboarding";
 import { Overview } from "./components/Overview";
 import { Settings } from "./components/Settings";
@@ -15,15 +17,19 @@ import { Settings } from "./components/Settings";
 const TABS = [
   ["overview", "Statement"],
   ["activity", "Activity"],
-  ["settings", "Settings"],
   ["auditor", "Auditor"],
+  ["settings", "Settings"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
 const backend = selectBackend();
 
+/** path-based routes: "/" is the app, "/about" is How it works */
+type Route = "app" | "about";
+const routeOf = (path: string): Route => (path.replace(/\/+$/, "") === "/about" ? "about" : "app");
+
 /**
- * Demo session: only with the simulated backend, and only when asked for
+ * Simulated session: only with the simulated backend, and only when asked for
  * (`VITE_DEMO_ACTOR=alice` or `?demo=alice`). Renders every screen without a wallet.
  */
 function demoActor(): string | null {
@@ -33,7 +39,7 @@ function demoActor(): string | null {
   const a = (q ?? env ?? "").trim().toLowerCase();
   return /^[a-z1-5.]{1,12}$/.test(a) ? a : null;
 }
-/** demo-only: `?wizard=connect|key-create|key-import|key-backup|register|register-signing|deposit` previews a step */
+/** simulation-only: `?wizard=connect|key-create|key-import|key-backup|register|register-signing|deposit` previews a step */
 function demoWizard(): { step: Step; keyMode?: KeyMode; signing?: boolean } | null {
   if (CRYPTO_MODE !== "mock") return null;
   const w = new URLSearchParams(location.search).get("wizard");
@@ -52,6 +58,7 @@ const demoSession = (actor: string): Session => ({
 const seededSecret = (actor: string): Hex => ("0x" + actor.charCodeAt(0).toString(16).padStart(2, "0").repeat(32)) as Hex;
 
 export default function App() {
+  const [route, setRoute] = useState<Route>(() => routeOf(location.pathname));
   const [session, setSession] = useState<Session | null>(null);
   const [demo, setDemo] = useState(false);
   const [loginBusy, setLoginBusy] = useState(false);
@@ -67,10 +74,20 @@ export default function App() {
   const [pub, setPub] = useState<bigint | null>(null);
   const [busy, setBusy] = useState(false);
   const [mockSecret, setMockSecret] = useState<Hex | null>(null);
-  const [head, setHead] = useState<number | null>(null);
   const [justRegistered, setJustRegistered] = useState(false);
   const [finished, setFinished] = useState(false);
   const preview = useMemo(demoWizard, []);
+
+  const navigate = useCallback((path: string) => {
+    history.pushState(null, "", path + (path === "/" ? location.search : ""));
+    setRoute(routeOf(path));
+    window.scrollTo(0, 0);
+  }, []);
+  useEffect(() => {
+    const onPop = () => setRoute(routeOf(location.pathname));
+    addEventListener("popstate", onPop);
+    return () => removeEventListener("popstate", onPop);
+  }, []);
 
   const client = useMemo(() => (session ? new ConfidentialClient(backend, session, keypair) : null), [session, keypair]);
 
@@ -101,10 +118,6 @@ export default function App() {
         }
       });
     }
-    chain
-      .getInfo()
-      .then((i) => setHead(i.head_block_num))
-      .catch(() => null);
   }, []);
 
   useEffect(() => {
@@ -121,6 +134,7 @@ export default function App() {
       if (!s) throw new Error("WebAuth did not return a session");
       setSession(s);
       setKeypair(loadKeypair(s.auth.actor));
+      if (route === "about") navigate("/");
     } catch (e) {
       setLoginErr((e as Error).message);
     } finally {
@@ -147,13 +161,6 @@ export default function App() {
     }
   };
 
-  const foot = (
-    <div className="foot">
-      {backend.isMock ? "Simulation. " : ""}
-      XPR Network testnet{head ? `, block ${head.toLocaleString("en-US")}` : ""}. Contract <a href={`${EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>. A design under development, not a product.
-    </div>
-  );
-
   // First-run wizard: resume at the first incomplete step; returning users skip it.
   const keyMatches = !!keypair && (!st?.registered || !st.pubkey || st.pubkey.toLowerCase() === keypair.pubkey.toLowerCase());
   const step: Step | null = preview
@@ -169,29 +176,70 @@ export default function App() {
             : justRegistered && !finished
               ? "deposit"
               : null;
+  const inApp = !!session && step === null && st !== null;
+
+  const link = (path: string, label: string, current: boolean) => (
+    <a
+      href={path}
+      aria-current={current ? "page" : undefined}
+      onClick={(e) => {
+        e.preventDefault();
+        navigate(path);
+      }}
+    >
+      {label}
+    </a>
+  );
+
+  const header = (
+    <header className="topbar">
+      <Brand onNavigate={navigate} />
+      <div className="right">
+        {session ? (
+          <>
+            {inApp && route === "about" ? link("/", "Statement", false) : null}
+            {link("/about", "How it works", route === "about")}
+            <span className="who">
+              <span className={`dot ${demo || backend.isMock ? "demo" : ""}`} aria-hidden="true" />
+              <b>{session.auth.actor}</b>
+              <button className="textbtn quiet" onClick={doLogout}>
+                Sign out
+              </button>
+            </span>
+          </>
+        ) : (
+          <>
+            {link("/about", "How it works", route === "about")}
+            <button className="textbtn" onClick={doLogin} disabled={loginBusy}>
+              Connect wallet
+            </button>
+          </>
+        )}
+      </div>
+    </header>
+  );
+
+  const foot = (
+    <div className="foot">
+      {backend.isMock ? "Simulation. " : ""}
+      Running on XPR Network testnet. Contract <a href={`${EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>.
+    </div>
+  );
+
+  if (route === "about") {
+    return (
+      <div className="page">
+        {header}
+        <About signedIn={!!session} onConnect={session ? undefined : doLogin} />
+        {foot}
+      </div>
+    );
+  }
 
   if (step || (session && st === null)) {
     return (
       <div className="page">
-        {session ? (
-          <header className="topbar">
-            <a className="app" href="/">
-              Confidential XPR
-            </a>
-            <div className="account">
-              <span>
-                <span className={`dot ${demo || backend.isMock ? "demo" : ""}`} aria-hidden="true" />
-                {backend.isMock ? "Simulation" : "Testnet"}
-              </span>
-              <span>
-                <b>{session.auth.actor}</b>
-              </span>
-              <button className="textbtn quiet" onClick={doLogout}>
-                Sign out
-              </button>
-            </div>
-          </header>
-        ) : null}
+        {header}
         {step === null ? (
           <div className="empty">Checking your account</div>
         ) : (
@@ -207,6 +255,7 @@ export default function App() {
             connectBusy={loginBusy}
             connectError={loginErr}
             onConnect={doLogin}
+            onAbout={() => navigate("/about")}
             onKeyReady={(kp, derived) => {
               setKeypair(kp);
               setKeyDerived(derived);
@@ -232,30 +281,22 @@ export default function App() {
 
   return (
     <div className="page">
-      <header className="topbar">
-        <a className="app" href="/">
-          Confidential XPR
-        </a>
-        <div className="account">
-          <span>
-            <span className={`dot ${demo || backend.isMock ? "demo" : ""}`} aria-hidden="true" />
-            {backend.isMock ? "Simulation" : "Testnet"}
-          </span>
-          <span>
-            <b>{actor}</b>
-          </span>
-          <button className="textbtn quiet" onClick={doLogout}>
-            Sign out
-          </button>
-        </div>
-      </header>
+      {header}
 
       <nav className="nav" aria-label="Sections">
         {TABS.map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)} aria-current={k === tab ? "page" : undefined}>
+          <a
+            key={k}
+            href={`?tab=${k}`}
+            onClick={(e) => {
+              e.preventDefault();
+              setTab(k);
+            }}
+            aria-current={k === tab ? "page" : undefined}
+          >
             {label}
             {k === "overview" && st && st.pendingCount > 0 ? ` (${st.pendingCount} pending)` : ""}
-          </button>
+          </a>
         ))}
       </nav>
 

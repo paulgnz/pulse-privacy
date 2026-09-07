@@ -243,3 +243,50 @@ details[open] summary { margin-bottom: 12px; }
 .step .quiet { margin-top: 26px; font-size: 13px; color: var(--graphite); }
 .secret { padding: 14px 16px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 4px; max-width: 560px; }
 .secret code { font-size: 14px; word-break: break-all; line-height: 1.6; }
+
+/* ---------- brand, header, routes ---------- */
+.topbar { align-items: center; }
+.brand { display: inline-flex; align-items: center; gap: 12px; color: var(--ink); text-decoration: none; font-weight: 500; font-size: 15px; }
+.brand img { height: 22px; width: auto; display: block; }
+.brand span { padding-left: 12px; border-left: 1px solid var(--rule); line-height: 1; }
+.topbar .right { display: flex; align-items: center; gap: 18px; font-size: 14px; color: var(--graphite); flex-wrap: wrap; }
+.topbar .right a { color: var(--graphite); text-decoration: none; }
+.topbar .right a:hover, .topbar .right a[aria-current="page"] { color: var(--ink); }
+.topbar .right .who { display: inline-flex; align-items: center; gap: 10px; padding-left: 18px; border-left: 1px solid var(--rule); }
+.topbar .right .who b { color: var(--ink); font-weight: 500; }
+.nav a { background: none; border: 0; padding: 4px 0; font: inherit; font-size: 15px; color: var(--graphite); cursor: pointer; border-bottom: 2px solid transparent; text-decoration: none; }
+.nav a:hover { color: var(--ink); }
+.nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--ink); }
+
+.landing { padding-top: 56px; }
+.landing h1 { font-size: 40px; max-width: 16ch; }
+.landing p.lede { font-size: 18px; max-width: 44ch; margin: 18px 0 30px; color: var(--ink); }
+.landing .row a { font-size: 15px; }
+.landing .quiet { margin-top: 28px; font-size: 13px; color: var(--graphite); }
+
+.about { padding-top: 36px; }
+.about section { margin-bottom: 44px; }
+.about h1 { margin-bottom: 18px; }
+.about h2 { margin-bottom: 14px; }
+.about h3 { margin: 22px 0 6px; }
+.about p { margin-bottom: 12px; line-height: 1.55; }
+.about .excerpt { margin: 18px 0 8px; max-width: 460px; }
+.about .excerpt .line { padding: 12px 0; }
+.about .excerpt .line:first-child { border-top: 1px solid var(--ink); }
+.about .excerpt .line:last-child { border-bottom: 1px solid var(--ink); }
+.about .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; max-width: 620px; }
+.about .cols h3 { margin-top: 0; }
+.about ul { margin: 0; padding-left: 18px; line-height: 1.6; }
+.about ul.plain { padding-left: 18px; }
+.about .cta { margin-top: 22px; }
+
+@media (max-width: 560px) {
+  .topbar { align-items: flex-start; }
+  .landing p.lede, .about p, .step p { max-width: 100%; }
+  .brand img { height: 20px; }
+  .topbar .right { gap: 14px; }
+  .topbar .right .who { padding-left: 0; border-left: 0; }
+  .landing { padding-top: 28px; }
+  .landing h1 { font-size: 30px; }
+  .about .cols { grid-template-columns: 1fr; gap: 20px; }
+}

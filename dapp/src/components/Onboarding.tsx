@@ -6,8 +6,7 @@ import { exportBlob, saveKeypair } from "../lib/keys";
 import { checkDeposit } from "../lib/privacy";
 import { unlock } from "../lib/unlock";
 import type { Session } from "../lib/chain";
-import { Amount } from "./Amount";
-import { AmountInput, EdgeNote, Field, Line, Note } from "./ui";
+import { AmountInput, EdgeNote, Field, Note } from "./ui";
 
 export type Step = "connect" | "key" | "register" | "deposit";
 export type KeyMode = "unlock" | "unlock-pending" | "unlock-done" | "import" | "create" | "backup";
@@ -40,6 +39,8 @@ export interface OnboardingProps {
   onDeposit: (amount: bigint) => Promise<unknown>;
   onFinish: () => void;
   isMock: boolean;
+  /** open the How it works page */
+  onAbout?: () => void;
 }
 
 const Steps = ({ current }: { current: Step }) => {
@@ -58,28 +59,17 @@ const Steps = ({ current }: { current: Step }) => {
 
 export const Onboarding = (p: OnboardingProps) => (
   <div className="wizard">
-    <Steps current={p.step} />
+    {p.step !== "connect" ? <Steps current={p.step} /> : null}
     {p.step === "connect" ? <Connect {...p} /> : p.step === "key" ? <Key {...p} /> : p.step === "register" ? <Register {...p} /> : <FirstDeposit {...p} />}
   </div>
 );
 
-// ---------------------------------------------------------------- 1. connect
+// ---------------------------------------------------------------- 1. connect (the landing)
 
-const Connect = ({ onConnect, connectBusy, connectError, actor, publicBalance }: OnboardingProps) => (
-  <section className="step">
-    <h1>Confidential XPR</h1>
-    <div className="excerpt" aria-label="Example statement">
-      <Line label="Deposit" sub="public, like any transfer">
-        <Amount value={5000n * UNITS} />
-      </Line>
-      <Line label="Sent to bob" sub="the chain shows who and when">
-        <Amount value={1234n * UNITS} hidden />
-      </Line>
-      <Line label="Received from carol" sub="only you, carol and the auditor can read it">
-        <Amount value={250n * UNITS} hidden digits={8} />
-      </Line>
-    </div>
-    <p className="lede">Your balance lives inside a contract as an encrypted box. Amounts stay hidden from everyone except you, the other party and the auditor. Who paid whom stays public.</p>
+const Connect = ({ onConnect, connectBusy, connectError, actor, publicBalance, onAbout, isMock }: OnboardingProps) => (
+  <section className="step landing">
+    <h1>Private balances on XPR Network</h1>
+    <p className="lede">Hold and send XPR with the amount hidden from everyone except you, the other party and the designated auditor.</p>
     {actor ? (
       <Note level="ok">
         <p>
@@ -89,10 +79,22 @@ const Connect = ({ onConnect, connectBusy, connectError, actor, publicBalance }:
       </Note>
     ) : (
       <>
-        <p className="muted" style={{ marginBottom: 18 }}>Your wallet only ever signs ordinary XPR transactions. It needs no changes.</p>
-        <button className="btn big" onClick={onConnect} disabled={connectBusy}>
-          {connectBusy ? "Waiting for your wallet" : "Connect wallet"}
-        </button>
+        <div className="row">
+          <button className="btn big" onClick={onConnect} disabled={connectBusy}>
+            {connectBusy ? "Waiting for your wallet" : "Connect wallet"}
+          </button>
+          {onAbout ? (
+            <a
+              href="/about"
+              onClick={(e) => {
+                e.preventDefault();
+                onAbout();
+              }}
+            >
+              How it works
+            </a>
+          ) : null}
+        </div>
         {connectError ? (
           <p className="small" style={{ color: "var(--error)", marginTop: 14 }}>
             {connectError}. Try again, or open your wallet first and retry.
@@ -100,7 +102,7 @@ const Connect = ({ onConnect, connectBusy, connectError, actor, publicBalance }:
         ) : null}
       </>
     )}
-    <p className="quiet">Testnet. Contract xprconf. Nothing here is real money.</p>
+    <p className="quiet">{isMock ? "Simulation. " : ""}Testnet. Nothing here is real money.</p>
   </section>
 );
 
