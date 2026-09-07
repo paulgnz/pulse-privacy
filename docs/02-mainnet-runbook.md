@@ -51,6 +51,19 @@ Then: set `VITE_NETWORK=mainnet` on the Vercel project, redeploy, and run one re
 deposit → send → withdraw with small amounts from two accounts, and `auditor.mjs reconcile`
 against mainnet, before announcing.
 
+## 4b. Measured on mainnet (Leap v3.1.2, 2026-09-07)
+
+| action | CPU |
+|---|---:|
+| register | 0.24–0.40 ms |
+| deposit | 1.1–1.6 ms |
+| fold | 0.45–0.6 ms |
+| proven send | **12.0 ms** (testnet Leap 5: 7.8 ms) |
+
+API nodes reject transactions over their `max-transaction-time` (30 ms by default). One tester hit
+30,171 µs on a loaded node. Mitigation in the dapp: sign once, broadcast through a list of nodes,
+retry on "executing for too long". Longer term: fewer public inputs / native point adds.
+
 ## 5. After launch
 
 - Watch `auditor.mjs reconcile` daily; escrow must equal deposits − withdrawals.
