@@ -5,8 +5,18 @@
 //   withdraw(owner, quantity, b_new, proof) · deposit = eosio.token::transfer memo conf:<owner>
 // Byte layouts (bare hex on chain, 0x-prefixed in the app):
 //   point = x‖y (64 B) · pair set = lo.C lo.D hi.C hi.D (256 B) · t = per chunk C Ds Dr Da (512 B)
-import ProtonWebSDK, { type ConnectWalletArgs, type ConnectWalletRet } from "@proton/web-sdk";
-import "@proton/link";
+import type { ConnectWalletArgs, ConnectWalletRet } from "@proton/web-sdk";
+
+// The XPR SDK must be loaded with dynamic imports alongside @proton/link (static imports leave
+// the mobile transport unregistered and the app-signing flow spins forever after signing).
+type Sdk = (args: ConnectWalletArgs) => Promise<ConnectWalletRet>;
+let sdkReady: Promise<Sdk> | null = null;
+function loadSdk(): Promise<Sdk> {
+  if (!sdkReady) {
+    sdkReady = Promise.all([import("@proton/web-sdk"), import("@proton/link")]).then(([mod]) => mod.default as unknown as Sdk);
+  }
+  return sdkReady;
+}
 import { APP_NAME, CHAIN_ID, CONTRACT, ENDPOINTS, HYPERION, SYM_RAW, TOKEN_CONTRACT } from "../config";
 import type { ChunkedCiphertext, Ciphertext, Hex, TransferCiphertext } from "./crypto/types";
 import { fromAsset, toAsset } from "./format";
@@ -33,6 +43,7 @@ const asSession = (r: ConnectWalletRet): Session | null => {
 };
 
 export async function login(): Promise<Session | null> {
+  const ProtonWebSDK = await loadSdk();
   const r = await ProtonWebSDK(sdkOptions(false));
   if (r.error) throw r.error instanceof Error ? r.error : new Error(String(r.error));
   link = r.link ?? null;
@@ -41,6 +52,7 @@ export async function login(): Promise<Session | null> {
 
 export async function restore(): Promise<Session | null> {
   try {
+    const ProtonWebSDK = await loadSdk();
     const r = await ProtonWebSDK(sdkOptions(true));
     link = r.link ?? null;
     return asSession(r);

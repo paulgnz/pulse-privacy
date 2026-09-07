@@ -9,7 +9,7 @@ import type { Session } from "../lib/chain";
 import { AmountInput, EdgeNote, Field, Note } from "./ui";
 
 export type Step = "connect" | "key" | "register" | "deposit";
-export type KeyMode = "unlock" | "unlock-pending" | "confirm" | "confirm-pending" | "unlock-done" | "import" | "create" | "backup";
+export type KeyMode = "unlock" | "unlock-pending" | "confirm" | "confirm-pending" | "legacy" | "legacy-pending" | "unlock-done" | "import" | "create" | "backup";
 const STEPS: [Step, string][] = [
   ["connect", "Connect wallet"],
   ["key", "Unlock"],
@@ -141,9 +141,10 @@ const Key = (p: OnboardingProps) => {
     return () => clearTimeout(t);
   }, [mode]);
 
-  const finish = async (secret: Hex) => {
+  const finish = async (secret: Hex, fromLegacy = false) => {
     const pubkey = await p.backend.pubkeyOf(secret);
     if (chainKey && pubkey.toLowerCase() !== chainKey.toLowerCase()) {
+      if (!fromLegacy) { setMode("legacy"); return; } // registered before the message changed?
       setMismatch(true);
       setMode("import");
       return;
@@ -168,6 +169,20 @@ const Key = (p: OnboardingProps) => {
     } catch (e) {
       setErr(String((e as Error).message ?? e));
       setMode("unlock");
+    }
+  };
+
+  const doLegacy = async () => {
+    if (!p.session) return;
+    setErr(null);
+    setMode("legacy-pending");
+    setStage("Waiting for your wallet.");
+    try {
+      const r = await unlockOnce(p.session, true);
+      await finish(r.secret, true);
+    } catch (e) {
+      setErr(String((e as Error).message ?? e));
+      setMode("legacy");
     }
   };
 
@@ -255,15 +270,18 @@ const Key = (p: OnboardingProps) => {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  if (mode === "unlock" || mode === "unlock-pending" || mode === "confirm" || mode === "confirm-pending" || mode === "unlock-done") {
-    const pending = mode === "unlock-pending" || mode === "confirm-pending";
+  if (mode === "unlock" || mode === "unlock-pending" || mode === "confirm" || mode === "confirm-pending" || mode === "legacy" || mode === "legacy-pending" || mode === "unlock-done") {
+    const pending = mode === "unlock-pending" || mode === "confirm-pending" || mode === "legacy-pending";
     const confirm = mode === "confirm" || mode === "confirm-pending";
+    const legacy = mode === "legacy" || mode === "legacy-pending";
     const done = mode === "unlock-done";
     return (
       <section className="step">
-        <h2>{confirm ? "Confirm your key" : "Unlock"}</h2>
+        <h2>{confirm ? "Confirm your key" : legacy ? "Unlock with the previous message" : "Unlock"}</h2>
         <p className="lede">
-          {confirm
+          {legacy
+            ? "This account was registered before the unlock message changed, so its key comes from the earlier message. Sign it once to unlock. To move to the new message later, withdraw and register again."
+            : confirm
             ? "Sign once more. The two signatures must match, which proves your wallet always derives the same key. This check happens only the first time."
             : chainKey
               ? "Sign once to unlock your private balance. Nothing is sent to the chain."
@@ -278,8 +296,8 @@ const Key = (p: OnboardingProps) => {
             <p>{stage || "Waiting for your wallet."}</p>
             {slow ? (
               <p>
-                Nothing opened? Your browser may be blocking pop-ups from this site. Allow pop-ups for {location.host}, then{" "}
-                <button className="textbtn" onClick={() => setMode(confirm ? "confirm" : "unlock")}>try again</button>.
+                Still waiting? On a phone, approve the request in the WebAuth app and come back to this tab. On a computer, your browser may be blocking pop-ups from this site: allow them for {location.host}, then{" "}
+                <button className="textbtn" onClick={() => setMode(confirm ? "confirm" : legacy ? "legacy" : "unlock")}>try again</button>.
               </p>
             ) : null}
           </Note>
@@ -290,10 +308,10 @@ const Key = (p: OnboardingProps) => {
         ) : null}
         {!done && !pending ? (
           <div className="row">
-            <button className="btn private" onClick={confirm ? doConfirm : doUnlock} disabled={!p.session}>
-              {confirm ? "Sign again to confirm" : "Sign to unlock"}
+            <button className="btn private" onClick={confirm ? doConfirm : legacy ? doLegacy : doUnlock} disabled={!p.session}>
+              {confirm ? "Sign again to confirm" : legacy ? "Sign the previous message" : "Sign to unlock"}
             </button>
-            {!confirm ? (
+            {!confirm && !legacy ? (
               <button className="textbtn quiet" onClick={() => setMode("import")}>
                 I have a saved key to import
               </button>

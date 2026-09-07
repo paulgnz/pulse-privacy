@@ -11,8 +11,14 @@ import type { Hex } from "./crypto/types";
 const SUBGROUP_ORDER = 2736030358979909402780800718157159386076813972158567259200215660948447373041n;
 const DOMAIN = "pulse-privacy/elgamal/v1";
 
+/** Shown by the wallet in the signing prompt. Part of the signed message: changing it changes the key. */
+export const VIEWKEY_NOTE = "Derives your Confidential XPR viewing key on private.protonnz.com. Never sent to the chain. Moves nothing.";
+
 /** The fixed transaction. Every field is constant so the signing digest is constant. */
-export function unlockTransaction(actor: string, permission: string) {
+export function unlockTransaction(actor: string, permission: string, legacy = false) {
+  const action = legacy
+    ? { account: CONTRACT, name: "unlock", authorization: [{ actor, permission }], data: { owner: actor } }
+    : { account: CONTRACT, name: "viewkey", authorization: [{ actor, permission }], data: { owner: actor, note: VIEWKEY_NOTE } };
   return {
     expiration: "2035-01-01T00:00:00",
     ref_block_num: 0,
@@ -21,15 +27,15 @@ export function unlockTransaction(actor: string, permission: string) {
     max_cpu_usage_ms: 0,
     delay_sec: 0,
     context_free_actions: [],
-    actions: [{ account: CONTRACT, name: "unlock", authorization: [{ actor, permission }], data: { owner: actor } }],
+    actions: [action],
     transaction_extensions: [],
   };
 }
 
 type TransactFn = (args: { transaction: unknown }, opts: { broadcast: boolean }) => Promise<{ signatures: { toString(): string }[] }>;
 
-async function signOnce(session: Session): Promise<string> {
-  const r = await (session.transact as unknown as TransactFn)({ transaction: unlockTransaction(session.auth.actor, session.auth.permission) }, { broadcast: false });
+async function signOnce(session: Session, legacy = false): Promise<string> {
+  const r = await (session.transact as unknown as TransactFn)({ transaction: unlockTransaction(session.auth.actor, session.auth.permission, legacy) }, { broadcast: false });
   const sig = r.signatures?.[0];
   if (!sig) throw new Error("The wallet returned no signature.");
   return sig.toString();
@@ -57,8 +63,8 @@ export async function deriveSecret(signature: string, actor: string): Promise<He
  * must invoke this directly from a click handler and never chain two calls from one click.
  * First-time setup calls it twice from two separate clicks and compares the signatures.
  */
-export async function unlockOnce(session: Session): Promise<{ signature: string; secret: Hex }> {
-  const signature = await signOnce(session);
+export async function unlockOnce(session: Session, legacy = false): Promise<{ signature: string; secret: Hex }> {
+  const signature = await signOnce(session, legacy);
   return { signature, secret: await deriveSecret(signature, session.auth.actor) };
 }
 

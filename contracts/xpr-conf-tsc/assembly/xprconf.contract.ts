@@ -149,6 +149,16 @@ class XprConf extends Contract {
     requireAuth(owner);
   }
 
+  /**
+   * Successor of `unlock` with a human-readable `note` so the wallet prompt explains itself.
+   * Never broadcast; the dapp derives the viewing key from the signature. Harmless if broadcast.
+   */
+  @action("viewkey")
+  viewkey(owner: Name, note: string): void {
+    requireAuth(owner);
+    check(note.length <= 256, "note too long");
+  }
+
   /** publish an encryption pubkey (P = s^-1·H). On-curve check only in v0 (see README). */
   @action("register")
   register(owner: Name, sym: Symbol, enc_pubkey: u8[]): void {
