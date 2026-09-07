@@ -9,8 +9,7 @@ import { hash2, poseidon, zeroAt } from "./poseidon";
 // A note is (pk, v, token, rho, r); cm = Poseidon(pk.x, pk.y, v, token, rho, r). Commitments sit
 // in a depth-20 Poseidon Merkle tree that the contract maintains; every insertion is a pair
 // (a transfer's two outputs, or a deposit's note with an empty slot). Spending publishes
-// nullifiers. The sender's wallet signs `spend` (docs/06 §8; not named "transfer", which
-// wallets render as a token transfer): the chain sees who initiated
+// nullifiers. The sender's wallet signs `spend` (docs/06 §8): the chain sees who initiated
 // it; the receiver, the amount and which notes were spent stay hidden.
 //
 // Public signals of the join-split proof, 33 words of 32 bytes (circuits/shielded/joinsplit.circom):
@@ -445,8 +444,6 @@ class XprShield extends Contract {
    */
   @action("spend")
   spend(owner: Name, proof: u8[], publics: u8[]): void {
-    // the field is `owner`, not `sender`: WebAuth reads a data field named `sender` as one of
-    // its own message senders and refuses the request ("Signal sender not found")
     const sender = owner;
     requireAuth(sender);
     const c = this.config();
