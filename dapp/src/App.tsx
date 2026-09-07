@@ -110,6 +110,15 @@ export default function App() {
     setRoute(routeOf(path));
     window.scrollTo(0, 0);
   }, []);
+  /** the logo: back to the statement, on any page, dropping tab and form parameters */
+  const goHome = useCallback(() => {
+    const q = new URLSearchParams(location.search);
+    for (const k of ["tab", "form", "to"]) q.delete(k);
+    history.pushState(null, "", "/" + (q.toString() ? `?${q}` : ""));
+    setRoute(routeOf("/"));
+    setTab("overview");
+    window.scrollTo(0, 0);
+  }, []);
   useEffect(() => {
     const onPop = () => setRoute(routeOf(location.pathname));
     addEventListener("popstate", onPop);
@@ -317,7 +326,7 @@ export default function App() {
 
   const header = (
     <header className="topbar">
-      <Brand onNavigate={navigate} />
+      <Brand onNavigate={goHome} />
       <div className="right">
         {session ? (
           <>
