@@ -152,7 +152,7 @@ export const Overview = ({
         return (
           <div key={T.code}>
             <Line label={<span className="tok"><TokenIcon code={T.code} />{T.code}</span>} hero>
-              <Amount value={f.st.balance} hidden revealed={revealed} size="big" digits={9} busy={sweeping} token={T} unit={false} />
+              <Amount value={f.st.balance} hidden revealed={revealed} size="big" digits={7} busy={sweeping} token={T} unit={false} />
             </Line>
             {f.st.pendingCount > 0 ? (
               <Line
@@ -175,7 +175,7 @@ export const Overview = ({
                   </>
                 }
               >
-                <Amount value={f.st.pending} hidden revealed={revealed} size="mid" digits={7} sign="+" busy={sweeping} token={T} unit={false} />
+                <Amount value={f.st.pending} hidden revealed={revealed} size="mid" digits={5} sign="+" busy={sweeping} token={T} unit={false} />
                 <button className="btn private small" onClick={() => onFold(T.code)} disabled={busy}>
                   {busy ? "Adding" : "Add to balance"}
                 </button>
@@ -203,21 +203,6 @@ export const Overview = ({
         );
       })}
 
-      <div className="group public">
-        <h3>
-          Wallet balance
-          <span className="sub">Public. Anyone can read it.</span>
-        </h3>
-      </div>
-      {figures.map((f) => {
-        const T = f.st.token;
-        return (
-          <Line key={T.code} label={<span className="tok"><TokenIcon code={T.code} />{T.code}</span>}>
-            {f.publicBalance === null ? <span className="muted">Loading</span> : <Amount value={f.publicBalance} size="mid" token={T} unit={false} />}
-          </Line>
-        );
-      })}
-
       {anyRegistered ? (
         <>
           <div className="actions" role="group" aria-label="Actions">
@@ -241,6 +226,21 @@ export const Overview = ({
           Registering publishes your encryption key so others can pay you inside the contract. Same key, one signature.
         </p>
       )}
+
+      <div className="group public">
+        <h3>
+          Wallet balance
+          <span className="sub">Public. Anyone can read it.</span>
+        </h3>
+      </div>
+      {figures.map((f) => {
+        const T = f.st.token;
+        return (
+          <Line key={T.code} label={<span className="tok"><TokenIcon code={T.code} />{T.code}</span>}>
+            {f.publicBalance === null ? <span className="muted">Loading</span> : <Amount value={f.publicBalance} size="mid" token={T} unit={false} />}
+          </Line>
+        );
+      })}
     </section>
   );
 };
