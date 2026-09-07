@@ -139,20 +139,20 @@ export const Overview = ({
 
       <div className="group private">
         <h3>
-          Inside the contract
-          <span className="sub">{revealed ? "decrypted on this device; the chain holds only the boxes" : "encrypted; this is what everyone else sees"}</span>
+          Confidential balance
+          <span className="sub">{revealed ? "Shown on this device only. The chain holds encrypted boxes." : "Hidden by default. Reveal shows it on this device only."}</span>
         </h3>
         <button className="textbtn" onClick={() => setRevealed(!revealed)} aria-pressed={revealed}>
           {revealed ? "Hide" : "Reveal"}
         </button>
       </div>
-      {registered.map((f, i) => {
+      {registered.map((f) => {
         const T = f.st.token;
         const sweeping = busy || refreshing || !!f.loading;
         return (
           <div key={T.code}>
-            <Line label={<span className="tok"><TokenIcon code={T.code} />{T.code}</span>} hero={i === 0}>
-              <Amount value={f.st.balance} hidden revealed={revealed} size={i === 0 ? "big" : "mid"} busy={sweeping} token={T} unit={false} />
+            <Line label={<span className="tok"><TokenIcon code={T.code} />{T.code}</span>} hero>
+              <Amount value={f.st.balance} hidden revealed={revealed} size="big" digits={9} busy={sweeping} token={T} unit={false} />
             </Line>
             {f.st.pendingCount > 0 ? (
               <Line
@@ -175,7 +175,7 @@ export const Overview = ({
                   </>
                 }
               >
-                <Amount value={f.st.pending} hidden revealed={revealed} size="mid" sign="+" busy={sweeping} token={T} unit={false} />
+                <Amount value={f.st.pending} hidden revealed={revealed} size="mid" digits={7} sign="+" busy={sweeping} token={T} unit={false} />
                 <button className="btn private small" onClick={() => onFold(T.code)} disabled={busy}>
                   {busy ? "Adding" : "Add to balance"}
                 </button>
@@ -205,8 +205,8 @@ export const Overview = ({
 
       <div className="group public">
         <h3>
-          In your wallet
-          <span className="sub">public; readable by anyone</span>
+          Wallet balance
+          <span className="sub">Public. Anyone can read it.</span>
         </h3>
       </div>
       {figures.map((f) => {

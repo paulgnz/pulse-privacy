@@ -373,7 +373,7 @@ export default function App() {
           <>
             {inApp && route === "about" ? link("/", "Statement", false) : null}
             {link("/about", "How it works", route === "about")}
-            <a className="textbtn quiet" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
+            <a className="textbtn quiet netswitch" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
               Switch to {OTHER_NETWORK.label.toLowerCase()}
             </a>
             <span className="who">
@@ -387,7 +387,7 @@ export default function App() {
         ) : (
           <>
             {link("/about", "How it works", route === "about")}
-            <a className="textbtn quiet" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
+            <a className="textbtn quiet netswitch" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
               Switch to {OTHER_NETWORK.label.toLowerCase()}
             </a>
             <button className="textbtn" onClick={doLogin} disabled={loginBusy}>
@@ -403,7 +403,7 @@ export default function App() {
     <div className="foot">
       <span>
         {backend.isMock ? "Simulation. " : ""}
-        Running on {NETWORK_LABEL}. Contract <a href={`${EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>.
+        Running on {NETWORK_LABEL}. Contract <a href={`${EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>. <a href={OTHER_NETWORK.url}>Switch to {OTHER_NETWORK.label.toLowerCase()}</a>.
       </span>
       <a className="credit" href="https://protonnz.com" target="_blank" rel="noreferrer">Made by protonnz</a>
     </div>

@@ -79,7 +79,7 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 .statement .group:first-of-type { margin-top: 0; }
 .statement .group h3 { margin: 0; font-size: 15px; font-weight: 600; }
 .statement .group h3 .sub { display: block; font-size: 13px; font-weight: 400; color: var(--graphite); margin-top: 2px; }
-.statement .group.private h3 { color: var(--private); }
+.statement .group.private h3 { color: var(--ink); }
 .statement .group.public h3 { color: var(--ink); }
 .statement .group.public + .line .figure, .statement .group.public ~ .line .figure { color: var(--graphite); }
 .line {
@@ -336,6 +336,7 @@ details[open] summary { margin-bottom: 12px; }
   .brand img { height: 20px; }
   .topbar .right { gap: 14px; }
   .topbar .right .who { padding-left: 0; border-left: 0; }
+  .topbar .right .netswitch { display: none; } /* the footer carries it on phones */
   .landing { padding-top: 28px; }
   .landing h1 { font-size: 30px; }
   .about .cols { grid-template-columns: 1fr; gap: 20px; }
