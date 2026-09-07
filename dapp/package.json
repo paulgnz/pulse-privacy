@@ -12,6 +12,7 @@
   "dependencies": {
     "@proton/link": "^5.1.0-rc-3",
     "@proton/web-sdk": "^5.1.0-rc-4",
+    "@vercel/analytics": "^2.0.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "snarkjs": "^0.7.6"
