@@ -36,7 +36,9 @@ function loadSecret() {
   if (process.env.AUDITOR_SECRET) return BigInt(process.env.AUDITOR_SECRET);
   const f = process.env.AUDITOR_KEYFILE ?? join(HERE, "../../contracts/xpr-conf-tsc/tests/.testnet-keys.json");
   const j = JSON.parse(readFileSync(f, "utf8"));
-  return BigInt(j.auditor);
+  const v = j.auditor ?? j.secret;
+  if (v === undefined) throw new Error("key file has neither \"auditor\" nor \"secret\"");
+  return BigInt(v);
 }
 
 async function getActions() {
