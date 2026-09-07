@@ -381,8 +381,10 @@ export default function App() {
             forceKeyMode={preview?.keyMode}
             forceSigning={preview?.signing}
             actor={session?.auth.actor}
-            publicBalance={pub}
+            publicBalance={st?.token.code === token.code ? pub : others[token.code]?.pub ?? null}
             st={st}
+            tokens={tokens}
+            onSelectToken={chooseToken}
             keypair={keypair}
             backend={backend}
             connectBusy={loginBusy}
@@ -395,9 +397,12 @@ export default function App() {
             }}
             session={session}
             autoUnlock={restored && !keypair && !!st?.registered}
-            onRegister={async () => {
+            onRegister={async (onStage) => {
               if (!client) throw new Error("not connected");
-              await wrap(() => client.register());
+              await wrap(async () => {
+                await client.register();
+                onStage?.("confirming");
+              });
               setJustRegistered(true);
             }}
             onDeposit={(a) => (client ? wrap(() => client.deposit(a)) : Promise.reject(new Error("not connected")))}

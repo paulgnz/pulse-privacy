@@ -37,8 +37,12 @@ export interface OnboardingProps {
   session: Session | null;
   /** returning session: derive again without the stability check, prompting at once */
   autoUnlock?: boolean;
-  onRegister: () => Promise<unknown>;
+  /** `onStage("confirming")` fires once the wallet has signed and the chain is being asked */
+  onRegister: (onStage?: (s: "signing" | "confirming") => void) => Promise<unknown>;
   onDeposit: (amount: bigint) => Promise<unknown>;
+  /** every token the contract holds, for the first deposit's token menu */
+  tokens?: { code: string }[];
+  onSelectToken?: (code: string) => void;
   onFinish: () => void;
   isMock: boolean;
   /** the token the Register / First deposit steps act on */
@@ -425,14 +429,14 @@ const Key = (p: OnboardingProps) => {
 
 // ---------------------------------------------------------------- 3. register
 
-const Register = ({ onRegister, actor, forceSigning, token = XPR }: OnboardingProps) => {
-  const [state, setState] = useState<"idle" | "signing" | "done" | "error">(forceSigning ? "signing" : "idle");
+const Register = ({ onRegister, actor, forceSigning }: OnboardingProps) => {
+  const [state, setState] = useState<"idle" | "signing" | "confirming" | "done" | "error">(forceSigning ? "signing" : "idle");
   const [err, setErr] = useState<string | null>(null);
   const go = async () => {
     setState("signing");
     setErr(null);
     try {
-      await onRegister();
+      await onRegister((s) => setState(s));
       setState("done");
     } catch (e) {
       setErr((e as Error).message);
@@ -442,10 +446,14 @@ const Register = ({ onRegister, actor, forceSigning, token = XPR }: OnboardingPr
   return (
     <section className="step">
       <h2>Register</h2>
-      <p className="lede">Publish your encryption key for {token.code} so others can pay you privately. One signature.</p>
+      <p className="lede">Publish your encryption key so others can pay you privately, in any token the contract holds. One signature.</p>
       {state === "signing" ? (
         <Note level="info">
-          <p>Waiting for your wallet to sign the registration for {actor}.</p>
+          <p><Busy>Waiting for your wallet to sign the registration for {actor}.</Busy></p>
+        </Note>
+      ) : state === "confirming" ? (
+        <Note level="info">
+          <p><Busy>Signed. Writing your key to the chain, a few seconds.</Busy></p>
         </Note>
       ) : state === "done" ? (
         <Note level="ok">
@@ -457,8 +465,8 @@ const Register = ({ onRegister, actor, forceSigning, token = XPR }: OnboardingPr
         </Note>
       ) : null}
       {state !== "done" ? (
-        <button className="btn private" onClick={go} disabled={state === "signing"}>
-          Register
+        <button className="btn private" onClick={go} disabled={state === "signing" || state === "confirming"}>
+          {state === "signing" ? "Signing" : state === "confirming" ? "Registering" : "Register"}
         </button>
       ) : null}
     </section>
@@ -467,8 +475,8 @@ const Register = ({ onRegister, actor, forceSigning, token = XPR }: OnboardingPr
 
 // ---------------------------------------------------------------- 4. first deposit
 
-const FirstDeposit = ({ st, publicBalance, onDeposit, onFinish, token = XPR }: OnboardingProps) => {
-  const T = st?.token ?? token;
+const FirstDeposit = ({ st, publicBalance, onDeposit, onFinish, token = XPR, tokens, onSelectToken }: OnboardingProps) => {
+  const T = token;
   const [amt, setAmt] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -480,7 +488,7 @@ const FirstDeposit = ({ st, publicBalance, onDeposit, onFinish, token = XPR }: O
     }
   }, [amt, T]);
   const over = parsed !== null && publicBalance !== null && parsed > publicBalance;
-  const cfg = st?.config ?? { withdrawGranularity: T.units, depositGranularity: T.units, units: T.units };
+  const cfg = st && st.token.code === T.code ? st.config : { withdrawGranularity: T.units, depositGranularity: T.units, units: T.units };
   const check = parsed ? checkDeposit(parsed, cfg) : null;
   const go = async () => {
     if (!parsed) return;
@@ -498,9 +506,9 @@ const FirstDeposit = ({ st, publicBalance, onDeposit, onFinish, token = XPR }: O
   return (
     <section className="step">
       <h2>First deposit</h2>
-      <p className="lede">Move some public {T.code} into your box. This one transfer is visible to everyone, so a round amount reveals less than a specific one. You can skip this and deposit later.</p>
+      <p className="lede">Move some public {T.code} into your box{tokens && tokens.length > 1 ? ", or pick another token in the amount field" : ""}. This one transfer is visible to everyone, so a round amount reveals less than a specific one. You can skip this and deposit later.</p>
       <Field label="Amount" error={over ? `More than your public balance of ${fmtUnits(publicBalance ?? 0n, T)} ${T.code}.` : err ?? amountProblem(amt, T) ?? undefined} hint={publicBalance !== null ? `Public balance ${fmtUnits(publicBalance, T)} ${T.code}.` : undefined}>
-        <AmountInput value={amt} onChange={setAmt} autoFocus token={T} />
+        <AmountInput value={amt} onChange={setAmt} autoFocus token={T} tokens={tokens} onSelectToken={onSelectToken} />
       </Field>
       <div className="chips">
         {[100n, 500n, 1000n, 5000n].map((x) => (
