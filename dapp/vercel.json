@@ -29,7 +29,7 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!circuit/).*)",
+      "source": "/((?!circuit/|_vercel/).*)",
       "destination": "/index.html"
     }
   ]

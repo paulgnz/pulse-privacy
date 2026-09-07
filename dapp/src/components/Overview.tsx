@@ -85,7 +85,13 @@ export const Overview = ({
     }
   }, [revealed]);
 
-  const toggle = (f: Form) => setForm((cur) => (cur === f ? null : f));
+  const toggle = (f: Form) => {
+    setForm((cur) => (cur === f ? null : f));
+    // on phones the actions are pinned to the bottom; bring the form that opens beneath them into view
+    if (typeof window !== "undefined" && window.innerWidth <= 600) {
+      setTimeout(() => document.querySelector(".statement .form")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    }
+  };
   const [depositPrefill, setDepositPrefill] = useState<string | undefined>(undefined);
   const depositFirst = (amount: bigint) => {
     setDepositPrefill(fmtUnits(amount, st.token, { trim: true }).replace(/,/g, ""));
@@ -146,7 +152,7 @@ export const Overview = ({
         return (
           <div key={T.code}>
             <Line label={<span className="tok"><TokenIcon code={T.code} />{T.code}</span>} hero={i === 0}>
-              <Amount value={f.st.balance} hidden revealed={revealed} size={i === 0 ? "big" : "mid"} busy={sweeping} token={T} />
+              <Amount value={f.st.balance} hidden revealed={revealed} size={i === 0 ? "big" : "mid"} busy={sweeping} token={T} unit={false} />
             </Line>
             {f.st.pendingCount > 0 ? (
               <Line
@@ -169,7 +175,7 @@ export const Overview = ({
                   </>
                 }
               >
-                <Amount value={f.st.pending} hidden revealed={revealed} size="mid" sign="+" busy={sweeping} token={T} />
+                <Amount value={f.st.pending} hidden revealed={revealed} size="mid" sign="+" busy={sweeping} token={T} unit={false} />
                 <button className="btn private small" onClick={() => onFold(T.code)} disabled={busy}>
                   {busy ? "Adding" : "Add to balance"}
                 </button>
@@ -207,7 +213,7 @@ export const Overview = ({
         const T = f.st.token;
         return (
           <Line key={T.code} label={<span className="tok"><TokenIcon code={T.code} />{T.code}</span>}>
-            {f.publicBalance === null ? <span className="muted">Loading</span> : <Amount value={f.publicBalance} size="mid" token={T} />}
+            {f.publicBalance === null ? <span className="muted">Loading</span> : <Amount value={f.publicBalance} size="mid" token={T} unit={false} />}
           </Line>
         );
       })}
@@ -215,7 +221,7 @@ export const Overview = ({
       {anyRegistered ? (
         <>
           <div className="actions" role="group" aria-label="Actions">
-            <button className="btn secondary" onClick={() => toggle("send")} aria-expanded={form === "send"}>
+            <button className="btn" onClick={() => toggle("send")} aria-expanded={form === "send"}>
               Send
             </button>
             <button className="btn secondary" onClick={() => toggle("deposit")} aria-expanded={form === "deposit"}>
