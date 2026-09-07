@@ -384,19 +384,8 @@ const Key = (p: OnboardingProps) => {
   if (mode === "backup") {
     return (
       <section className="step">
-        <h2>Save your backup</h2>
-        <p className="lede">This is the key that opens your boxes. Without it you cannot read your confidential balance or build the proof that spends it. Save it now, and keep an encrypted recovery copy with the XPR Network committee so a lost device is not a lost balance.</p>
-        <div className="secret" aria-label="Your encryption secret">
-          <code>{previewKey.secret}</code>
-        </div>
-        <div className="row" style={{ margin: "16px 0 22px" }}>
-          <button className="btn secondary" onClick={download}>
-            Download key file
-          </button>
-          <button className="textbtn" onClick={copy}>
-            {copied ? "Copied" : "Copy secret"}
-          </button>
-        </div>
+        <h2>Write down your recovery phrase</h2>
+        <p className="lede">Your wallet signs with a passkey, so this app keeps a saved key for you. These six words restore that key on any device. Write them down and keep them where you keep important things; without them, or the key file below, a lost device means a locked balance until the committee helps.</p>
         {customPass ? (
           <>
             <Field label="Your own passphrase" hint={`At least ${MIN_PASSPHRASE} characters, several words. The encrypted copy is public, so a weak passphrase can be guessed offline.`} error={passProblem ?? undefined}>
@@ -416,13 +405,30 @@ const Key = (p: OnboardingProps) => {
             </p>
           </Field>
         )}
+        <details className="explain" style={{ marginBottom: 18 }}>
+          <summary>Also save the key file (optional)</summary>
+          <div className="body">
+            <p>The raw key, for people who prefer a file. The recovery phrase above restores the same key.</p>
+        <div className="secret" aria-label="Your encryption secret">
+              <code>{previewKey.secret}</code>
+            </div>
+            <div className="row" style={{ margin: "16px 0 22px" }}>
+              <button className="btn secondary" onClick={download}>
+                Download key file
+              </button>
+              <button className="textbtn" onClick={copy}>
+                {copied ? "Copied" : "Copy secret"}
+              </button>
+            </div>
+          </div>
+        </details>
         <label className="check">
           <input type="checkbox" checked={keepRecovery} onChange={(e) => setKeepRecovery(e.target.checked)} />
           <span>Keep an encrypted recovery copy with the XPR Network committee (recommended). Stored on chain with your registration; only the committee's viewing key can open it, and spending still needs your wallet.</span>
         </label>
         <label className="check">
           <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
-          <span>I have saved my backup somewhere safe.</span>
+          <span>I have written down my recovery phrase (or saved the key file) somewhere safe.</span>
         </label>
         <div className="row">
           <button className="btn private" onClick={finishBackup} disabled={!saved || !passOk}>
