@@ -4,6 +4,7 @@ import { fmtUnits } from "./lib/format";
 import * as chain from "./lib/chain";
 import type { Session } from "./lib/chain";
 import { ConfidentialClient, MOCK_TOKENS, type ActivityItem, type ConfState } from "./lib/client";
+import { event } from "./lib/stats";
 import { XPR, rememberToken, rememberedToken, type Token } from "./lib/token";
 import { selectBackend } from "./lib/crypto";
 import type { EncryptionKeypair, Hex } from "./lib/crypto/types";
@@ -236,6 +237,7 @@ export default function App() {
       if (!s) throw new Error("WebAuth did not return a session");
       setSession(s);
       setKeypair(loadKeypair(s.auth.actor));
+      event("connected");
       if (route === "about") navigate("/");
     } catch (e) {
       setLoginErr((e as Error).message);
@@ -412,9 +414,22 @@ export default function App() {
                 await client.register();
                 onStage?.("confirming");
               });
+              event("registered");
               setJustRegistered(true);
             }}
-            onDeposit={(a) => (client ? wrap(() => client.deposit(a)) : Promise.reject(new Error("not connected")))}
+            onRegisterAndDeposit={async (amount, onStage) => {
+              if (!client) throw new Error("not connected");
+              await wrap(async () => {
+                const tx = await client.registerAndDeposit(amount);
+                onStage?.("confirming");
+                trackTx(tx, { kind: "deposit", amount, token: client.token, onChain: { public: true } });
+              });
+              event("registered");
+              event("deposited", { token: client.token.code });
+              setJustRegistered(true);
+              setFinished(true);
+            }}
+            onDeposit={(a) => (client ? wrap(async () => { const tx = await client.deposit(a); event("deposited", { token: client.token.code }); return tx; }) : Promise.reject(new Error("not connected")))}
             onFinish={() => setFinished(true)}
             isMock={backend.isMock}
             token={token}
@@ -468,12 +483,12 @@ export default function App() {
           st={st.token.code === token.code ? st : others[token.code]?.st ?? { ...st, token, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], historyLoaded: false }}
           figures={figures}
           hasKey={!!keypair}
-          onRegister={(code) => wrap(() => clientFor(code).register())}
+          onRegister={(code) => wrap(async () => { const r = await clientFor(code).register(); event("registered"); return r; })}
           onGo={(t) => setTab(t as Tab)}
-          onFold={(code) => wrap(async () => { const c = clientFor(code); const tx = await c.applyPending(); trackTx(String(tx), { kind: "fold", token: c.token, onChain: { ciphertext: "●●●●" } }); return tx; })}
-          onSend={(to, amount, p) => wrap(async () => { const tx = await client.send(to, amount, p); trackTx(tx, { kind: "send", amount, counterparty: to, token: client.token }); return tx; })}
-          onDeposit={(a) => wrap(async () => { const tx = await client.deposit(a); trackTx(tx, { kind: "deposit", amount: a, token: client.token, onChain: { public: true } }); return tx; })}
-          onWithdraw={(a, p) => wrap(async () => { const tx = await client.withdraw(a, p); trackTx(tx, { kind: "withdraw", amount: a, token: client.token, onChain: { public: true } }); return tx; })}
+          onFold={(code) => wrap(async () => { const c = clientFor(code); const tx = await c.applyPending(); trackTx(String(tx), { kind: "fold", token: c.token, onChain: { ciphertext: "●●●●" } }); event("folded", { token: c.token.code }); return tx; })}
+          onSend={(to, amount, p) => wrap(async () => { const tx = await client.send(to, amount, p); trackTx(tx, { kind: "send", amount, counterparty: to, token: client.token }); event("sent", { token: client.token.code }); return tx; })}
+          onDeposit={(a) => wrap(async () => { const tx = await client.deposit(a); trackTx(tx, { kind: "deposit", amount: a, token: client.token, onChain: { public: true } }); event("deposited", { token: client.token.code }); return tx; })}
+          onWithdraw={(a, p) => wrap(async () => { const tx = await client.withdraw(a, p); trackTx(tx, { kind: "withdraw", amount: a, token: client.token, onChain: { public: true } }); event("withdrew", { token: client.token.code }); return tx; })}
           busy={busy} refreshing={refreshing || st.token.code !== token.code}
           tokens={tokens} onSelectToken={chooseToken}
         />

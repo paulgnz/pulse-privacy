@@ -29,7 +29,12 @@ const fullKey = (h: string): Hex => hx(ptHex(decompressHex(h)));
 export interface Session {
   auth: { actor: string; permission: string };
   transact(tx: { actions: unknown[] }, opts?: { broadcast?: boolean }): Promise<unknown>;
+  /** the wallet's signing key, "PUB_K1_…" or "PUB_R1_…"/"PUB_WA_…", when the link reports it */
+  publicKey?: string;
 }
+
+/** K1 (secp256k1) signatures from WebAuth are deterministic, so the derived key is stable without a second signature. */
+export const deterministicSigner = (s: Session): boolean => !!s.publicKey && s.publicKey.startsWith("PUB_K1_");
 
 // @proton/web-sdk 5.x: app identity and theme live under `uiOptions`; `selectorOptions` only
 // selects wallet types; `requestAccount` is required for the mobile deep-link return.
@@ -44,7 +49,9 @@ const sdkOptions = (restoreSession: boolean): ConnectWalletArgs => ({
 
 const asSession = (r: ConnectWalletRet): Session | null => {
   if (!r.session) return null;
-  return r.session as unknown as Session;
+  const s = r.session as unknown as Session & { publicKey?: { toString(): string } };
+  const pk = s.publicKey ? String(s.publicKey) : undefined;
+  return Object.assign(s, { publicKey: pk }) as Session;
 };
 
 export async function login(): Promise<Session | null> {

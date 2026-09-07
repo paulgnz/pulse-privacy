@@ -281,6 +281,11 @@ details[open] summary { margin-bottom: 12px; }
 .landing p.lede { font-size: 18px; max-width: 44ch; margin: 18px 0 30px; color: var(--ink); }
 .landing .row a { font-size: 15px; }
 .landing .quiet { margin-top: 28px; font-size: 13px; color: var(--graphite); }
+.landing .nowallet { margin-top: 16px; color: var(--graphite); }
+.landing .nowallet a { color: var(--ink); }
+.landing .peek { margin-top: 48px; padding-top: 28px; border-top: 1px solid var(--rule); }
+.landing .peek h2 { font-size: 20px; margin-bottom: 6px; }
+.landing .peek .muted { margin-bottom: 4px; max-width: 56ch; }
 
 .about { padding-top: 36px; }
 .about section { margin-bottom: 44px; }

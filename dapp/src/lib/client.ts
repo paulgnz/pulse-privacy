@@ -310,6 +310,19 @@ export class ConfidentialClient {
     return chain.broadcast(this.session, [chain.registerAction(this.session, this.token, kp.pubkey)]);
   }
 
+  /** First run: publish the key and make the first deposit in one transaction (one signature). */
+  async registerAndDeposit(amount: bigint): Promise<string> {
+    if (amount <= 0n) throw new Error("amount must be positive");
+    const kp = this.need();
+    if (this.isMock) {
+      await this.register();
+      return this.deposit(amount);
+    }
+    const existing = await chain.getConfAccount(this.actor, this.token);
+    if (existing) throw new Error(`already registered for ${this.token.code}`);
+    return chain.broadcast(this.session, [chain.registerAction(this.session, this.token, kp.pubkey), chain.depositAction(this.session, this.token, amount)]);
+  }
+
   async deposit(amount: bigint): Promise<string> {
     if (amount <= 0n) throw new Error("amount must be positive");
     if (this.isMock) {

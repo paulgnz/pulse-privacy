@@ -6,9 +6,10 @@ import { XPR, type Token } from "../lib/token";
 import { exportBlob, saveKeypair } from "../lib/keys";
 import { checkDeposit } from "../lib/privacy";
 import { unlockOnce } from "../lib/unlock";
-import type { Session } from "../lib/chain";
+import { deterministicSigner, type Session } from "../lib/chain";
 import { AmountInput, Busy, EdgeNote, Field, Note } from "./ui";
 import { NETWORK } from "../config";
+import { Walkthrough } from "./Walkthrough";
 
 export type Step = "connect" | "key" | "register" | "deposit";
 export type KeyMode = "unlock" | "unlock-pending" | "confirm" | "confirm-pending" | "legacy" | "legacy-pending" | "unlock-done" | "import" | "create" | "backup";
@@ -39,6 +40,8 @@ export interface OnboardingProps {
   autoUnlock?: boolean;
   /** `onStage("confirming")` fires once the wallet has signed and the chain is being asked */
   onRegister: (onStage?: (s: "signing" | "confirming") => void) => Promise<unknown>;
+  /** register and deposit in one signature; the wizard then skips the deposit step */
+  onRegisterAndDeposit?: (amount: bigint, onStage?: (s: "signing" | "confirming") => void) => Promise<unknown>;
   onDeposit: (amount: bigint) => Promise<unknown>;
   /** every token the contract holds, for the first deposit's token menu */
   tokens?: { code: string }[];
@@ -77,7 +80,7 @@ export const Onboarding = (p: OnboardingProps) => (
 const Connect = ({ onConnect, connectBusy, connectError, actor, publicBalance, onAbout, isMock, token = XPR }: OnboardingProps) => (
   <section className="step landing">
     <h1>Private balances on XPR Network</h1>
-    <p className="lede">Hold and send XPR with the amount hidden from everyone except you, the other party and the designated auditor.</p>
+    <p className="lede">Hold and send XPR and XMD with the amount hidden from everyone except you, the other party and the designated auditor.</p>
     {actor ? (
       <Note level="ok">
         <p>
@@ -108,6 +111,14 @@ const Connect = ({ onConnect, connectBusy, connectError, actor, publicBalance, o
             {connectError}. Try again, or open your wallet first and retry.
           </p>
         ) : null}
+        <p className="small nowallet">
+          No wallet yet? <a href="https://webauth.com" target="_blank" rel="noreferrer">Get WebAuth</a>, the XPR Network wallet. It signs with Face ID or a fingerprint, and it becomes your key here.
+        </p>
+        <div className="peek">
+          <h2>What it looks like</h2>
+          <p className="muted">Alice deposits, pays Bob, Bob withdraws a round amount, and the auditor reads it all. The chain sees who and when, never how much.</p>
+          <Walkthrough />
+        </div>
       </>
     )}
     <p className="quiet">{isMock ? "Simulation. " : ""}{NETWORK === "mainnet" ? "Mainnet, early access: the pool is capped while the trusted-setup ceremony and audit complete." : "Testnet. Nothing here is real money."}</p>
@@ -170,6 +181,8 @@ const Key = (p: OnboardingProps) => {
       const r = await unlockOnce(p.session);
       if (chainKey) {
         await finish(r.secret); // registered account: the chain tells us whether the key is right
+      } else if (deterministicSigner(p.session)) {
+        await finish(r.secret); // K1 wallet key: the signature is deterministic, no second prompt
       } else {
         setFirstSig(r);
         setMode("confirm");
@@ -429,14 +442,26 @@ const Key = (p: OnboardingProps) => {
 
 // ---------------------------------------------------------------- 3. register
 
-const Register = ({ onRegister, actor, forceSigning }: OnboardingProps) => {
+const Register = ({ onRegister, onRegisterAndDeposit, actor, forceSigning, publicBalance, token = XPR, tokens, onSelectToken }: OnboardingProps) => {
   const [state, setState] = useState<"idle" | "signing" | "confirming" | "done" | "error">(forceSigning ? "signing" : "idle");
   const [err, setErr] = useState<string | null>(null);
+  const T = token;
+  const [amt, setAmt] = useState("");
+  const parsed = useMemo(() => {
+    try {
+      return amt ? parseUnits(amt, T) : null;
+    } catch {
+      return null;
+    }
+  }, [amt, T]);
+  const over = parsed !== null && publicBalance !== null && parsed > publicBalance;
+  const withDeposit = !!onRegisterAndDeposit && !!parsed && parsed > 0n && !over;
   const go = async () => {
     setState("signing");
     setErr(null);
     try {
-      await onRegister((s) => setState(s));
+      if (withDeposit) await onRegisterAndDeposit!(parsed!, (s) => setState(s));
+      else await onRegister((s) => setState(s));
       setState("done");
     } catch (e) {
       setErr((e as Error).message);
@@ -446,14 +471,19 @@ const Register = ({ onRegister, actor, forceSigning }: OnboardingProps) => {
   return (
     <section className="step">
       <h2>Register</h2>
-      <p className="lede">Publish your encryption key so others can pay you privately, in any token the contract holds. One signature.</p>
+      <p className="lede">Publish your encryption key so others can pay you privately, in any token the contract holds. Add a first deposit and it is one signature for both.</p>
+      {onRegisterAndDeposit ? (
+        <Field label="First deposit, optional" error={over ? `More than your public balance of ${fmtUnits(publicBalance ?? 0n, T)} ${T.code}.` : amountProblem(amt, T) ?? undefined} hint={publicBalance !== null ? `Public balance ${fmtUnits(publicBalance, T)} ${T.code}. A round amount reveals less than a specific one.` : undefined}>
+          <AmountInput value={amt} onChange={setAmt} token={T} tokens={tokens} onSelectToken={onSelectToken} />
+        </Field>
+      ) : null}
       {state === "signing" ? (
         <Note level="info">
           <p><Busy>Waiting for your wallet to sign the registration for {actor}.</Busy></p>
         </Note>
       ) : state === "confirming" ? (
         <Note level="info">
-          <p><Busy>Signed. Writing your key to the chain, a few seconds.</Busy></p>
+          <p><Busy>Signed. Writing {withDeposit ? "your key and the deposit" : "your key"} to the chain, a few seconds.</Busy></p>
         </Note>
       ) : state === "done" ? (
         <Note level="ok">
@@ -465,8 +495,8 @@ const Register = ({ onRegister, actor, forceSigning }: OnboardingProps) => {
         </Note>
       ) : null}
       {state !== "done" ? (
-        <button className="btn private" onClick={go} disabled={state === "signing" || state === "confirming"}>
-          {state === "signing" ? "Signing" : state === "confirming" ? "Registering" : "Register"}
+        <button className="btn private" onClick={go} disabled={state === "signing" || state === "confirming" || over || (!!amt && !parsed)}>
+          {state === "signing" ? "Signing" : state === "confirming" ? "Registering" : withDeposit ? `Register and deposit ${fmtUnits(parsed!, T)} ${T.code}` : "Register"}
         </button>
       ) : null}
     </section>
