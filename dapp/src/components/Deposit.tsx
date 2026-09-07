@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { ConfState } from "../lib/client";
 import { fmtUnits, parseUnits } from "../lib/format";
 import { checkDeposit } from "../lib/privacy";
-import { AmountInput, EdgeNote, Field, Note } from "./ui";
+import { Busy, AmountInput, EdgeNote, Field, Note } from "./ui";
 
 export const Deposit = ({
   st,
@@ -19,6 +19,7 @@ export const Deposit = ({
 }) => {
   const [amt, setAmt] = useState("");
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [pending, setPending] = useState(false);
   const parsed = useMemo(() => {
     try {
       return amt ? parseUnits(amt) : null;
@@ -33,11 +34,14 @@ export const Deposit = ({
     if (!parsed) return;
     setResult(null);
     try {
+      setPending(true);
       const tx = await onDeposit(parsed);
       setResult({ ok: true, msg: `Deposited ${fmtUnits(parsed)} XPR. It lands in your pending box. Transaction ${tx.slice(0, 12)}.` });
       setAmt("");
     } catch (e) {
       setResult({ ok: false, msg: `Not deposited. ${(e as Error).message}` });
+    } finally {
+      setPending(false);
     }
   };
 
@@ -58,7 +62,7 @@ export const Deposit = ({
       {check ? <EdgeNote check={check} onSuggest={(a) => setAmt(fmtUnits(a, { trim: true }).replace(/,/g, ""))} /> : null}
       <div className="row" style={{ marginBottom: 16 }}>
         <button className="btn" onClick={go} disabled={!parsed || parsed <= 0n || over || !st.registered || busy}>
-          {parsed && parsed > 0n && !over ? `Deposit ${fmtUnits(parsed)} XPR` : "Deposit"}
+          {pending ? <Busy>Waiting for your wallet</Busy> : parsed && parsed > 0n && !over ? `Deposit ${fmtUnits(parsed)} XPR` : "Deposit"}
         </button>
         <button className="textbtn quiet" onClick={onClose}>
           Cancel

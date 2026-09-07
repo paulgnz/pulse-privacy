@@ -13,6 +13,7 @@ export const Amount = ({
   unit = true,
   tone,
   digits,
+  busy = false,
 }: {
   value?: bigint;
   /** hidden on chain: draw a bar unless revealed */
@@ -26,10 +27,12 @@ export const Amount = ({
   tone?: "auditor";
   /** width of the bar when the value is unknown, in characters */
   digits?: number;
+  /** the value is being refreshed: the bar sweeps, or the figures breathe */
+  busy?: boolean;
 }) => {
   const show = !hidden || (revealed && value !== undefined);
   const text = value === undefined ? "" : fmtUnits(value);
-  const cls = `figure ${size} ${hidden && show ? "reveal" : ""} ${tone === "auditor" ? "auditor-only" : ""}`;
+  const cls = `figure ${size} ${hidden && show ? "reveal" : ""} ${tone === "auditor" ? "auditor-only" : ""} ${busy && show ? "refreshing" : ""}`;
   if (show) {
     return (
       <span className={cls}>
@@ -44,7 +47,7 @@ export const Amount = ({
   const n = digits ?? (text ? text.length : 9);
   return (
     <span className={cls}>
-      <span className="redact private" style={{ width: `${Math.max(3, n) * 0.62}em` }} role="img" aria-label="hidden amount" />
+      <span className={`redact private ${busy ? "busy" : ""}`} style={{ width: `${Math.max(3, n) * 0.62}em` }} role="img" aria-label={busy ? "updating" : "hidden amount"} />
       {unit ? <span className="unit">XPR</span> : null}
     </span>
   );

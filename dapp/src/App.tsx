@@ -91,12 +91,18 @@ export default function App() {
 
   const client = useMemo(() => (session ? new ConfidentialClient(backend, session, keypair) : null), [session, keypair]);
 
+  const [refreshing, setRefreshing] = useState(false);
   const refresh = useCallback(async () => {
     if (!client) return;
-    const [s, p, ms] = await Promise.all([client.state(), chain.getPublicBalance(client.actor).catch(() => null), client.mockAuditorSecret()]);
-    setSt(s);
-    setPub(p);
-    setMockSecret(ms);
+    setRefreshing(true);
+    try {
+      const [s, p, ms] = await Promise.all([client.state(), chain.getPublicBalance(client.actor).catch(() => null), client.mockAuditorSecret()]);
+      setSt(s);
+      setPub(p);
+      setMockSecret(ms);
+    } finally {
+      setRefreshing(false);
+    }
   }, [client]);
 
   useEffect(() => {
@@ -311,7 +317,7 @@ export default function App() {
           onSend={(to, amount, p) => wrap(() => client.send(to, amount, p))}
           onDeposit={(a) => wrap(() => client.deposit(a))}
           onWithdraw={(a, p) => wrap(() => client.withdraw(a, p))}
-          busy={busy}
+          busy={busy || refreshing}
         />
       ) : tab === "activity" ? (
         <Activity st={st} isMock={backend.isMock} />
@@ -340,7 +346,7 @@ export default function App() {
           onSimulateIncoming={(from, a) => wrap(() => client.simulateIncoming(from, a))}
           onSimulatePool={(n) => wrap(() => client.simulatePoolActivity(n))}
           onResetMock={() => wrap(() => client.resetMock())}
-          busy={busy}
+          busy={busy || refreshing}
         />
       ) : (
         <Auditor isMock={backend.isMock} onOpen={(s) => client.auditorLedger(s)} onEdges={() => client.poolEdges()} mockSecret={mockSecret} />

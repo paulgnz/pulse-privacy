@@ -59,14 +59,25 @@ export const EdgeNote = ({ check, onSuggest }: { check: EdgeCheck; onSuggest?: (
   );
 };
 
-export const Progress = ({ fraction, stage }: { fraction: number; stage: string }) => (
-  <div className="progress" aria-live="polite">
-    <div className="bar">
-      <i style={{ width: `${Math.round(fraction * 100)}%` }} />
-    </div>
-    <div className="stage">{stage}</div>
-  </div>
+/** Waiting on something outside the page (the wallet, the chain): a breathing dot and a line. */
+export const Busy = ({ children }: { children: ReactNode }) => (
+  <span className="busy" role="status">
+    <span className="busy-dot" aria-hidden="true" />
+    <span>{children}</span>
+  </span>
 );
+
+export const Progress = ({ fraction, stage }: { fraction: number; stage: string }) => {
+  const wait = /wait/i.test(stage); // the wallet's turn: indeterminate
+  return (
+    <div className={`progress ${wait ? "wait" : ""}`} aria-live="polite">
+      <div className="bar">
+        <i style={{ width: `${Math.round(fraction * 100)}%` }} />
+      </div>
+      <div className="stage">{wait ? <Busy>{stage}</Busy> : stage}</div>
+    </div>
+  );
+};
 
 /** A statement line: label on the left, value on the right. */
 export const Line = ({ label, sub, children, hero }: { label: ReactNode; sub?: ReactNode; children: ReactNode; hero?: boolean }) => (

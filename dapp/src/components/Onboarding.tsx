@@ -6,7 +6,7 @@ import { exportBlob, saveKeypair } from "../lib/keys";
 import { checkDeposit } from "../lib/privacy";
 import { unlockOnce } from "../lib/unlock";
 import type { Session } from "../lib/chain";
-import { AmountInput, EdgeNote, Field, Note } from "./ui";
+import { AmountInput, Busy, EdgeNote, Field, Note } from "./ui";
 
 export type Step = "connect" | "key" | "register" | "deposit";
 export type KeyMode = "unlock" | "unlock-pending" | "confirm" | "confirm-pending" | "legacy" | "legacy-pending" | "unlock-done" | "import" | "create" | "backup";
@@ -81,7 +81,7 @@ const Connect = ({ onConnect, connectBusy, connectError, actor, publicBalance, o
       <>
         <div className="row">
           <button className="btn big" onClick={onConnect} disabled={connectBusy}>
-            {connectBusy ? "Waiting for your wallet" : "Connect wallet"}
+            {connectBusy ? <Busy>Waiting for your wallet</Busy> : "Connect wallet"}
           </button>
           {onAbout ? (
             <a
@@ -293,7 +293,7 @@ const Key = (p: OnboardingProps) => {
           </Note>
         ) : pending ? (
           <Note level="info">
-            <p>{stage || "Waiting for your wallet."}</p>
+            <p><Busy>{stage || "Waiting for your wallet."}</Busy></p>
             {slow ? (
               <p>
                 Still waiting? On a phone, approve the request in the WebAuth app and come back to this tab. On a computer, your browser may be blocking pop-ups from this site: allow them for {location.host}, then{" "}
