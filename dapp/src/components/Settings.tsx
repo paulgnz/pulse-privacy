@@ -117,7 +117,7 @@ export const Settings = ({
         ) : keypair ? (
           <>
             <p className={`recovery-status ${anyBackup ? "ok" : "warn"}`}>{anyBackup ? "Recovery is set up." : "Recovery is not set up."}</p>
-            <p className="lede">Your usable key is stored in this browser. Set up recovery so you can reach your confidential funds on another device.</p>
+            <p className="lede">{anyBackup ? "Your usable key is stored in this browser. The recovery options below help you access your confidential funds on another device." : "Your usable key is stored in this browser. Set up recovery so you can reach your confidential funds on another device."}</p>
             <details className="explain" style={{ marginBottom: 18 }}>
               <summary>Learn more</summary>
               <div className="body">
