@@ -24,6 +24,7 @@ const CONTRACT = process.env.CONTRACT ?? "xprconf";
 const SYMBOL = process.env.SYMBOL ?? "XPR";
 const PRECISION = Number(process.env.PRECISION ?? 4);
 const TOKEN = process.env.TOKEN_CONTRACT ?? "eosio.token";
+const SYM_STR = `${PRECISION},${SYMBOL}`; // e.g. "4,XPR": the contract scopes everything by token
 
 const [cmd, arg] = process.argv.slice(2);
 const fromArg = process.argv.indexOf("--from");
@@ -97,6 +98,8 @@ for (const a of await getActions()) {
   seen.add(key);
   const act = a.act;
   const base = { block: a.block_num, time: a.timestamp, tx: a.trx_id };
+  const symOf = (d) => (d && d.sym !== undefined ? String(d.sym) : (d && d.quantity ? `${PRECISION},${String(d.quantity).split(" ")[1]}` : null));
+  if (act.account === CONTRACT && ["send", "withdraw", "register", "applypending"].includes(act.name) && symOf(act.data) !== SYM_STR) continue; // another token
   if (act.account === CONTRACT && act.name === "send") {
     const t = act.data.t;
     let amount = null;
