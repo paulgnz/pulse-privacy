@@ -37,7 +37,8 @@ if (step === "phase1") {
 } else if (step === "setup") {
   const out = resolve("contributions/00-setup.zkey");
   run(["groth16", "setup", file, join(FINAL, "pot16_final.ptau"), out]);
-  writeFileSync(out + ".json", JSON.stringify({ phase: 2, name: "coordinator setup (no secret)", timestamp: new Date().toISOString(), input: { file: "pot16_final.ptau", sha256: sha256(join(FINAL, "pot16_final.ptau")) }, output: { file: "00-setup.zkey", sha256: sha256(out) }, contributionHash: null }, null, 2) + "\n");
+  // index 0 marks a start file: verify.mjs uses it as the base of the chain, not as a contribution
+  writeFileSync(out + ".json", JSON.stringify({ phase: 2, index: 0, name: "coordinator setup (no secret)", timestamp: new Date().toISOString(), input: { file: "pot16_final.ptau", sha256: sha256(join(FINAL, "pot16_final.ptau")) }, output: { file: "00-setup.zkey", sha256: sha256(out) }, contributionHash: null }, null, 2) + "\n");
   console.log("phase 2 starts from", out);
 } else if (step === "phase2") {
   const id = await beacon();

@@ -10,7 +10,7 @@ import type { ChunkedCiphertext, CryptoBackend, EncryptionKeypair, Hex, Progress
 import { shortHex } from "./format";
 import type { IncomingEvent, PoolConfig } from "./privacy";
 import { XMD, XPR, type Token } from "./token";
-import { chunkedAdd, decryptChunk, join64 } from "./crypto/real";
+import { decryptChunk, join64 } from "./crypto/real";
 import { L } from "./crypto/babyjub";
 
 export type ActivityKind = "register" | "deposit" | "send" | "receive" | "fold" | "withdraw";
@@ -25,6 +25,8 @@ export interface ActivityItem {
   onChain: { public: boolean; ciphertext?: string; proof?: string; txid?: string; block?: number };
   /** shown before the indexer has it (optimistic, from the action we just sent) */
   confirming?: boolean;
+  /** the chain could not be asked to confirm this incoming row yet */
+  unverified?: boolean;
   /** which token this row belongs to (Activity shows all tokens together) */
   token?: Token;
 }
@@ -231,9 +233,12 @@ export class ConfidentialClient {
         const ctShort = shortHex(h.t.lo.c, 8);
         const pf = h.proof ? shortHex(h.proof, 6) : undefined;
         if (h.to === this.actor) {
+          let unverified = false;
           if (toConfirm > 0) {
             toConfirm -= 1;
-            if (!(await chain.confirmSend(h.block, h.txid, h.from, h.to))) continue;
+            const c = await chain.confirmSend(h.block, h.txid, h.from, h.to, h.tRaw);
+            if (c === "no") continue;
+            unverified = c === "unknown";
           }
           let amount: bigint | undefined;
           try {
@@ -245,7 +250,7 @@ export class ConfidentialClient {
             incoming.push({ amount, ts: h.ts, from: h.from });
             lastIncomingBlock = Math.max(lastIncomingBlock, h.block);
           }
-          activity.push({ id: `${h.txid}/${h.seq}`, kind: "receive", ts: h.ts, amount, counterparty: h.from, onChain: { public: false, ciphertext: ctShort, proof: pf, txid: h.txid, block: h.block } });
+          activity.push({ id: `${h.txid}/${h.seq}`, kind: "receive", ts: h.ts, amount, counterparty: h.from, unverified, onChain: { public: false, ciphertext: ctShort, proof: pf, txid: h.txid, block: h.block } });
         } else if (h.from === this.actor) {
           let amount: bigint | undefined;
           try {
@@ -412,8 +417,8 @@ export class ConfidentialClient {
       return t;
     }
 
-    // real: fold pending (same transaction) and prove against the folded balance
-    const { row, cfg, folded, oldBalance, actions } = await this.prepareSpend(kp, onProgress);
+    // real: prove against the available balance (folding first, separately, only if it is short)
+    const { row, cfg, folded, oldBalance, actions } = await this.prepareSpend(kp, amount, onProgress);
     const peerRow = await chain.getConfAccount(to, this.token);
     const peer = peerRow ?? (await chain.findKeyAnywhere(to).then((k) => (k ? { enc_pubkey: k.pubkey } : null)));
     if (!peer) throw new Error(`${to} has not set up Confidential XPR yet (no encryption key on chain for any token). They can only receive public ${this.token.code}.`);
@@ -437,25 +442,36 @@ export class ConfidentialClient {
   }
 
   /**
-   * Common prelude for send/withdraw in real mode: read the row and config, and if there is
-   * pending credit, prepend `applypending` and compute the folded ciphertext locally
-   * (homomorphic add; identical to what the contract will store).
+   * Common prelude for send/withdraw in real mode: read the row and config and decrypt the
+   * available balance. The proof is always built against `avail` alone. If that is short and
+   * there is pending credit, the fold goes out first as its own transaction and the row is
+   * re-read: bundling the fold with the proof would let anyone who pays you in between change
+   * the folded balance and invalidate the proof (review finding).
    */
-  private async prepareSpend(kp: EncryptionKeypair, onProgress?: ProgressFn) {
-    const [row, cfg] = await Promise.all([chain.getConfAccount(this.actor, this.token), chain.getConfConfig(this.token)]);
+  private async prepareSpend(kp: EncryptionKeypair, amount: bigint, onProgress?: ProgressFn) {
+    let [row, cfg] = await Promise.all([chain.getConfAccount(this.actor, this.token), chain.getConfConfig(this.token)]);
     if (!row) throw new Error(`register for ${this.token.code} first`);
     if (!cfg) throw new Error(`the contract is not configured for ${this.token.code}`);
     if (cfg.paused) throw new Error(`confidential ${this.token.code} is paused`);
-    const actions: unknown[] = [];
-    let folded = row.avail;
-    if (row.pending_count > 0) {
-      actions.push(chain.applyPendingAction(this.session, this.token));
-      folded = chunkedAdd(row.avail, row.pending);
-    }
     onProgress?.(0.02, "reading your balance");
     const s = BigInt(kp.secret) % L;
-    const oldBalance = join64(decryptChunk(folded.lo, s), decryptChunk(folded.hi, s));
-    return { row, cfg, folded, oldBalance, actions };
+    const balanceOf = (r: typeof row) => join64(decryptChunk(r!.avail.lo, s), decryptChunk(r!.avail.hi, s));
+    let oldBalance = balanceOf(row);
+    if (oldBalance < amount && row.pending_count > 0) {
+      onProgress?.(0.03, "waiting for WebAuth signature (folding your pending box first)");
+      await chain.broadcast(this.session, [chain.applyPendingAction(this.session, this.token)]);
+      onProgress?.(0.04, "folding");
+      const before = row.avail.lo.c;
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 700));
+        const fresh = await chain.getConfAccount(this.actor, this.token).catch(() => null);
+        if (fresh && fresh.pending_count === 0 && fresh.avail.lo.c !== before) { row = fresh; break; }
+      }
+      if (row.pending_count !== 0) throw new Error("the fold has not confirmed yet; try again in a moment");
+      oldBalance = balanceOf(row);
+    }
+    const actions: unknown[] = [];
+    return { row, cfg, folded: row.avail, oldBalance, actions };
   }
 
   async withdraw(amount: bigint, onProgress?: ProgressFn): Promise<string> {
@@ -484,7 +500,7 @@ export class ConfidentialClient {
       savePool(pool, this.token);
       return t;
     }
-    const { row, cfg, folded, oldBalance, actions } = await this.prepareSpend(kp, onProgress);
+    const { row, cfg, folded, oldBalance, actions } = await this.prepareSpend(kp, amount, onProgress);
     if (cfg.withdrawGranularity > 0n && amount % cfg.withdrawGranularity !== 0n) {
       throw new Error(`the contract only accepts withdrawals in multiples of ${cfg.withdrawGranularity / this.token.units} ${this.token.code}`);
     }

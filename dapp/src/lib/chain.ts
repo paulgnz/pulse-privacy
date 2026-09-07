@@ -294,6 +294,8 @@ export interface PoolAction {
   amount?: bigint;
   /** send */
   t?: TransferCiphertext;
+  /** the raw `t` hex as the indexer gave it, for confirmation against the block */
+  tRaw?: string;
   bNew?: ChunkedCiphertext;
   proof?: Hex;
 }
@@ -329,18 +331,21 @@ export async function sendDataFromChain(blockNum: number, trxId: string): Promis
 
 const confirmed = new Map<string, boolean>();
 /**
- * Is this incoming `send` really in that block? Indexer data is trusted for display only; a
- * spoofed indexer could otherwise show a payment that never happened. Checked once per
- * transaction against the chain's own block, with a short timeout that keeps the row on RPC trouble.
+ * Is this incoming `send`, with exactly this ciphertext, really in that block? Indexer data
+ * is trusted for display only; a spoofed indexer could otherwise show a payment that never
+ * happened, or a real one with a different amount. Checked once per transaction against the
+ * chain's own block. "unknown" means the chain could not be asked in time; the caller labels
+ * the row and asks again next refresh.
  */
-export async function confirmSend(blockNum: number, trxId: string, from: string, to: string): Promise<boolean> {
+export async function confirmSend(blockNum: number, trxId: string, from: string, to: string, tRaw: string | undefined): Promise<"yes" | "no" | "unknown"> {
   const hit = confirmed.get(trxId);
-  if (hit !== undefined) return hit;
+  if (hit !== undefined) return hit ? "yes" : "no";
   const data = await Promise.race([sendDataFromChain(blockNum, trxId), new Promise<null | undefined>((r) => setTimeout(() => r(undefined), 6000))]);
-  if (data === undefined) return true; // no answer in time: keep the row, try again next refresh
-  const ok = !!data && String(data.from) === from && String(data.to) === to;
+  if (data === undefined) return "unknown";
+  const chainT = String(data?.t ?? "").replace(/^0x/i, "").toLowerCase();
+  const ok = !!data && String(data.from) === from && String(data.to) === to && !!tRaw && chainT === tRaw;
   confirmed.set(trxId, ok);
-  return ok;
+  return ok ? "yes" : "no";
 }
 
 export async function poolHistory(limit = 200, token: Token = XPR): Promise<PoolAction[]> {
@@ -392,7 +397,7 @@ export async function poolHistory(limit = 200, token: Token = XPR): Promise<Pool
           if (t.replace(/^0x/i, "").length !== 1024 && String(x.ps ?? "").replace(/^0x/i, "").length === 1024) {
             t = String(x.ps); bNew = String(x.pr); proof = String(x.pa);
           }
-          out.push({ ...base, kind: "send", from: String(x.from), to: String(x.to), t: parseTransferSet(t), bNew: parsePairSet(bNew), proof: hx(proof) });
+          out.push({ ...base, kind: "send", from: String(x.from), to: String(x.to), t: parseTransferSet(t), tRaw: t.replace(/^0x/i, "").toLowerCase(), bNew: parsePairSet(bNew), proof: hx(proof) });
         } catch (e) {
           console.warn("history: skipping unreadable send", a.trx_id, (e as Error).message);
         }

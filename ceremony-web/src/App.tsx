@@ -166,7 +166,7 @@ export function App() {
         handleUploadUrl: "/api/upload-token",
         multipart: true,
         contentType: "application/octet-stream",
-        clientPayload: JSON.stringify({ actor }),
+        clientPayload: JSON.stringify({ actor, token: lockToken.current }),
       });
       setStep("recording");
       const cr = await fetch("/api/contribute", {

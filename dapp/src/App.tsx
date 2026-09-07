@@ -132,10 +132,14 @@ export default function App() {
   const [others, setOthers] = useState<Record<string, { st: ConfState; pub: bigint | null }>>({});
   const otherActivity = useMemo(() => Object.values(others).flatMap((o) => o.st.activity), [others]);
   const [refreshing, setRefreshing] = useState(false);
+  // bumped on sign-out: a refresh that started for the previous account must not write its results
+  const sessionSeq = useRef(0);
   // Two phases: balances first (fast, what the statement needs), then the ledger. A slow or
   // down indexer must never hold the statement hostage.
   const refresh = useCallback(async (opts: { history?: boolean } = { history: true }) => {
     if (!client) return;
+    const seq = sessionSeq.current;
+    const live = () => seq === sessionSeq.current;
     setRefreshing(true);
     try {
       const otherTokens = tokens.filter((t) => t.code !== client.token.code);
@@ -146,12 +150,13 @@ export default function App() {
             const [os, op] = await Promise.all([c.state({ history }), chain.getPublicBalance(client.actor, t).catch(() => null)]);
             return [t.code, { st: os, pub: op }] as const;
           })
-        ).then((rows) => setOthers((prev) => {
+        ).then((rows) => live() && setOthers((prev) => {
           const next = { ...prev };
           for (const [code, v] of rows) next[code] = history || !prev[code]?.st.historyLoaded ? v : { st: { ...v.st, activity: prev[code].st.activity, incoming: prev[code].st.incoming, historyLoaded: true }, pub: v.pub };
           return next;
         })).catch(() => { /* keep what we have */ });
       const [quick, p, ms] = await Promise.all([client.state({ history: false }), chain.getPublicBalance(client.actor, client.token).catch(() => null), client.mockAuditorSecret(), loadOthers(false)]);
+      if (!live()) return;
       setSt((prev) => (prev?.historyLoaded && prev.token.code === quick.token.code ? { ...quick, activity: prev.activity, incoming: prev.incoming, edgesSinceLastIncoming: prev.edgesSinceLastIncoming, historyLoaded: true } : quick));
       setPub(p);
       setMockSecret(ms);
@@ -167,6 +172,7 @@ export default function App() {
       }
       if (opts.history !== false) {
         const full = await client.state({ history: true });
+        if (!live()) return;
         setSt(full);
         // The statement and Activity show every token together: the others load in the background.
         await loadOthers(true);
@@ -256,6 +262,13 @@ export default function App() {
 
   const doLogout = async () => {
     if (!demo) await chain.logout(session);
+    sessionSeq.current += 1;
+    for (const t of pollTimers.current) clearTimeout(t);
+    pollTimers.current = [];
+    prevPending.current = {};
+    setOptimistic([]);
+    setReceived(null);
+    setPub(null);
     setSession(null);
     setSt(null);
     setKeypair(null);

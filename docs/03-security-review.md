@@ -60,6 +60,24 @@ broadcast (expiration beyond the chain's limit, no TaPoS); the ceremony's attest
 replayed across index, phase or file; entropy never leaves the contributor's browser; analytics
 carry no account, amount or key.
 
+## Second pass: independent review (Codex, same day)
+
+An independent reviewer worked the briefs in [04-review-briefs.md](04-review-briefs.md) against
+commit `cf13819`; its report is [05-independent-review-handoff.md](05-independent-review-handoff.md).
+It found no new way to steal or inflate funds, confirmed the contract suite, and reported eight
+operational findings. Each was reproduced against the code and fixed the same day.
+
+| # | area | finding | fix |
+|---|---|---|---|
+| 1 | ceremony, high | Anyone naming the lock holder could obtain an upload token and delete the upload in progress. | The upload token requires the lock token that only the holder's browser has. |
+| 2 | ceremony, high | `verify.mjs` printed "ceremony verified" on an empty directory: missing final files or beacon metadata merely skipped checks. | Strict by default: both phases, a minimum number of signed contributions, final files, beacon metadata and the vk are required, or it fails. `--partial` checks what exists and never claims completion. |
+| 3 | ceremony, high | Signatures were compared to a signer key in the same editable JSON; the actor was not bound to the signed transaction. | The expected transaction is rebuilt from actor, phase, index and file hash, must match the recorded one, and the recovered key must be one the account holds on chain, per at least two agreeing RPCs. |
+| 4 | dapp, medium | The fold was bundled with the proof, so anyone paying the sender between proving and execution invalidated the proof. | The proof is built against the available balance only; when that is short, the fold goes out first as its own transaction and the row is re-read. |
+| 5 | dapp, medium | Chain confirmation of incoming rows checked the parties but not the ciphertext, so an indexer could show a real payment with a forged amount; timeouts silently kept rows. | The ciphertext must match the block byte for byte; rows the chain could not be asked about are labelled as unchecked. |
+| 6 | dapp, medium | Sign-out left notifications, optimistic rows and scheduled refreshes behind for the next account in the same tab. | All account state is cleared, timers cancelled, and in-flight refreshes from the previous session cannot write results. |
+| 7 | ceremony, low | Moving to phase 2 recorded the last contribution instead of the prepared phase-1 result. | The phase-2 transition names the prepared file explicitly and records its hash. |
+| 8 | ceremony, low | The setup record was counted as a contribution and failed its own chain check. | Start files carry index 0 and form the base of the chain. |
+
 ## Still to do before raising the caps
 
 External audit of the contract, the circuit and the client library; the circuit change above;

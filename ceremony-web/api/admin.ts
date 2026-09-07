@@ -26,7 +26,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const bytes = new Uint8Array(await (await fetch(meta.url, { cache: "no-store" })).arrayBuffer());
       const sha256 = createHash("sha256").update(bytes).digest("hex");
       const phase = Number(b.phase) === 2 ? 2 : 1;
-      const phase1Final = phase === 2 && s.phase === 1 ? s.head : s.phase1Final;
+      // phase 2 verifies against the prepared phase-1 result (beacon applied, prepared for phase 2),
+      // which is a different file from the last contribution: it must be named explicitly
+      let phase1Final = s.phase1Final;
+      if (phase === 2) {
+        if (!b.ptauPathname) return res.status(400).json({ error: "phase 2 needs ptauPathname (the prepared pot16_final.ptau in Blob)" });
+        const pm = await blobHead(String(b.ptauPathname));
+        const pb = new Uint8Array(await (await fetch(pm.url, { cache: "no-store" })).arrayBuffer());
+        phase1Final = { file: String(b.ptauPathname), sha256: createHash("sha256").update(pb).digest("hex"), index: -1, name: "phase-1 final (beacon applied, prepared)", url: pm.url };
+      }
       const next = await writeState({ ...s, phase, finished: false, lock: null, phase1Final, head: { file: pathname, sha256, index: 0, name: String(b.name ?? "coordinator"), url: meta.url } }, s.version);
       return res.status(200).json(next);
     }

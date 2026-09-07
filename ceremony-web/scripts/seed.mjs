@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Coordinator: seed phase 1 (or set a new head). Reads BLOB_READ_WRITE_TOKEN from .env.local.
 //   node scripts/seed.mjs start [path/to/00-start.ptau]   # creates one with snarkjs if missing
-//   node scripts/seed.mjs head <localfile> <pathname> <phase> [name]   # e.g. phase-2 setup zkey
+//   node scripts/seed.mjs head <localfile> <pathname> 1 [name]
+//   node scripts/seed.mjs head <setup.zkey> <pathname> 2 <name> <pot16_final.ptau> <ptauPathname>   # phase 2: the prepared phase-1 result too
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, mkdtempSync } from "node:fs";
@@ -14,17 +15,22 @@ const { put, list } = await import("@vercel/blob");
 
 const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 async function writeState(next) {
-  const { blobs } = await list({ prefix: "state/", limit: 1000 });
+  let cursor, latest = null;
+  do {
+    const page = await list({ prefix: "state/", limit: 1000, cursor });
+    for (const b of page.blobs) if (!latest || b.pathname > latest.pathname) latest = b;
+    cursor = page.hasMore ? page.cursor : undefined;
+  } while (cursor);
   let prev = { version: 0, contributions: [], phase: 1, finished: false, head: null, lock: null };
-  if (blobs.length) { const latest = blobs.map((b) => b.pathname).sort().at(-1); prev = await (await fetch(blobs.find((b) => b.pathname === latest).url, { cache: "no-store" })).json(); }
+  if (latest) prev = await (await fetch(latest.url, { cache: "no-store" })).json();
   const version = prev.version + 1;
   const state = { ...prev, ...next, version, updatedAt: new Date().toISOString() };
-  const name = `state/${String(version).padStart(6, "0")}-${state.updatedAt.replace(/[:.]/g, "-")}.json`;
-  await put(name, JSON.stringify(state, null, 2), { access: "public", addRandomSuffix: false, contentType: "application/json" });
+  const name = `state/${String(version).padStart(6, "0")}.json`;
+  await put(name, JSON.stringify(state, null, 2), { access: "public", addRandomSuffix: false, allowOverwrite: false, contentType: "application/json" });
   return state;
 }
 
-const [cmd, a, b, c, d] = process.argv.slice(2);
+const [cmd, a, b, c, d, e, f] = process.argv.slice(2);
 if (cmd === "start") {
   let file = a;
   if (!file || !existsSync(file)) {
@@ -42,8 +48,15 @@ if (cmd === "start") {
   const bytes = readFileSync(a);
   const r = await put(b, bytes, { access: "public", addRandomSuffix: false, contentType: "application/octet-stream" });
   const phase = Number(c) === 2 ? 2 : 1;
-  const s = await writeState({ phase, finished: false, lock: null, head: { file: b, sha256: sha256(bytes), index: 0, name: d ?? "coordinator", url: r.url } });
-  console.log("head set:", s.head, "phase", phase);
+  const next = { phase, finished: false, lock: null, head: { file: b, sha256: sha256(bytes), index: 0, name: d ?? "coordinator", url: r.url } };
+  if (phase === 2) {
+    if (!e || !f) { console.error("phase 2 needs the prepared pot16_final.ptau and its pathname"); process.exit(1); }
+    const pb = readFileSync(e);
+    const pr = await put(f, pb, { access: "public", addRandomSuffix: false, contentType: "application/octet-stream" });
+    next.phase1Final = { file: f, sha256: sha256(pb), index: -1, name: "phase-1 final (beacon applied, prepared)", url: pr.url };
+  }
+  const s = await writeState(next);
+  console.log("head set:", s.head, "phase", phase, s.phase1Final ? `phase1Final ${s.phase1Final.file}` : "");
 } else {
   console.log("usage: seed.mjs start [file] | head <localfile> <pathname> <phase> [name]");
 }

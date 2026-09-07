@@ -65,6 +65,7 @@ export const Activity = ({ st, isMock }: { st: ConfState; isMock: boolean }) => 
                         {a.onChain.public ? "Public" : "Box"}
                         {a.onChain.proof ? `, proof ${a.onChain.proof}` : ""}
                         {a.confirming ? <span className="muted">confirming</span> : null}
+                        {a.unverified ? <span className="muted">, not yet checked against the chain</span> : null}
                         {a.onChain.txid ? (
                           <>
                             {", "}
