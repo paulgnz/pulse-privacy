@@ -12,6 +12,8 @@ export const Withdraw = ({
   tokens,
   onSelectToken,
   onDone,
+  allTokens,
+  onWithdrawAll,
 }: {
   st: ConfState;
   onWithdraw: (amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;

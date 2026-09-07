@@ -101,14 +101,14 @@ export const Settings = ({
               </div>
             ) : null}
             {onStoreBackup ? (
-              <div className="row" style={{ marginBottom: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
-                <Field label={backupOnChain ? "New passphrase" : "Passphrase"} hint={`At least ${MIN_PASSPHRASE} characters.`}>
+              <Field label={backupOnChain ? "New passphrase" : "Passphrase"} hint={`At least ${MIN_PASSPHRASE} characters.`}>
+                <div className="row" style={{ gap: 12, alignItems: "center" }}>
                   <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="new-password" />
-                </Field>
-                <button className="btn secondary" onClick={() => run(() => onStoreBackup(pass).then(() => setPass("")), "Passphrase backup stored on chain.")} disabled={busy || pass.length < MIN_PASSPHRASE}>
-                  {busy ? "Storing" : backupOnChain ? "Change passphrase" : "Set passphrase"}
-                </button>
-              </div>
+                  <button className="btn secondary" onClick={() => run(() => onStoreBackup(pass).then(() => setPass("")), "Passphrase backup stored on chain.")} disabled={busy || pass.length < MIN_PASSPHRASE}>
+                    {busy ? "Storing" : backupOnChain ? "Change" : "Set"}
+                  </button>
+                </div>
+              </Field>
             ) : null}
             {recoveryOnChain ? (
               <Note level="ok">
