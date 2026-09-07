@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL } from "./config";
+import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK, NETWORK_LABEL, OTHER_NETWORK } from "./config";
 import { fmtUnits } from "./lib/format";
 import * as chain from "./lib/chain";
 import type { Session } from "./lib/chain";
@@ -227,6 +227,9 @@ export default function App() {
           <>
             {inApp && route === "about" ? link("/", "Statement", false) : null}
             {link("/about", "How it works", route === "about")}
+            <a className="textbtn quiet" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
+              Switch to {OTHER_NETWORK.label.toLowerCase()}
+            </a>
             <span className="who">
               <span className={`dot ${demo || backend.isMock ? "demo" : ""}`} aria-hidden="true" />
               <b>{session.auth.actor}</b>
@@ -238,6 +241,9 @@ export default function App() {
         ) : (
           <>
             {link("/about", "How it works", route === "about")}
+            <a className="textbtn quiet" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
+              Switch to {OTHER_NETWORK.label.toLowerCase()}
+            </a>
             <button className="textbtn" onClick={doLogin} disabled={loginBusy}>
               Connect wallet
             </button>

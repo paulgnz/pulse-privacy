@@ -40,6 +40,10 @@ export const TOKEN_CONTRACT = "eosio.token";
 export const SYMBOL = "XPR";
 export const PRECISION = 4;
 export const EXPLORER = NET.explorer;
+/** the other network's site, for the switch in the top bar */
+export const OTHER_NETWORK = NETWORK === "mainnet"
+  ? { label: "Testnet", url: "https://testnet.private.protonnz.com/" }
+  : { label: "Mainnet", url: "https://private.protonnz.com/" };
 /** "XPR Network testnet" | "XPR Network" for copy */
 export const NETWORK_LABEL = NETWORK === "mainnet" ? "XPR Network" : "XPR Network testnet";
 export const APP_NAME = "Confidential XPR";

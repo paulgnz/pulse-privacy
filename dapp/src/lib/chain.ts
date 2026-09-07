@@ -259,6 +259,25 @@ interface HyperionAction {
 }
 
 /** Every action that touched the pool, newest first (deduplicated by tx+seq). */
+const sendCache = new Map<string, Record<string, unknown> | null>();
+/** decoded `send` data straight from the block (current ABI), or null if not found */
+async function sendDataFromChain(blockNum: number, trxId: string): Promise<Record<string, unknown> | null> {
+  if (sendCache.has(trxId)) return sendCache.get(trxId) ?? null;
+  try {
+    const b = await rpc<{ transactions: { trx: { id?: string; transaction?: { actions: { account: string; name: string; data: Record<string, unknown> }[] } } | string }[] }>("get_block", { block_num_or_id: blockNum });
+    let found: Record<string, unknown> | null = null;
+    for (const t of b.transactions) {
+      if (typeof t.trx === "string" || t.trx.id !== trxId || !t.trx.transaction) continue;
+      const act = t.trx.transaction.actions.find((x) => x.account === CONTRACT && x.name === "send");
+      if (act && typeof act.data === "object") found = act.data;
+    }
+    sendCache.set(trxId, found);
+    return found;
+  } catch {
+    return null;
+  }
+}
+
 export async function poolHistory(limit = 200): Promise<PoolAction[]> {
   // Hyperion failover: first endpoint that answers wins
   let res: Response | null = null;
@@ -275,6 +294,14 @@ export async function poolHistory(limit = 200): Promise<PoolAction[]> {
   if (!res) throw lastErr instanceof Error ? lastErr : new Error("no Hyperion endpoint answered");
   if (!res.ok) throw new Error(`history: HTTP ${res.status}`);
   const d = (await res.json()) as { actions: HyperionAction[] };
+  // Indexers decode with whatever ABI they cached; the chain decodes with the current one.
+  // For `send`, take the action data from the block itself (cached per transaction).
+  await Promise.all(
+    d.actions.filter((a) => a.act.account === CONTRACT && a.act.name === "send").map(async (a) => {
+      const fresh = await sendDataFromChain(a.block_num, a.trx_id);
+      if (fresh) a.act.data = fresh;
+    })
+  );
   const seen = new Set<string>();
   const out: PoolAction[] = [];
   for (const a of d.actions) {
