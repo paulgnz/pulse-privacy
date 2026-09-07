@@ -95,7 +95,7 @@ A third pass looked only at what becoming public would expose. No credential in 
 any commit. Three follow-ups, all applied:
 
 - **Passphrase backups are public ciphertext**, so a weak passphrase could be guessed offline.
-  The wizard now generates a six-word phrase (about 77 bits) by default; a custom passphrase
+  The wizard now generates a seven-word phrase (77 bits, from the 2,048-word BIP39 list) by default; a custom passphrase
   needs 14 characters and several words, and common patterns are refused. PBKDF2 stays at
   600,000 rounds.
 - **Dependency advisories** in the projects' lockfiles: the non-breaking fixes are applied.

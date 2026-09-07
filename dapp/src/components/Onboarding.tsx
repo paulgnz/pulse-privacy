@@ -394,7 +394,7 @@ const Key = (p: OnboardingProps) => {
     return (
       <section className="step">
         <h2>Write down your recovery phrase</h2>
-        <p className="lede">Your wallet signs with a passkey, so this app keeps a saved key for you. These six words restore that key on any device. Write them down and keep them where you keep important things; without them, or the key file below, a lost device means a locked balance until the committee helps.</p>
+        <p className="lede">Your wallet signs with a passkey, so this app keeps a saved key for you. These seven words restore that key on any device. Copy them and keep them where you keep important things; without them, or the key file below, a lost device means a locked balance until the committee helps.</p>
         {customPass ? (
           <>
             <Field label="Your own passphrase" hint={`At least ${MIN_PASSPHRASE} characters, several words. The encrypted copy is public, so a weak passphrase can be guessed offline.`} error={passProblem ?? undefined}>
@@ -406,7 +406,7 @@ const Key = (p: OnboardingProps) => {
             <p className="small"><button className="textbtn quiet" onClick={() => { setCustomPass(false); setPass1(generatePassphrase()); setPass2(""); }}>Use a generated phrase instead</button></p>
           </>
         ) : (
-          <Field label="Recovery phrase, for restoring this key on another device" hint="Six random words. Write them down with your backup; they restore the key on any device. Nobody can reset them for you.">
+          <Field label="Recovery phrase, for restoring this key on another device" hint="Seven random words. Copy or write them down; they restore the key on any device. The phrase itself is never stored anywhere, so nobody can reset it for you.">
             <div className="secret" aria-label="Your recovery phrase"><code>{pass1}</code></div>
             <div className="row" style={{ margin: "12px 0 6px", gap: 14 }}>
               <button className="btn secondary" onClick={copyPhrase}>{phraseCopied ? "Copied" : "Copy recovery phrase"}</button>
