@@ -74,11 +74,17 @@ export async function verifyFile(phase: 1 | 2, file: string, init?: string, ptau
   return (await snarkjs.zKey.verifyFromInit(init, ptau, file, quiet)) === true;
 }
 
-/** download a blob to a temp file (snarkjs reads from disk) */
+/** download a blob to a temp file (snarkjs reads from disk); a fresh upload can take a few seconds to appear at its public address */
 export async function fetchToTmp(url: string, name: string): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "ceremony-"));
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`download ${name}: HTTP ${res.status}`);
+  let res: Response | null = null;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    res = await fetch(url, { cache: "no-store" });
+    if (res.ok) break;
+    if (res.status !== 404 && res.status !== 403) break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  if (!res || !res.ok) throw new Error(`download ${name}: HTTP ${res?.status ?? "no response"}`);
   const p = join(dir, name);
   writeFileSync(p, new Uint8Array(await res.arrayBuffer()));
   return p;
