@@ -139,6 +139,16 @@ class XprConf extends Contract {
 
   // ---------------------------------------------------------------- accounts
 
+  /**
+   * Never broadcast. The wallet signs a fixed transaction containing this action; the dapp
+   * derives the encryption secret from that signature (design doc §2.7 "wallet is the key").
+   * It exists only so wallets can display and serialise the request. Harmless if broadcast.
+   */
+  @action("unlock")
+  unlock(owner: Name): void {
+    requireAuth(owner);
+  }
+
   /** publish an encryption pubkey (P = s^-1·H). On-curve check only in v0 (see README). */
   @action("register")
   register(owner: Name, sym: Symbol, enc_pubkey: u8[]): void {

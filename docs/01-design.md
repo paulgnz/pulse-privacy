@@ -561,14 +561,20 @@ wall-clock, so a transfer verifying a Groth16 proof costs ≈ 2–4 ms CPU: heav
 for the per-tx limit and a testnet account.
 
 **Without WebAuth changes.** WebAuth signs whatever actions a dapp submits through the web SDK, so
-the testnet version is a dapp: it holds the encryption secret, runs the prover in the browser
-(WASM), builds ciphertexts + proof, and asks WebAuth to sign an ordinary `transfer` on the contract.
-Deposits are plain token transfers. The trade-off is key custody: WebAuth does not expose its key
-and the SDK has no arbitrary-message signing, so the dapp generates the encryption secret and the
-user backs it up (export step in the demo). Deriving it from an identity-proof signature is
-possible in principle (K1, deterministic) but fragile; not used. Production keeps the key in
-WebAuth, derived from the seed with account recovery (§2.7). The testnet build proves everything
-except key custody.
+the testnet version is a dapp: it runs the prover in the browser (WASM), builds ciphertexts +
+proof, and asks WebAuth to sign an ordinary `send` on the contract. Deposits are plain token
+transfers.
+
+**Key custody: the wallet is the key (decided 2026-09-07).** The dapp derives the encryption
+secret from a WebAuth signature over a *fixed, never-broadcast* transaction (one `unlock(owner)`
+action on the contract, constant expiration and TAPOS fields, so the signing digest is constant).
+Standard XPR keys are K1 with RFC 6979 deterministic nonces, so the same account always yields
+the same secret on any device: nothing to back up, and recovering the wallet recovers the
+confidential balance. Derivation: `secret = SHA-256-expand(domain ‖ chain_id ‖ actor ‖ signature)
+mod l`. First-time setup signs twice and compares; if the signatures differ (hardware or WebAuthn
+keys randomise nonces) the dapp falls back to a generated key with a mandatory backup. The
+secret lives in memory only. Production can move the same derivation inside WebAuth (§2.7) so
+no signature prompt is needed, with identical keys.
 
 **Milestones (in order; each is a checkpoint that can fail cheaply):**
 
