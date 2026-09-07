@@ -128,5 +128,24 @@ await expectToThrow(token.actions.transfer(["alice", "xprconf", "500.0000 XPR", 
 const lim = conf.tables.limits(nameToBigInt("xprconf")).getTableRow(symScope());
 if (String(lim.pool) !== String(units(500))) throw new Error(`pool counter ${lim.pool}`);
 lap("soft-launch limits: per-deposit cap and pool cap enforced");
+
+// --- register once, receive any token: XMD configured, bob only registered for XPR ---
+await token.actions.create(["eosio.token", "1000000.000000 XMD"]).send("eosio.token@active");
+await token.actions.issue(["eosio.token", "1000.000000 XMD", ""]).send("eosio.token@active");
+await token.actions.transfer(["eosio.token", "alice", "100.000000 XMD", "seed"]).send("eosio.token@active");
+await conf.actions.init(["6,XMD", "eosio.token", eg.ptHex(auditor.P), encodeVk(VK), "1000000", "0"]).send("xprconf@active");
+await token.actions.transfer(["alice", "xprconf", "10.000000 XMD", "conf:alice"]).send("alice@active"); // alice auto-registered for XMD
+await conf.actions.applypending(["alice", "6,XMD"]).send("alice@active");
+function xmdScope() { let raw = 6n; for (let i = 0; i < 3; i++) raw |= BigInt("XMD".charCodeAt(i)) << BigInt(8 * (i + 1)); return raw; }
+const ax = conf.tables.accounts(xmdScope()).getTableRow(nameToBigInt("alice"));
+if (!ax || eg.decrypt64(eg.ctFromHex(ax.avail), alice.s) !== 10_000_000n) throw new Error("alice XMD auto-row / balance wrong");
+const xbold = eg.ctFromHex(ax.avail);
+const xvold = [eg.bsgs32(eg.decryptPoint(xbold[0].C, xbold[0].D, alice.s)), eg.bsgs32(eg.decryptPoint(xbold[1].C, xbold[1].D, alice.s))];
+const xw = eg.buildTransferWitness({ sender: alice, receiverP: bob.P, auditorP: auditor.P, bold: xbold, voldChunks: xvold, v: 2_500_000n, nonce: BigInt(ax.nonce), senderName: nameToBigInt("alice"), receiverName: nameToBigInt("bob") });
+const xp = await snarkjs.groth16.fullProve(xw.input, WASM, ZKEY);
+await conf.actions.send(["alice", "6,XMD", "bob", eg.ptHex(alice.P), eg.ptHex(bob.P), eg.ptHex(auditor.P), eg.tHex(xw.T), eg.ctHex(xw.Bnew), encodeProof(xp.proof)]).send("alice@active");
+const bx = conf.tables.accounts(xmdScope()).getTableRow(nameToBigInt("bob"));
+if (!bx || eg.decrypt64(eg.ctFromHex(bx.pending), bob.s) !== 2_500_000n) throw new Error("bob did not receive XMD via auto-registration");
+lap("register once, receive any token: alice auto-registered for XMD by deposit, bob by receiving 2.5 XMD");
 console.log("T3 end-to-end passed");
 process.exit(0);

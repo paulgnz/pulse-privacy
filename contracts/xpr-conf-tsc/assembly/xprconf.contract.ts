@@ -116,6 +116,28 @@ class XprConf extends Contract {
   accountsOf(sym: u64): TableStore<Account> {
     return new TableStore<Account>(this.receiver, Name.fromU64(sym));
   }
+  /** The owner's encryption key from any configured token (register once, receive any token). */
+  keyAnywhere(owner: Name): u8[] {
+    let c = this.configs.first();
+    while (c != null) {
+      const row = this.accountsOf(c.sym).get(owner.N);
+      if (row != null) return row.enc_pubkey;
+      c = this.configs.next(c);
+    }
+    return [];
+  }
+
+  /** The account row for this token, created from the key registered for another token if needed. */
+  ensureAccount(accounts: TableStore<Account>, owner: Name, payer: Name): Account | null {
+    const row = accounts.get(owner.N);
+    if (row != null) return row;
+    const key = this.keyAnywhere(owner);
+    if (key.length == 0) return null;
+    const a = new Account(owner, key, zeroCt(), zeroCt(), 0, 0);
+    accounts.store(a, payer);
+    return a;
+  }
+
   configOf(sym: Symbol): Config {
     const c = this.configs.get(sym.raw());
     check(c != null, "token not configured");
@@ -237,8 +259,8 @@ class XprConf extends Contract {
     check(memo.startsWith("conf:"), "memo must be conf:<owner>");
     const owner = Name.fromString(memo.slice(5));
     const accounts = this.accountsOf(quantity.symbol.raw());
-    const acc = accounts.get(owner.N);
-    check(acc != null, "owner not registered");
+    const acc = this.ensureAccount(accounts, owner, this.receiver);
+    check(acc != null, "owner not registered for any token");
     check(quantity.amount > 0, "amount must be positive");
     const v = <u64>quantity.amount;
     if (c.deposit_granularity > 0) check(v % c.deposit_granularity == 0, "deposit must be a multiple of the granularity");
@@ -276,9 +298,9 @@ class XprConf extends Contract {
     check(proof.length == PROOF_LEN, "proof must be 256 bytes");
     const accounts = this.accountsOf(sym.raw());
     const sAcc = accounts.get(from.N);
-    const rAcc = accounts.get(to.N);
     check(sAcc != null, "sender not registered");
-    check(rAcc != null, "receiver not registered");
+    const rAcc = this.ensureAccount(accounts, to, from);
+    check(rAcc != null, "receiver has not registered an encryption key for any token");
     const s = sAcc!;
     const r = rAcc!;
     check(keyMatches(s.enc_pubkey, ps), "ps does not match the sender's registered key");
