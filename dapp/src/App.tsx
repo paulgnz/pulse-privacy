@@ -557,7 +557,7 @@ export default function App() {
           tokens={tokens} onSelectToken={chooseToken}
         />
       ) : tab === "activity" ? (
-        <Activity st={{ ...st, activity: [...optimistic, ...st.activity, ...otherActivity].sort((a, b) => b.ts - a.ts) }} isMock={backend.isMock} />
+        <Activity st={{ ...st, activity: [...optimistic, ...st.activity, ...otherActivity].sort((a, b) => b.ts - a.ts) }} isMock={backend.isMock} actor={actor} />
       ) : tab === "settings" ? (
         <Settings
           actor={actor}

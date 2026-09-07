@@ -23,7 +23,7 @@ const what = (a: ActivityItem): string => {
 const when = (ts: number) =>
   new Date(ts).toLocaleString("en-NZ", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
-export const Activity = ({ st, isMock }: { st: ConfState; isMock: boolean }) => {
+export const Activity = ({ st, isMock, actor }: { st: ConfState; isMock: boolean; actor: string }) => {
   // hidden by default, and the choice is shared with the statement and remembered in this browser
   const [revealed, setRevealedState] = useState<boolean>(() => {
     try {
@@ -40,7 +40,10 @@ export const Activity = ({ st, isMock }: { st: ConfState; isMock: boolean }) => 
       /* ignore */
     }
   };
-  const rows = st.activity;
+  const PAGE = 25;
+  const [shown, setShown] = useState(PAGE);
+  const rows = st.activity.slice(0, shown);
+  const total = st.activity.length;
   return (
     <section className="section">
       <h2>Activity</h2>
@@ -104,6 +107,17 @@ export const Activity = ({ st, isMock }: { st: ConfState; isMock: boolean }) => 
               })}
             </tbody>
           </table>
+          <div className="row" style={{ marginTop: 16, gap: 18, alignItems: "baseline" }}>
+            {shown < total ? (
+              <button className="textbtn" onClick={() => setShown((n) => n + PAGE)}>
+                Show {Math.min(PAGE, total - shown)} more ({total - shown} older)
+              </button>
+            ) : null}
+            <span className="small muted">
+              Showing {Math.min(shown, total)} of {total}. The list covers the newest 200 actions on the contract per token; older entries are on the{" "}
+              <a href={`${EXPLORER}/account/${actor}`} target="_blank" rel="noreferrer">explorer</a>.
+            </span>
+          </div>
         </>
       )}
     </section>
