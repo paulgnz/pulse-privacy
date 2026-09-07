@@ -29,7 +29,7 @@ for (const width of [1280, 390]) {
 
   // reset the simulated pool so the run is reproducible
   await go("demo=alice&tab=settings", "text=Simulation");
-  await page.evaluate(() => { localStorage.removeItem("pulse-privacy/mockpool/v2"); sessionStorage.clear(); });
+  await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("pulse-privacy/mockpool/") || k === "pulse-privacy/token") localStorage.removeItem(k); sessionStorage.clear(); });
 
   // wizard steps
   await go("demo=alice&wizard=connect", "text=Connect wallet"); await shot("01-connect");
@@ -50,6 +50,21 @@ for (const width of [1280, 390]) {
   await page.click("text=Reveal");
   await page.waitForSelector("text=Hide");
   await shot("11-statement-revealed");
+
+  // the same statement with XMD selected (6 decimals); the choice is remembered, so switch back after
+  await page.click(".nav .tokens button:has-text('XMD')");
+  await page.waitForSelector("text=Public XMD");
+  await page.waitForSelector("text=Hide"); // reveal is remembered for the session
+  await shot("11b-statement-xmd");
+  await page.click("button:has-text('Send')");
+  await page.waitForSelector("input[placeholder='0.000000']");
+  await page.fill("input[placeholder='bob']", "bob");
+  await page.fill("input[placeholder='0.000000']", "12.5");
+  await shot("11d-send-xmd");
+  await page.click("button:has-text('Cancel')");
+  await page.click(".nav .tokens button:has-text('XPR')");
+  await page.waitForSelector("text=Public XPR");
+  await page.waitForSelector("text=Hide");
 
   // forms
   await page.click("button:has-text('Send')");

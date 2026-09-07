@@ -29,6 +29,7 @@ export const Activity = ({ st, isMock }: { st: ConfState; isMock: boolean }) => 
   return (
     <section className="section">
       <h2>Activity</h2>
+      <p className="muted small">Confidential {st.token.code}</p>
       <p className="lede">Each line is what the chain recorded. Amounts you can read are shown because this device holds your key.</p>
       {rows.length === 0 ? (
         <div className="empty">{st.historyLoaded === false ? "Loading activity" : "No activity yet. Deposit to start."}</div>
@@ -74,10 +75,10 @@ export const Activity = ({ st, isMock }: { st: ConfState; isMock: boolean }) => 
                     </td>
                     <td className="amount">
                       {a.kind === "fold" || a.kind === "register" ? (
-                        <span className="muted">{a.kind === "fold" && hasAmount && revealed ? <Amount value={a.amount} hidden revealed unit={false} /> : ""}</span>
+                        <span className="muted">{a.kind === "fold" && hasAmount && revealed ? <Amount value={a.amount} hidden revealed unit={false} token={st.token} /> : ""}</span>
                       ) : (
                         <>
-                          <Amount value={a.amount} hidden={hidden} revealed={revealed && hasAmount} sign={sign} digits={hasAmount ? undefined : 9} />
+                          <Amount value={a.amount} hidden={hidden} revealed={revealed && hasAmount} sign={sign} digits={hasAmount ? undefined : 9} token={st.token} />
                           {hidden && hasAmount && revealed ? <span className="onlyyou">only you can read this</span> : null}
                         </>
                       )}

@@ -34,12 +34,7 @@ export const ENDPOINTS = NET.endpoints;
 export const HYPERIONS = NET.hyperions;
 /** first Hyperion (kept for callers that want one); reads use `HYPERIONS` with failover */
 export const HYPERION = NET.hyperions[0];
-/** "4,XPR" as the contract's symbol raw (precision low byte, code above): scope of `accounts` */
-export const SYM_RAW = "1380997124";
 export const CONTRACT = NET.contract;
-export const TOKEN_CONTRACT = "eosio.token";
-export const SYMBOL = "XPR";
-export const PRECISION = 4;
 export const EXPLORER = NET.explorer;
 /** the other network's site, for the switch in the top bar */
 export const OTHER_NETWORK = NETWORK === "mainnet"

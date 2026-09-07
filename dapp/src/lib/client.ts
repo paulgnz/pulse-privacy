@@ -7,8 +7,9 @@ import { CONTRACT } from "../config";
 import * as chain from "./chain";
 import type { Session } from "./chain";
 import type { ChunkedCiphertext, CryptoBackend, EncryptionKeypair, Hex, ProgressFn } from "./crypto/types";
-import { UNITS, shortHex } from "./format";
+import { shortHex } from "./format";
 import type { IncomingEvent, PoolConfig } from "./privacy";
+import { XMD, XPR, type Token } from "./token";
 import { chunkedAdd, decryptChunk, join64 } from "./crypto/real";
 import { L } from "./crypto/babyjub";
 
@@ -27,6 +28,8 @@ export interface ActivityItem {
 }
 
 export interface ConfState {
+  /** the token this state is for */
+  token: Token;
   registered: boolean;
   pubkey?: Hex;
   balance: bigint; // decrypted available
@@ -76,22 +79,27 @@ interface MockPool {
   block: number;
 }
 
-const POOL_KEY = "pulse-privacy/mockpool/v2";
+const POOL_KEY_BASE = "pulse-privacy/mockpool/v2";
+/** one simulated pool per token; XPR keeps the original key */
+const poolKey = (token: Token) => (token.code === "XPR" ? POOL_KEY_BASE : `${POOL_KEY_BASE}/${token.code}`);
 const PEERS = ["alice", "bob", "carol", "dave", "erin"];
+/** the simulation lists XPR and XMD so the switch can be exercised without a chain */
+export const MOCK_TOKENS: Token[] = [XPR, XMD];
 
-async function loadPool(backend: CryptoBackend): Promise<MockPool> {
+async function loadPool(backend: CryptoBackend, token: Token): Promise<MockPool> {
   try {
-    const raw = localStorage.getItem(POOL_KEY);
+    const raw = localStorage.getItem(poolKey(token));
     if (raw) return JSON.parse(raw) as MockPool;
   } catch {
     /* fallthrough */
   }
+  const U = token.units;
   const auditorSecret = ("0x" + "a1".repeat(32)) as Hex;
   const pool: MockPool = {
     accounts: {},
     edges: 3,
-    escrow: (25_000n * UNITS).toString(),
-    config: { withdrawGranularity: UNITS.toString(), depositGranularity: UNITS.toString() },
+    escrow: (25_000n * U).toString(),
+    config: { withdrawGranularity: U.toString(), depositGranularity: U.toString() },
     auditorSecret,
     auditorPubkey: await backend.pubkeyOf(auditorSecret),
     ledger: [],
@@ -101,7 +109,7 @@ async function loadPool(backend: CryptoBackend): Promise<MockPool> {
     const s = ("0x" + p.charCodeAt(0).toString(16).padStart(2, "0").repeat(32)) as Hex;
     pool.accounts[p] = {
       pubkey: await backend.pubkeyOf(s),
-      balance: (5_000n * UNITS).toString(),
+      balance: (5_000n * U).toString(),
       pending: [],
       nonce: "0",
       activity: [],
@@ -109,12 +117,12 @@ async function loadPool(backend: CryptoBackend): Promise<MockPool> {
       lastIncomingEdge: 0,
     };
   }
-  savePool(pool);
+  savePool(pool, token);
   return pool;
 }
 
-function savePool(pool: MockPool) {
-  localStorage.setItem(POOL_KEY, JSON.stringify(pool));
+function savePool(pool: MockPool, token: Token) {
+  localStorage.setItem(poolKey(token), JSON.stringify(pool));
 }
 
 const id = () => Math.random().toString(36).slice(2, 10);
@@ -126,7 +134,9 @@ export class ConfidentialClient {
   constructor(
     public readonly backend: CryptoBackend,
     public readonly session: Session,
-    public keypair: EncryptionKeypair | null
+    public keypair: EncryptionKeypair | null,
+    /** the confidential token this client operates on */
+    public readonly token: Token = XPR
   ) {}
 
   get actor() {
@@ -145,20 +155,22 @@ export class ConfidentialClient {
   }
 
   private async mockState(): Promise<ConfState> {
-    const pool = await loadPool(this.backend);
+    const pool = await loadPool(this.backend, this.token);
     const cfg: PoolConfig = {
       withdrawGranularity: BigInt(pool.config.withdrawGranularity),
       depositGranularity: BigInt(pool.config.depositGranularity),
+      units: this.token.units,
     };
     const peers = Object.entries(pool.accounts)
       .filter(([n]) => n !== this.actor)
       .map(([name, a]) => ({ name, pubkey: a.pubkey }));
     const a = pool.accounts[this.actor];
     if (!a) {
-      return { registered: false, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], edgesSinceLastIncoming: pool.edges, config: cfg, peers };
+      return { token: this.token, registered: false, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], edgesSinceLastIncoming: pool.edges, config: cfg, peers };
     }
     const pending = a.pending.reduce((s, p) => s + BigInt(p.amount), 0n);
     return {
+      token: this.token,
       registered: true,
       pubkey: a.pubkey,
       balance: BigInt(a.balance),
@@ -175,13 +187,15 @@ export class ConfidentialClient {
   }
 
   private async realState(withHistory = true): Promise<ConfState> {
-    const [row, cfgRow, all] = await Promise.all([chain.getConfAccount(this.actor), chain.getConfConfig(), chain.listConfAccounts()]);
+    const t = this.token;
+    const [row, cfgRow, all] = await Promise.all([chain.getConfAccount(this.actor, t), chain.getConfConfig(t), chain.listConfAccounts(t)]);
     const cfg: PoolConfig = {
-      withdrawGranularity: cfgRow?.withdrawGranularity ?? UNITS,
+      withdrawGranularity: cfgRow?.withdrawGranularity ?? t.units,
       depositGranularity: cfgRow?.depositGranularity ?? 0n,
+      units: t.units,
     };
     const peers = all.filter((a) => a.owner !== this.actor).map((a) => ({ name: a.owner, pubkey: a.enc_pubkey }));
-    const empty: ConfState = { registered: !!row, pubkey: row?.enc_pubkey, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], edgesSinceLastIncoming: 0, config: cfg, peers };
+    const empty: ConfState = { token: t, registered: !!row, pubkey: row?.enc_pubkey, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], edgesSinceLastIncoming: 0, config: cfg, peers };
     if (!row || !this.keypair) return empty;
     const secret = this.keypair.secret;
     const balance = await this.backend.decryptAmount(row.avail, secret);
@@ -192,7 +206,7 @@ export class ConfidentialClient {
     let historyLoaded = false;
     if (withHistory) {
       try {
-        history = await chain.poolHistory(200);
+        history = await chain.poolHistory(200, t);
         historyLoaded = true;
       } catch {
         /* Hyperion down: balances still work, activity is empty */
@@ -238,6 +252,7 @@ export class ConfidentialClient {
     const edgesSinceLastIncoming = history.filter((h) => (h.kind === "deposit" || h.kind === "withdraw") && h.block > lastIncomingBlock && h.to !== this.actor).length;
 
     return {
+      token: t,
       registered: true,
       pubkey: row.enc_pubkey,
       balance,
@@ -264,7 +279,7 @@ export class ConfidentialClient {
   async register(): Promise<string> {
     const kp = this.need();
     if (this.isMock) {
-      const pool = await loadPool(this.backend);
+      const pool = await loadPool(this.backend, this.token);
       if (pool.accounts[this.actor]) throw new Error("already registered");
       pool.accounts[this.actor] = {
         pubkey: kp.pubkey,
@@ -276,21 +291,21 @@ export class ConfidentialClient {
         incoming: [],
         lastIncomingEdge: pool.edges,
       };
-      savePool(pool);
+      savePool(pool, this.token);
       return "mock";
     }
-    const existing = await chain.getConfAccount(this.actor);
+    const existing = await chain.getConfAccount(this.actor, this.token);
     if (existing) {
       if (existing.enc_pubkey.toLowerCase() !== kp.pubkey.toLowerCase()) throw new Error("this account is registered with a different encryption key. Import that key in Settings.");
-      throw new Error("already registered");
+      throw new Error(`already registered for ${this.token.code}`);
     }
-    return chain.broadcast(this.session, [chain.registerAction(this.session, kp.pubkey)]);
+    return chain.broadcast(this.session, [chain.registerAction(this.session, this.token, kp.pubkey)]);
   }
 
   async deposit(amount: bigint): Promise<string> {
     if (amount <= 0n) throw new Error("amount must be positive");
     if (this.isMock) {
-      const pool = await loadPool(this.backend);
+      const pool = await loadPool(this.backend, this.token);
       const a = pool.accounts[this.actor];
       if (!a) throw new Error("register first");
       const ct = await this.backend.encryptAmount(amount, a.pubkey);
@@ -299,15 +314,15 @@ export class ConfidentialClient {
       pool.edges += 1;
       const t = txid();
       a.activity.push({ id: id(), kind: "deposit", ts: Date.now(), amount: amount.toString(), onChain: { public: true, txid: t, block: ++pool.block } });
-      savePool(pool);
+      savePool(pool, this.token);
       return t;
     }
-    return chain.broadcast(this.session, [chain.depositAction(this.session, amount)]);
+    return chain.broadcast(this.session, [chain.depositAction(this.session, this.token, amount)]);
   }
 
   async applyPending(): Promise<string> {
     if (this.isMock) {
-      const pool = await loadPool(this.backend);
+      const pool = await loadPool(this.backend, this.token);
       const a = pool.accounts[this.actor];
       if (!a) throw new Error("register first");
       if (!a.pending.length) return "";
@@ -317,10 +332,10 @@ export class ConfidentialClient {
       a.pending = [];
       const t = txid();
       a.activity.push({ id: id(), kind: "fold", ts: Date.now(), amount: total.toString(), onChain: { public: false, ciphertext: shortHex(a.balanceCt.lo.c, 8), txid: t, block: ++pool.block } });
-      savePool(pool);
+      savePool(pool, this.token);
       return t;
     }
-    return chain.broadcast(this.session, [chain.applyPendingAction(this.session)]);
+    return chain.broadcast(this.session, [chain.applyPendingAction(this.session, this.token)]);
   }
 
   async send(to: string, amount: bigint, onProgress?: ProgressFn): Promise<string> {
@@ -330,13 +345,13 @@ export class ConfidentialClient {
 
     if (this.isMock) {
       // fold pending first (same tx in the real flow)
-      const pre = await loadPool(this.backend);
+      const pre = await loadPool(this.backend, this.token);
       if (pre.accounts[this.actor]?.pending.length) await this.applyPending();
-      const pool = await loadPool(this.backend);
+      const pool = await loadPool(this.backend, this.token);
       const a = pool.accounts[this.actor];
       const b = pool.accounts[to];
       if (!a) throw new Error("register first");
-      if (!b) throw new Error(`${to} has not registered an encryption key. They can only receive public XPR.`);
+      if (!b) throw new Error(`${to} has not registered an encryption key for ${this.token.code}. They can only receive public ${this.token.code}.`);
       const oldBalance = BigInt(a.balance);
       const out = await this.backend.proveTransfer(
         {
@@ -366,14 +381,14 @@ export class ConfidentialClient {
       b.activity.push({ id: id(), kind: "receive", ts: now, amount: amount.toString(), counterparty: this.actor, onChain: { public: false, ciphertext: ctShort, proof: shortHex(out.proof, 6), txid: t, block } });
       a.activity.push({ id: id(), kind: "send", ts: now, amount: amount.toString(), counterparty: to, onChain: { public: false, ciphertext: ctShort, proof: shortHex(out.proof, 6), txid: t, block } });
       pool.ledger.push({ ts: now, from: this.actor, to, amount: amount.toString(), ciphertext: ctShort, block });
-      savePool(pool);
+      savePool(pool, this.token);
       return t;
     }
 
     // real: fold pending (same transaction) and prove against the folded balance
     const { row, cfg, folded, oldBalance, actions } = await this.prepareSpend(kp, onProgress);
-    const peer = await chain.getConfAccount(to);
-    if (!peer) throw new Error(`${to} has not registered an encryption key. They can only receive public XPR.`);
+    const peer = await chain.getConfAccount(to, this.token);
+    if (!peer) throw new Error(`${to} has not registered an encryption key for ${this.token.code}. They can only receive public ${this.token.code}.`);
     const out = await this.backend.proveTransfer(
       {
         sender: this.actor,
@@ -388,7 +403,7 @@ export class ConfidentialClient {
       },
       onProgress
     );
-    actions.push(chain.transferAction(this.session, to, out.transfer, out.newBalance, out.proof, this.need().pubkey, peer.enc_pubkey, cfg.auditorPubkey));
+    actions.push(chain.transferAction(this.session, this.token, to, out.transfer, out.newBalance, out.proof, this.need().pubkey, peer.enc_pubkey, cfg.auditorPubkey));
     onProgress?.(0.97, "waiting for WebAuth signature");
     return chain.broadcast(this.session, actions);
   }
@@ -399,14 +414,14 @@ export class ConfidentialClient {
    * (homomorphic add; identical to what the contract will store).
    */
   private async prepareSpend(kp: EncryptionKeypair, onProgress?: ProgressFn) {
-    const [row, cfg] = await Promise.all([chain.getConfAccount(this.actor), chain.getConfConfig()]);
-    if (!row) throw new Error("register first");
-    if (!cfg) throw new Error("the contract is not configured for XPR");
-    if (cfg.paused) throw new Error("the confidential token is paused");
+    const [row, cfg] = await Promise.all([chain.getConfAccount(this.actor, this.token), chain.getConfConfig(this.token)]);
+    if (!row) throw new Error(`register for ${this.token.code} first`);
+    if (!cfg) throw new Error(`the contract is not configured for ${this.token.code}`);
+    if (cfg.paused) throw new Error(`confidential ${this.token.code} is paused`);
     const actions: unknown[] = [];
     let folded = row.avail;
     if (row.pending_count > 0) {
-      actions.push(chain.applyPendingAction(this.session));
+      actions.push(chain.applyPendingAction(this.session, this.token));
       folded = chunkedAdd(row.avail, row.pending);
     }
     onProgress?.(0.02, "reading your balance");
@@ -419,9 +434,9 @@ export class ConfidentialClient {
     const kp = this.need();
     if (amount <= 0n) throw new Error("amount must be positive");
     if (this.isMock) {
-      const pre = await loadPool(this.backend);
+      const pre = await loadPool(this.backend, this.token);
       if (pre.accounts[this.actor]?.pending.length) await this.applyPending();
-      const pool = await loadPool(this.backend);
+      const pool = await loadPool(this.backend, this.token);
       const a = pool.accounts[this.actor];
       if (!a) throw new Error("register first");
       const g = BigInt(pool.config.withdrawGranularity);
@@ -438,18 +453,18 @@ export class ConfidentialClient {
       pool.edges += 1;
       const t = txid();
       a.activity.push({ id: id(), kind: "withdraw", ts: Date.now(), amount: amount.toString(), onChain: { public: true, proof: shortHex(out.proof, 6), txid: t, block: ++pool.block } });
-      savePool(pool);
+      savePool(pool, this.token);
       return t;
     }
     const { row, cfg, folded, oldBalance, actions } = await this.prepareSpend(kp, onProgress);
     if (cfg.withdrawGranularity > 0n && amount % cfg.withdrawGranularity !== 0n) {
-      throw new Error(`the contract only accepts withdrawals in multiples of ${cfg.withdrawGranularity / UNITS} XPR`);
+      throw new Error(`the contract only accepts withdrawals in multiples of ${cfg.withdrawGranularity / this.token.units} ${this.token.code}`);
     }
     const out = await this.backend.proveWithdraw(
       { owner: this.actor, nonce: BigInt(row.nonce), amount, oldBalance, oldBalanceCiphertext: folded, keypair: kp, auditorPubkey: cfg.auditorPubkey },
       onProgress
     );
-    actions.push(chain.withdrawAction(this.session, amount, out.newBalance, out.proof, this.need().pubkey, cfg.auditorPubkey));
+    actions.push(chain.withdrawAction(this.session, this.token, amount, out.newBalance, out.proof, this.need().pubkey, cfg.auditorPubkey));
     onProgress?.(0.97, "waiting for WebAuth signature");
     return chain.broadcast(this.session, actions);
   }
@@ -459,7 +474,7 @@ export class ConfidentialClient {
   /** Simulate a peer paying you (mock only). */
   async simulateIncoming(from: string, amount: bigint): Promise<void> {
     if (!this.isMock) throw new Error("mock only");
-    const pool = await loadPool(this.backend);
+    const pool = await loadPool(this.backend, this.token);
     const a = pool.accounts[this.actor];
     const p = pool.accounts[from];
     if (!a || !p) throw new Error("register first");
@@ -474,40 +489,40 @@ export class ConfidentialClient {
     a.lastIncomingEdge = pool.edges;
     a.activity.push({ id: id(), kind: "receive", ts: now, amount: amount.toString(), counterparty: from, onChain: { public: false, ciphertext: ctShort, proof: "0x…", txid: txid(), block } });
     pool.ledger.push({ ts: now, from, to: this.actor, amount: amount.toString(), ciphertext: ctShort, block });
-    savePool(pool);
+    savePool(pool, this.token);
   }
 
   /** Simulate other people's deposits/withdrawals (mock only): the pool's edge counter moves. */
   async simulatePoolActivity(n = 5): Promise<void> {
     if (!this.isMock) throw new Error("mock only");
-    const pool = await loadPool(this.backend);
+    const pool = await loadPool(this.backend, this.token);
     pool.edges += n;
     pool.block += n * 7;
-    savePool(pool);
+    savePool(pool, this.token);
   }
 
   async resetMock(): Promise<void> {
-    localStorage.removeItem(POOL_KEY);
+    for (const t of MOCK_TOKENS) localStorage.removeItem(poolKey(t));
   }
 
   async escrow(): Promise<bigint> {
-    if (this.isMock) return BigInt((await loadPool(this.backend)).escrow);
-    return chain.getPublicBalance(CONTRACT);
+    if (this.isMock) return BigInt((await loadPool(this.backend, this.token)).escrow);
+    return chain.getPublicBalance(CONTRACT, this.token);
   }
 
   // ---------------------------------------------------------------- auditor
 
   async auditorLedger(viewingSecret: Hex): Promise<AuditorRow[]> {
     if (this.isMock) {
-      const pool = await loadPool(this.backend);
+      const pool = await loadPool(this.backend, this.token);
       if (viewingSecret.toLowerCase() !== pool.auditorSecret) throw new Error("that viewing key does not open these boxes");
       return pool.ledger.map((l) => ({ ...l, amount: BigInt(l.amount) })).sort((a, b) => b.ts - a.ts);
     }
-    const cfg = await chain.getConfConfig();
-    if (!cfg) throw new Error("the contract is not configured");
+    const cfg = await chain.getConfConfig(this.token);
+    if (!cfg) throw new Error(`the contract is not configured for ${this.token.code}`);
     const expected = await this.backend.pubkeyOf(viewingSecret);
     if (expected.toLowerCase() !== cfg.auditorPubkey.toLowerCase()) throw new Error("that viewing key does not match the pool's auditor key");
-    const history = await chain.poolHistory(500);
+    const history = await chain.poolHistory(500, this.token);
     const rows: AuditorRow[] = [];
     for (const h of history) {
       if (h.kind !== "send" || !h.t) continue;
@@ -520,10 +535,10 @@ export class ConfidentialClient {
   /** Public edges of the pool (for the auditor's reconciliation): deposits, withdrawals, escrow. */
   async poolEdges(): Promise<{ deposits: bigint; withdrawals: bigint; unclaimed: bigint; escrow: bigint; count: number }> {
     if (this.isMock) {
-      const pool = await loadPool(this.backend);
+      const pool = await loadPool(this.backend, this.token);
       return { deposits: 0n, withdrawals: 0n, unclaimed: 0n, escrow: BigInt(pool.escrow), count: pool.edges };
     }
-    const [history, escrow] = await Promise.all([chain.poolHistory(500), chain.getPublicBalance(CONTRACT)]);
+    const [history, escrow] = await Promise.all([chain.poolHistory(500, this.token), chain.getPublicBalance(CONTRACT, this.token)]);
     let deposits = 0n;
     let withdrawals = 0n;
     let unclaimed = 0n;
@@ -542,6 +557,6 @@ export class ConfidentialClient {
 
   async mockAuditorSecret(): Promise<Hex | null> {
     if (!this.isMock) return null;
-    return (await loadPool(this.backend)).auditorSecret;
+    return (await loadPool(this.backend, this.token)).auditorSecret;
   }
 }

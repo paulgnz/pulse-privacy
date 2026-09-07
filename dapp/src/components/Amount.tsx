@@ -1,4 +1,5 @@
 import { fmtUnits } from "../lib/format";
+import { XPR, type Token } from "../lib/token";
 
 /**
  * An amount on a statement. Public amounts print as figures. Hidden amounts print as a
@@ -14,6 +15,7 @@ export const Amount = ({
   tone,
   digits,
   busy = false,
+  token = XPR,
 }: {
   value?: bigint;
   /** hidden on chain: draw a bar unless revealed */
@@ -29,9 +31,11 @@ export const Amount = ({
   digits?: number;
   /** the value is being refreshed: the bar sweeps, or the figures breathe */
   busy?: boolean;
+  /** precision and unit label */
+  token?: Token;
 }) => {
   const show = !hidden || (revealed && value !== undefined);
-  const text = value === undefined ? "" : fmtUnits(value);
+  const text = value === undefined ? "" : fmtUnits(value, token);
   const cls = `figure ${size} ${hidden && show ? "reveal" : ""} ${tone === "auditor" ? "auditor-only" : ""} ${busy && show ? "refreshing" : ""}`;
   if (show) {
     return (
@@ -40,7 +44,7 @@ export const Amount = ({
           {sign ?? ""}
           {text}
         </span>
-        {unit ? <span className="unit">XPR</span> : null}
+        {unit ? <span className="unit">{token.code}</span> : null}
       </span>
     );
   }
@@ -48,7 +52,7 @@ export const Amount = ({
   return (
     <span className={cls}>
       <span className={`redact private ${busy ? "busy" : ""}`} style={{ width: `${Math.max(3, n) * 0.62}em` }} role="img" aria-label={busy ? "updating" : "hidden amount"} />
-      {unit ? <span className="unit">XPR</span> : null}
+      {unit ? <span className="unit">{token.code}</span> : null}
     </span>
   );
 };

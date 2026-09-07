@@ -1,6 +1,5 @@
 // The §1.9 rules that live in the wallet. The chain enforces granularity; the wallet handles
 // judgment: does this withdrawal look like something you just received? Never a hard block.
-import { UNITS } from "./format";
 
 export interface IncomingEvent {
   amount: bigint;
@@ -13,6 +12,8 @@ export interface PoolConfig {
   withdrawGranularity: bigint;
   /** deposits: the wallet nudges toward a multiple; 0 = off */
   depositGranularity: bigint;
+  /** 10^precision of the token these amounts are in */
+  units: bigint;
 }
 
 export interface EdgeCheck {
@@ -24,22 +25,22 @@ export interface EdgeCheck {
 
 const RECENT_MS = 7 * 24 * 3600 * 1000;
 
-/** Round down to the granularity; if that is zero, round down to the next lower "nice" amount. */
-export function roundDown(amount: bigint, granularity: bigint): bigint {
-  const g = granularity > 0n ? granularity : UNITS;
+/** Round down to the granularity; if that is zero, round down to a whole token. */
+export function roundDown(amount: bigint, granularity: bigint, units: bigint): bigint {
+  const g = granularity > 0n ? granularity : units;
   return (amount / g) * g;
 }
 
-export function isRound(amount: bigint, granularity: bigint): boolean {
-  const g = granularity > 0n ? granularity : UNITS;
+export function isRound(amount: bigint, granularity: bigint, units: bigint): boolean {
+  const g = granularity > 0n ? granularity : units;
   return amount % g === 0n;
 }
 
-/** A coarser "nice" amount: multiples of 100, 10 or 1 XPR depending on size. */
-export function niceAmount(amount: bigint): bigint {
-  const xpr = amount / UNITS;
-  const step = xpr >= 1000n ? 100n : xpr >= 100n ? 10n : 1n;
-  return (xpr / step) * step * UNITS;
+/** A coarser "nice" amount: multiples of 100, 10 or 1 whole token depending on size. */
+export function niceAmount(amount: bigint, units: bigint): bigint {
+  const whole = amount / units;
+  const step = whole >= 1000n ? 100n : whole >= 100n ? 10n : 1n;
+  return (whole / step) * step * units;
 }
 
 /** Sums of every subset of up to 3 recent incoming amounts (small n; cheap). */
@@ -67,7 +68,7 @@ export function checkWithdrawal(
   let level: EdgeCheck["level"] = "ok";
   const recent = incoming.filter((e) => now - e.ts < RECENT_MS).sort((a, b) => b.ts - a.ts);
 
-  if (!isRound(amount, cfg.withdrawGranularity)) {
+  if (!isRound(amount, cfg.withdrawGranularity, cfg.units)) {
     reasons.push(
       cfg.withdrawGranularity > 0n
         ? "The contract only accepts withdrawals in whole multiples of the configured granularity."
@@ -94,7 +95,7 @@ export function checkWithdrawal(
     if (level === "ok") level = "notice";
   }
 
-  const suggested = niceAmount(amount);
+  const suggested = niceAmount(amount, cfg.units);
   return {
     level,
     reasons,
@@ -104,11 +105,12 @@ export function checkWithdrawal(
 }
 
 export function checkDeposit(amount: bigint, cfg: PoolConfig): EdgeCheck {
-  const g = cfg.depositGranularity > 0n ? cfg.depositGranularity : UNITS;
+  const g = cfg.depositGranularity > 0n ? cfg.depositGranularity : cfg.units;
   if (amount % g === 0n) return { level: "ok", reasons: [] };
+  const nice = niceAmount(amount, cfg.units);
   return {
     level: "notice",
     reasons: ["Deposits are public. A round amount reveals less about your starting balance than a specific one."],
-    suggestedAmount: niceAmount(amount) > 0n ? niceAmount(amount) : undefined,
+    suggestedAmount: nice > 0n ? nice : undefined,
   };
 }

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { EdgeCheck } from "../lib/privacy";
-import { fmtUnits } from "../lib/format";
+import { fmtUnits, zeroPlaceholder } from "../lib/format";
+import { XPR, type Token } from "../lib/token";
 
 export const Field = ({ label, hint, error, children }: { label: string; hint?: ReactNode; error?: ReactNode; children: ReactNode }) => (
   <div className="field">
@@ -13,19 +14,21 @@ export const Field = ({ label, hint, error, children }: { label: string; hint?: 
 export const AmountInput = ({
   value,
   onChange,
-  placeholder = "0.0000",
+  placeholder,
   autoFocus,
   id,
+  token = XPR,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   autoFocus?: boolean;
   id?: string;
+  token?: Token;
 }) => (
   <div className="amount-input">
-    <input id={id} className="num" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} inputMode="decimal" autoFocus={autoFocus} />
-    <span className="unit">XPR</span>
+    <input id={id} className="num" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder ?? zeroPlaceholder(token)} inputMode="decimal" autoFocus={autoFocus} />
+    <span className="unit">{token.code}</span>
   </div>
 );
 
@@ -35,7 +38,7 @@ export const Note = ({ level, children }: { level: "ok" | "info" | "warn" | "err
   </div>
 );
 
-export const EdgeNote = ({ check, onSuggest }: { check: EdgeCheck; onSuggest?: (amount: bigint) => void }) => {
+export const EdgeNote = ({ check, onSuggest, token = XPR }: { check: EdgeCheck; onSuggest?: (amount: bigint) => void; token?: Token }) => {
   if (check.level === "ok" && !check.reasons.length) return null;
   return (
     <Note level={check.level === "warn" ? "warn" : "info"}>
@@ -49,7 +52,7 @@ export const EdgeNote = ({ check, onSuggest }: { check: EdgeCheck; onSuggest?: (
         <div className="row">
           {check.suggestedAmount !== undefined && onSuggest ? (
             <button className="textbtn" onClick={() => onSuggest(check.suggestedAmount!)}>
-              Use {fmtUnits(check.suggestedAmount, { trim: true })} XPR instead
+              Use {fmtUnits(check.suggestedAmount, token, { trim: true })} {token.code} instead
             </button>
           ) : null}
           {check.suggestedDelayHours ? <span>or wait about {check.suggestedDelayHours} hours and let the pool move first.</span> : null}

@@ -88,12 +88,12 @@ export const Settings = ({
               <span className="k">Public key</span>
               <span className="mono">{shortHex(keypair.pubkey, 12)}</span>
               <span className="k">On chain</span>
-              <span>{st.registered ? "Registered for this account" : "Not registered yet"}</span>
+              <span>{st.registered ? `Registered for ${st.token.code}` : `Not registered for ${st.token.code} yet`}</span>
             </div>
             <div className="row" style={{ marginBottom: 20 }}>
               {!st.registered ? (
                 <button className="btn private" onClick={() => run(onRegister, "Registered. Others can now pay you inside the contract.")} disabled={busy}>
-                  Register on chain
+                  Register for {st.token.code}
                 </button>
               ) : null}
               {!keyDerived ? (
@@ -176,7 +176,7 @@ export const Settings = ({
                 ))}
               </select>
               <input className="num" value={simAmt} onChange={(e) => setSimAmt(e.target.value)} style={{ maxWidth: 160 }} aria-label="Simulated amount" />
-              <button className="btn secondary" onClick={() => run(() => onSimulateIncoming(simFrom, parseUnits(simAmt)), `${simFrom} paid you ${simAmt} XPR. It is pending. Try withdrawing exactly that.`)} disabled={!st.registered || busy}>
+              <button className="btn secondary" onClick={() => run(() => onSimulateIncoming(simFrom, parseUnits(simAmt, st.token)), `${simFrom} paid you ${simAmt} ${st.token.code}. It is pending. Try withdrawing exactly that.`)} disabled={!st.registered || busy}>
                 Receive
               </button>
             </div>

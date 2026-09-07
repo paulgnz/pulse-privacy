@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ConfState } from "../lib/client";
 import type { CryptoBackend, EncryptionKeypair, Hex } from "../lib/crypto/types";
-import { UNITS, fmtUnits, parseUnits } from "../lib/format";
+import { fmtUnits, parseUnits } from "../lib/format";
+import { XPR, type Token } from "../lib/token";
 import { exportBlob, saveKeypair } from "../lib/keys";
 import { checkDeposit } from "../lib/privacy";
 import { unlockOnce } from "../lib/unlock";
@@ -40,6 +41,8 @@ export interface OnboardingProps {
   onDeposit: (amount: bigint) => Promise<unknown>;
   onFinish: () => void;
   isMock: boolean;
+  /** the token the Register / First deposit steps act on */
+  token?: Token;
   /** open the How it works page */
   onAbout?: () => void;
 }
@@ -67,7 +70,7 @@ export const Onboarding = (p: OnboardingProps) => (
 
 // ---------------------------------------------------------------- 1. connect (the landing)
 
-const Connect = ({ onConnect, connectBusy, connectError, actor, publicBalance, onAbout, isMock }: OnboardingProps) => (
+const Connect = ({ onConnect, connectBusy, connectError, actor, publicBalance, onAbout, isMock, token = XPR }: OnboardingProps) => (
   <section className="step landing">
     <h1>Private balances on XPR Network</h1>
     <p className="lede">Hold and send XPR with the amount hidden from everyone except you, the other party and the designated auditor.</p>
@@ -75,7 +78,7 @@ const Connect = ({ onConnect, connectBusy, connectError, actor, publicBalance, o
       <Note level="ok">
         <p>
           Connected as {actor}
-          {publicBalance !== null ? `, ${fmtUnits(publicBalance)} XPR public balance` : ""}.
+          {publicBalance !== null ? `, ${fmtUnits(publicBalance, token)} ${token.code} public balance` : ""}.
         </p>
       </Note>
     ) : (
@@ -422,7 +425,7 @@ const Key = (p: OnboardingProps) => {
 
 // ---------------------------------------------------------------- 3. register
 
-const Register = ({ onRegister, actor, forceSigning }: OnboardingProps) => {
+const Register = ({ onRegister, actor, forceSigning, token = XPR }: OnboardingProps) => {
   const [state, setState] = useState<"idle" | "signing" | "done" | "error">(forceSigning ? "signing" : "idle");
   const [err, setErr] = useState<string | null>(null);
   const go = async () => {
@@ -439,7 +442,7 @@ const Register = ({ onRegister, actor, forceSigning }: OnboardingProps) => {
   return (
     <section className="step">
       <h2>Register</h2>
-      <p className="lede">Publish your encryption key so others can pay you privately. One signature.</p>
+      <p className="lede">Publish your encryption key for {token.code} so others can pay you privately. One signature.</p>
       {state === "signing" ? (
         <Note level="info">
           <p>Waiting for your wallet to sign the registration for {actor}.</p>
@@ -464,19 +467,20 @@ const Register = ({ onRegister, actor, forceSigning }: OnboardingProps) => {
 
 // ---------------------------------------------------------------- 4. first deposit
 
-const FirstDeposit = ({ st, publicBalance, onDeposit, onFinish }: OnboardingProps) => {
+const FirstDeposit = ({ st, publicBalance, onDeposit, onFinish, token = XPR }: OnboardingProps) => {
+  const T = st?.token ?? token;
   const [amt, setAmt] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const parsed = useMemo(() => {
     try {
-      return amt ? parseUnits(amt) : null;
+      return amt ? parseUnits(amt, T) : null;
     } catch {
       return null;
     }
-  }, [amt]);
+  }, [amt, T]);
   const over = parsed !== null && publicBalance !== null && parsed > publicBalance;
-  const cfg = st?.config ?? { withdrawGranularity: UNITS, depositGranularity: UNITS };
+  const cfg = st?.config ?? { withdrawGranularity: T.units, depositGranularity: T.units, units: T.units };
   const check = parsed ? checkDeposit(parsed, cfg) : null;
   const go = async () => {
     if (!parsed) return;
@@ -494,9 +498,9 @@ const FirstDeposit = ({ st, publicBalance, onDeposit, onFinish }: OnboardingProp
   return (
     <section className="step">
       <h2>First deposit</h2>
-      <p className="lede">Move some public XPR into your box. This one transfer is visible to everyone, so a round amount reveals less than a specific one. You can skip this and deposit later.</p>
-      <Field label="Amount" error={over ? `More than your public balance of ${fmtUnits(publicBalance ?? 0n)} XPR.` : err ?? undefined} hint={publicBalance !== null ? `Public balance ${fmtUnits(publicBalance)} XPR.` : undefined}>
-        <AmountInput value={amt} onChange={setAmt} autoFocus />
+      <p className="lede">Move some public {T.code} into your box. This one transfer is visible to everyone, so a round amount reveals less than a specific one. You can skip this and deposit later.</p>
+      <Field label="Amount" error={over ? `More than your public balance of ${fmtUnits(publicBalance ?? 0n, T)} ${T.code}.` : err ?? undefined} hint={publicBalance !== null ? `Public balance ${fmtUnits(publicBalance, T)} ${T.code}.` : undefined}>
+        <AmountInput value={amt} onChange={setAmt} autoFocus token={T} />
       </Field>
       <div className="chips">
         {[100n, 500n, 1000n, 5000n].map((x) => (
@@ -505,10 +509,10 @@ const FirstDeposit = ({ st, publicBalance, onDeposit, onFinish }: OnboardingProp
           </button>
         ))}
       </div>
-      {check ? <EdgeNote check={check} onSuggest={(a) => setAmt(fmtUnits(a, { trim: true }).replace(/,/g, ""))} /> : null}
+      {check ? <EdgeNote check={check} token={T} onSuggest={(a) => setAmt(fmtUnits(a, T, { trim: true }).replace(/,/g, ""))} /> : null}
       <div className="row">
         <button className="btn" onClick={go} disabled={!parsed || parsed <= 0n || over || busy}>
-          {parsed && parsed > 0n && !over ? `Deposit ${fmtUnits(parsed)} XPR` : "Deposit"}
+          {parsed && parsed > 0n && !over ? `Deposit ${fmtUnits(parsed, T)} ${T.code}` : "Deposit"}
         </button>
         <button className="textbtn quiet" onClick={onFinish}>
           Skip for now

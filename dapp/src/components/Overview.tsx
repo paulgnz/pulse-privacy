@@ -19,6 +19,8 @@ export const Overview = ({
   onWithdraw,
   busy,
   refreshing = false,
+  onRegister,
+  hasKey = false,
 }: {
   st: ConfState;
   publicBalance: bigint | null;
@@ -30,6 +32,9 @@ export const Overview = ({
   busy: boolean;
   /** a background refresh is running: animate the figures, do not disable anything */
   refreshing?: boolean;
+  /** register the encryption key for this token (already set up for another token) */
+  onRegister?: () => Promise<unknown>;
+  hasKey?: boolean;
 }) => {
   const [revealed, setRevealed] = useState<boolean>(() => {
     try {
@@ -58,23 +63,30 @@ export const Overview = ({
 
   const toggle = (f: Form) => setForm((cur) => (cur === f ? null : f));
 
+  const T = st.token;
   if (!st.registered) {
     return (
       <section className="statement">
         <h2>Statement</h2>
-        <Line label="Confidential balance" sub="no encryption key registered for this account yet" hero>
-          <Amount hidden digits={9} size="big" />
+        <Line label={`Confidential ${T.code}`} sub={`not registered for ${T.code} yet`} hero>
+          <Amount hidden digits={9} size="big" token={T} />
         </Line>
-        <Line label="Public XPR" sub="readable by anyone">
-          {publicBalance === null ? <span className="muted">Loading</span> : <Amount value={publicBalance} size="mid" />}
+        <Line label={`Public ${T.code}`} sub="readable by anyone">
+          {publicBalance === null ? <span className="muted">Loading</span> : <Amount value={publicBalance} size="mid" token={T} />}
         </Line>
         <p className="muted" style={{ marginTop: 20 }}>
-          Registering publishes an encryption key so others can pay you inside the contract. It is one action and needs no change to your wallet.
+          Registering publishes your encryption key for {T.code} so others can pay you {T.code} inside the contract. Same key, one signature.
         </p>
         <div className="actions">
-          <button className="textbtn" onClick={() => onGo("settings")}>
-            Set up your key
-          </button>
+          {hasKey && onRegister ? (
+            <button className="btn private" onClick={() => onRegister()} disabled={busy}>
+              {busy ? "Registering" : `Register for ${T.code}`}
+            </button>
+          ) : (
+            <button className="textbtn" onClick={() => onGo("settings")}>
+              Set up your key
+            </button>
+          )}
         </div>
       </section>
     );
@@ -92,7 +104,7 @@ export const Overview = ({
         </Note>
       ) : null}
       <Line label="Confidential balance" sub={revealed ? "decrypted on this device; the chain holds only the box" : "what everyone else sees"} hero>
-        <Amount value={st.balance} hidden revealed={revealed} size="big" busy={busy || refreshing} />
+        <Amount value={st.balance} hidden revealed={revealed} size="big" busy={busy || refreshing} token={T} />
         <button className="textbtn" onClick={() => setRevealed(!revealed)} aria-pressed={revealed}>
           {revealed ? "Hide" : "Reveal"}
         </button>
@@ -102,14 +114,14 @@ export const Overview = ({
           label="Pending"
           sub={`${st.pendingCount} incoming ${st.pendingCount === 1 ? "transfer" : "transfers"} waiting in a separate box; folded before your next send`}
         >
-          <Amount value={st.pending} hidden revealed={revealed} size="mid" sign="+" busy={busy || refreshing} />
+          <Amount value={st.pending} hidden revealed={revealed} size="mid" sign="+" busy={busy || refreshing} token={T} />
           <button className="textbtn" onClick={() => onFold()} disabled={busy}>
             {busy ? "Folding" : "Fold in now"}
           </button>
         </Line>
       ) : null}
-      <Line label="Public XPR" sub="readable by anyone">
-        {publicBalance === null ? <span className="muted">Loading</span> : <Amount value={publicBalance} size="mid" />}
+      <Line label={`Public ${T.code}`} sub="readable by anyone">
+        {publicBalance === null ? <span className="muted">Loading</span> : <Amount value={publicBalance} size="mid" token={T} />}
       </Line>
 
       <div className="actions" role="group" aria-label="Actions">

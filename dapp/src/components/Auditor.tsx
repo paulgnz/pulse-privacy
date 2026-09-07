@@ -4,6 +4,7 @@ import type { Hex } from "../lib/crypto/types";
 import { fmtUnits } from "../lib/format";
 import { Amount } from "./Amount";
 import { Field, Line, Note } from "./ui";
+import { XPR, type Token } from "../lib/token";
 
 type Edges = { deposits: bigint; withdrawals: bigint; unclaimed: bigint; escrow: bigint; count: number };
 
@@ -15,11 +16,13 @@ export const Auditor = ({
   onOpen,
   onEdges,
   mockSecret,
+  token = XPR,
 }: {
   isMock: boolean;
   onOpen: (secret: Hex) => Promise<AuditorRow[]>;
   onEdges: () => Promise<Edges>;
   mockSecret: Hex | null;
+  token?: Token;
 }) => {
   const [key, setKey] = useState("");
   const [rows, setRows] = useState<AuditorRow[] | null>(null);
@@ -59,7 +62,7 @@ export const Auditor = ({
     <>
       <section className="section">
         <h2>Auditor</h2>
-        <p className="lede">Every transfer carries a copy the designated auditor can open. With the viewing key, every amount reads. The key can read; it cannot spend.</p>
+        <p className="lede">Every confidential {token.code} transfer carries a copy the designated auditor can open. With the viewing key, every amount reads. The key can read; it cannot spend.</p>
         <Field
           label="Viewing key"
           hint={
@@ -89,7 +92,7 @@ export const Auditor = ({
         <section className="section">
           <h2>Transfers</h2>
           <p className="lede">
-            {rows.length} {rows.length === 1 ? "transfer" : "transfers"}, {fmtUnits(total)} XPR in total{isMock ? ", simulated" : ""}.
+            {rows.length} {rows.length === 1 ? "transfer" : "transfers"}, {fmtUnits(total, token)} {token.code} in total{isMock ? ", simulated" : ""}.
           </p>
           {rows.length === 0 ? (
             <div className="empty">No confidential transfers yet.</div>
@@ -114,7 +117,7 @@ export const Auditor = ({
                       </span>
                     </td>
                     <td className="amount">
-                      <Amount value={r.amount} hidden revealed={opened} tone="auditor" />
+                      <Amount value={r.amount} hidden revealed={opened} tone="auditor" token={token} />
                     </td>
                   </tr>
                 ))}
@@ -129,16 +132,16 @@ export const Auditor = ({
           <h2>Reconciliation</h2>
           <p className="lede">Deposits and withdrawals are public, so the escrow can be checked by anyone.</p>
           <Line label="Deposits">
-            <Amount value={edges.deposits} size="mid" />
+            <Amount value={edges.deposits} size="mid" token={token} />
           </Line>
           <Line label="Withdrawals">
-            <Amount value={edges.withdrawals} size="mid" sign="−" />
+            <Amount value={edges.withdrawals} size="mid" sign="−" token={token} />
           </Line>
           <Line label="Claims outstanding">
-            <Amount value={edges.deposits - edges.withdrawals} size="mid" />
+            <Amount value={edges.deposits - edges.withdrawals} size="mid" token={token} />
           </Line>
-          <Line label="Escrow balance" sub={edges.unclaimed > 0n ? `includes ${fmtUnits(edges.unclaimed)} XPR from plain transfers with no claim` : undefined}>
-            <Amount value={edges.escrow} size="mid" />
+          <Line label="Escrow balance" sub={edges.unclaimed > 0n ? `includes ${fmtUnits(edges.unclaimed, token)} ${token.code} from plain transfers with no claim` : undefined}>
+            <Amount value={edges.escrow} size="mid" token={token} />
           </Line>
           <p className={`small ${backed ? "" : ""}`} style={{ marginTop: 14, color: backed ? "var(--auditor)" : "var(--error)" }}>
             {backed ? "Escrow equals deposits minus withdrawals. The pool is fully backed." : "Escrow does not equal deposits minus withdrawals over the indexed history."}

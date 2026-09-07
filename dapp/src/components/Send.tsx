@@ -22,13 +22,14 @@ export const Send = ({
   const [prog, setProg] = useState<{ f: number; s: string } | null>(null);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
+  const T = st.token;
   const parsed = useMemo(() => {
     try {
-      return amt ? parseUnits(amt) : null;
+      return amt ? parseUnits(amt, T) : null;
     } catch {
       return null;
     }
-  }, [amt]);
+  }, [amt, T]);
   const spendable = st.balance + st.pending;
   const over = parsed !== null && parsed > spendable;
   const name = to.trim();
@@ -41,7 +42,7 @@ export const Send = ({
     setProg({ f: 0, s: "Starting" });
     try {
       const tx = await onSend(name, parsed, (f, s) => setProg({ f, s }));
-      const done = `Sent ${fmtUnits(parsed)} XPR to ${name}. Transaction ${tx.slice(0, 12)}.`;
+      const done = `Sent ${fmtUnits(parsed, T)} ${T.code} to ${name}. Transaction ${tx.slice(0, 12)}.`;
       if (onDone) onDone(done); else setResult({ ok: true, msg: done });
       setAmt("");
     } catch (e) {
@@ -60,10 +61,10 @@ export const Send = ({
         hint={
           name.length >= 4
             ? peer
-              ? `${name} can receive inside the contract.`
+              ? `${name} can receive ${T.code} inside the contract.`
               : st.peers.length
-                ? `${name} has not registered an encryption key. They can only receive public XPR.`
-                : "The receiver must have registered an encryption key."
+                ? `${name} has not registered for confidential ${T.code}. They can only receive public ${T.code}.`
+                : `The receiver must have registered for confidential ${T.code}.`
             : "An XPR account name."
         }
       >
@@ -76,17 +77,17 @@ export const Send = ({
       </Field>
       <Field
         label="Amount"
-        error={over ? `More than you can spend. You have ${fmtUnits(spendable)} XPR.` : undefined}
-        hint={`You can spend ${fmtUnits(spendable)} XPR${st.pending > 0n ? ", after pending is folded in" : ""}.`}
+        error={over ? `More than you can spend. You have ${fmtUnits(spendable, T)} ${T.code}.` : undefined}
+        hint={`You can spend ${fmtUnits(spendable, T)} ${T.code}${st.pending > 0n ? ", after pending is folded in" : ""}.`}
       >
-        <AmountInput value={amt} onChange={setAmt} />
+        <AmountInput value={amt} onChange={setAmt} token={T} />
       </Field>
       {prog ? (
         <Progress fraction={prog.f} stage={prog.s} />
       ) : (
         <div className="row" style={{ marginBottom: 16 }}>
           <button className="btn private" onClick={go} disabled={!canSend}>
-            {parsed && parsed > 0n && !over ? `Send ${fmtUnits(parsed)} XPR` : "Send"}
+            {parsed && parsed > 0n && !over ? `Send ${fmtUnits(parsed, T)} ${T.code}` : "Send"}
           </button>
           <button className="textbtn quiet" onClick={onClose}>
             Cancel

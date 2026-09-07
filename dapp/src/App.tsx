@@ -3,7 +3,8 @@ import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_NETWORK } from ".
 import { fmtUnits } from "./lib/format";
 import * as chain from "./lib/chain";
 import type { Session } from "./lib/chain";
-import { ConfidentialClient, type ActivityItem, type ConfState } from "./lib/client";
+import { ConfidentialClient, MOCK_TOKENS, type ActivityItem, type ConfState } from "./lib/client";
+import { XPR, rememberToken, rememberedToken, type Token } from "./lib/token";
 import { selectBackend } from "./lib/crypto";
 import type { EncryptionKeypair, Hex } from "./lib/crypto/types";
 import { createKeypair, forgetKeypair, importSecret, loadKeypair } from "./lib/keys";
@@ -80,6 +81,23 @@ export default function App() {
   const [finished, setFinished] = useState(false);
   const preview = useMemo(demoWizard, []);
 
+  // Tokens come from the contract's config table (XPR first); the simulation lists XPR and XMD.
+  const [tokens, setTokens] = useState<Token[]>(backend.isMock ? MOCK_TOKENS : [XPR]);
+  const [tokenCode, setTokenCode] = useState<string>(() => rememberedToken() ?? "XPR");
+  const token = useMemo(() => tokens.find((t) => t.code === tokenCode) ?? tokens[0], [tokens, tokenCode]);
+  useEffect(() => {
+    if (backend.isMock) return;
+    chain.listTokens().then((ts) => { if (ts.length) setTokens(ts); }).catch(() => { /* keep XPR */ });
+  }, []);
+  const chooseToken = (code: string) => {
+    rememberToken(code);
+    setTokenCode(code);
+  };
+  // Which tokens this account has registered for, so a second token gets a one-line register
+  // action on the statement rather than the first-run wizard.
+  const [registeredFor, setRegisteredFor] = useState<Record<string, boolean>>({});
+  const probedFirst = useRef(false);
+
   const navigate = useCallback((path: string) => {
     history.pushState(null, "", path + (path === "/" ? location.search : ""));
     setRoute(routeOf(path));
@@ -91,7 +109,7 @@ export default function App() {
     return () => removeEventListener("popstate", onPop);
   }, []);
 
-  const client = useMemo(() => (session ? new ConfidentialClient(backend, session, keypair) : null), [session, keypair]);
+  const client = useMemo(() => (session ? new ConfidentialClient(backend, session, keypair, token) : null), [session, keypair, token]);
 
   const [refreshing, setRefreshing] = useState(false);
   // Two phases: balances first (fast, what the statement needs), then the ledger. A slow or
@@ -100,10 +118,20 @@ export default function App() {
     if (!client) return;
     setRefreshing(true);
     try {
-      const [quick, p, ms] = await Promise.all([client.state({ history: false }), chain.getPublicBalance(client.actor).catch(() => null), client.mockAuditorSecret()]);
-      setSt((prev) => (prev?.historyLoaded ? { ...quick, activity: prev.activity, incoming: prev.incoming, edgesSinceLastIncoming: prev.edgesSinceLastIncoming, historyLoaded: true } : quick));
+      const [quick, p, ms] = await Promise.all([client.state({ history: false }), chain.getPublicBalance(client.actor, client.token).catch(() => null), client.mockAuditorSecret()]);
+      setSt((prev) => (prev?.historyLoaded && prev.token.code === quick.token.code ? { ...quick, activity: prev.activity, incoming: prev.incoming, edgesSinceLastIncoming: prev.edgesSinceLastIncoming, historyLoaded: true } : quick));
       setPub(p);
       setMockSecret(ms);
+      setRegisteredFor((r) => (r[quick.token.code] === quick.registered ? r : { ...r, [quick.token.code]: quick.registered }));
+      // a returning user who last used a second token: check the first one once, so an XPR
+      // account that has not registered for XMD is not sent back through the wizard
+      if (!quick.registered && client.token.code !== tokens[0].code && !probedFirst.current) {
+        probedFirst.current = true;
+        try {
+          const first = await new ConfidentialClient(backend, client.session, client.keypair, tokens[0]).state({ history: false });
+          setRegisteredFor((r) => ({ ...r, [tokens[0].code]: first.registered }));
+        } catch { /* ignore */ }
+      }
       if (opts.history !== false) {
         const full = await client.state({ history: true });
         setSt(full);
@@ -111,7 +139,7 @@ export default function App() {
     } finally {
       setRefreshing(false);
     }
-  }, [client]);
+  }, [client, tokens]);
 
   useEffect(() => {
     const d = demoActor();
@@ -143,15 +171,15 @@ export default function App() {
 
   // Notify on incoming confidential transfers: compare pending between refreshes.
   const [received, setReceived] = useState<string | null>(null);
-  const prevPending = useRef<{ count: number; amount: bigint } | null>(null);
+  const prevPending = useRef<{ count: number; amount: bigint; token: string } | null>(null);
   useEffect(() => {
     if (!st) return;
-    const cur = { count: st.pendingCount, amount: st.pending };
+    const cur = { count: st.pendingCount, amount: st.pending, token: st.token.code };
     const prev = prevPending.current;
     prevPending.current = cur;
-    if (!prev || cur.count <= prev.count) return;
+    if (!prev || prev.token !== cur.token || cur.count <= prev.count) return;
     const delta = cur.amount - prev.amount;
-    const msg = delta > 0n ? `You received ${fmtUnits(delta)} XPR inside the contract. It is in your pending box.` : "You received a confidential transfer. It is in your pending box.";
+    const msg = delta > 0n ? `You received ${fmtUnits(delta, st.token)} ${st.token.code} inside the contract. It is in your pending box.` : `You received a confidential ${st.token.code} transfer. It is in your pending box.`;
     setReceived(msg);
     document.title = `(${cur.count}) Confidential XPR`;
     try {
@@ -213,6 +241,7 @@ export default function App() {
 
   // First-run wizard: resume at the first incomplete step; returning users skip it.
   const keyMatches = !!keypair && (!st?.registered || !st.pubkey || st.pubkey.toLowerCase() === keypair.pubkey.toLowerCase());
+  const registeredSomewhere = !!st?.registered || Object.values(registeredFor).some(Boolean);
   const step: Step | null = preview
     ? preview.step
     : !session
@@ -221,7 +250,7 @@ export default function App() {
         ? null
         : !keyMatches
           ? "key"
-          : !st?.registered
+          : !st?.registered && !registeredSomewhere
             ? "register"
             : justRegistered && !finished
               ? "deposit"
@@ -326,6 +355,7 @@ export default function App() {
             onDeposit={(a) => (client ? wrap(() => client.deposit(a)) : Promise.reject(new Error("not connected")))}
             onFinish={() => setFinished(true)}
             isMock={backend.isMock}
+            token={token}
           />
         )}
         {foot}
@@ -354,6 +384,15 @@ export default function App() {
             {k === "overview" && st && st.pendingCount > 0 ? ` (${st.pendingCount} pending)` : ""}
           </a>
         ))}
+        {tokens.length > 1 ? (
+          <span className="tokens" role="group" aria-label="Token">
+            {tokens.map((t) => (
+              <button key={t.code} onClick={() => chooseToken(t.code)} aria-pressed={t.code === token.code} title={`Confidential ${t.code}`}>
+                {t.code}
+              </button>
+            ))}
+          </span>
+        ) : null}
       </nav>
 
       {received ? (
@@ -369,11 +408,13 @@ export default function App() {
           </div>
         </Note>
       ) : null}
-      {!st || !client ? (
+      {!st || !client || st.token.code !== token.code ? (
         <div className="empty">Loading your statement</div>
       ) : tab === "overview" ? (
         <Overview
           st={st}
+          hasKey={!!keypair}
+          onRegister={() => wrap(() => client.register())}
           publicBalance={pub}
           onGo={(t) => setTab(t as Tab)}
           onFold={() => wrap(async () => { const tx = await client.applyPending(); trackTx(String(tx), { kind: "fold", onChain: { ciphertext: "●●●●" } }); return tx; })}
@@ -412,7 +453,7 @@ export default function App() {
           busy={busy}
         />
       ) : (
-        <Auditor isMock={backend.isMock} onOpen={(s) => client.auditorLedger(s)} onEdges={() => client.poolEdges()} mockSecret={mockSecret} />
+        <Auditor isMock={backend.isMock} onOpen={(s) => client.auditorLedger(s)} onEdges={() => client.poolEdges()} mockSecret={mockSecret} token={token} />
       )}
 
       {foot}

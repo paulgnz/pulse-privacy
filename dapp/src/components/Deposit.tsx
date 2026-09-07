@@ -23,13 +23,14 @@ export const Deposit = ({
   const [amt, setAmt] = useState("");
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [pending, setPending] = useState(false);
+  const T = st.token;
   const parsed = useMemo(() => {
     try {
-      return amt ? parseUnits(amt) : null;
+      return amt ? parseUnits(amt, T) : null;
     } catch {
       return null;
     }
-  }, [amt]);
+  }, [amt, T]);
   const over = parsed !== null && publicBalance !== null && parsed > publicBalance;
   const check = parsed ? checkDeposit(parsed, st.config) : null;
 
@@ -39,7 +40,7 @@ export const Deposit = ({
     try {
       setPending(true);
       const tx = await onDeposit(parsed);
-      const done = `Deposited ${fmtUnits(parsed)} XPR. It lands in your pending box. Transaction ${tx.slice(0, 12)}.`;
+      const done = `Deposited ${fmtUnits(parsed, T)} ${T.code}. It lands in your pending box. Transaction ${tx.slice(0, 12)}.`;
       if (onDone) onDone(done); else setResult({ ok: true, msg: done });
       setAmt("");
     } catch (e) {
@@ -52,9 +53,9 @@ export const Deposit = ({
   return (
     <div className="form" aria-label="Deposit">
       <h3>Deposit</h3>
-      <p>A deposit is an ordinary XPR transfer into the contract. Everyone sees this amount. Once inside, it is a box.</p>
-      <Field label="Amount" error={over ? `More than your public balance of ${fmtUnits(publicBalance ?? 0n)} XPR.` : undefined} hint={publicBalance !== null ? `Public balance ${fmtUnits(publicBalance)} XPR.` : undefined}>
-        <AmountInput value={amt} onChange={setAmt} autoFocus />
+      <p>A deposit is an ordinary {T.code} transfer into the contract. Everyone sees this amount. Once inside, it is a box.</p>
+      <Field label="Amount" error={over ? `More than your public balance of ${fmtUnits(publicBalance ?? 0n, T)} ${T.code}.` : undefined} hint={publicBalance !== null ? `Public balance ${fmtUnits(publicBalance, T)} ${T.code}.` : undefined}>
+        <AmountInput value={amt} onChange={setAmt} autoFocus token={T} />
       </Field>
       <div className="chips">
         {[100n, 500n, 1000n, 5000n].map((x) => (
@@ -63,10 +64,10 @@ export const Deposit = ({
           </button>
         ))}
       </div>
-      {check ? <EdgeNote check={check} onSuggest={(a) => setAmt(fmtUnits(a, { trim: true }).replace(/,/g, ""))} /> : null}
+      {check ? <EdgeNote check={check} token={T} onSuggest={(a) => setAmt(fmtUnits(a, T, { trim: true }).replace(/,/g, ""))} /> : null}
       <div className="row" style={{ marginBottom: 16 }}>
         <button className="btn" onClick={go} disabled={!parsed || parsed <= 0n || over || !st.registered || busy}>
-          {pending ? <Busy>Waiting for your wallet</Busy> : parsed && parsed > 0n && !over ? `Deposit ${fmtUnits(parsed)} XPR` : "Deposit"}
+          {pending ? <Busy>Waiting for your wallet</Busy> : parsed && parsed > 0n && !over ? `Deposit ${fmtUnits(parsed, T)} ${T.code}` : "Deposit"}
         </button>
         <button className="textbtn quiet" onClick={onClose}>
           Cancel

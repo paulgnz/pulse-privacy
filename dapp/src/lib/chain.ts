@@ -17,9 +17,10 @@ function loadSdk(): Promise<Sdk> {
   }
   return sdkReady;
 }
-import { APP_NAME, CHAIN_ID, CONTRACT, ENDPOINTS, HYPERIONS, SYM_RAW, TOKEN_CONTRACT } from "../config";
+import { APP_NAME, CHAIN_ID, CONTRACT, ENDPOINTS, HYPERIONS } from "../config";
 import type { ChunkedCiphertext, Ciphertext, Hex, TransferCiphertext } from "./crypto/types";
-import { fromAsset, toAsset } from "./format";
+import { assetCode, fromAsset, toAsset } from "./format";
+import { XPR, sortTokens, tokenFromRaw, type Token } from "./token";
 import { decompressHex, ptHex } from "./crypto/babyjub";
 
 /** keys are stored compressed (32 B) on chain, or full (64 B) for rows registered earlier */
@@ -77,7 +78,6 @@ export async function logout(session: Session | null) {
 
 // ---------------------------------------------------------------- hex helpers
 
-export const SYM = "4,XPR";
 const hx = (bare: string): Hex => `0x${bare.toLowerCase()}` as Hex;
 const bare = (h: string) => h.replace(/^0x/i, "").toLowerCase();
 
@@ -125,9 +125,9 @@ async function rpc<T>(path: string, body: unknown): Promise<T> {
   throw lastErr;
 }
 
-/** Live public XPR balance (units). */
-export async function getPublicBalance(actor: string): Promise<bigint> {
-  const rows = await rpc<string[]>("get_currency_balance", { code: TOKEN_CONTRACT, account: actor, symbol: "XPR" });
+/** Live public balance of `token` (units). */
+export async function getPublicBalance(actor: string, token: Token = XPR): Promise<bigint> {
+  const rows = await rpc<string[]>("get_currency_balance", { code: token.contract, account: actor, symbol: token.code });
   return rows.length ? fromAsset(rows[0]) : 0n;
 }
 
@@ -174,10 +174,10 @@ const parseRow = (r: RawAccountRow): ConfAccountRow => ({
   nonce: String(r.nonce),
 });
 
-export async function getConfAccount(actor: string): Promise<ConfAccountRow | null> {
+export async function getConfAccount(actor: string, token: Token = XPR): Promise<ConfAccountRow | null> {
   const r = await rpc<{ rows: RawAccountRow[] }>("get_table_rows", {
     code: CONTRACT,
-    scope: SYM_RAW,
+    scope: token.raw,
     table: "accounts",
     lower_bound: actor,
     upper_bound: actor,
@@ -188,14 +188,14 @@ export async function getConfAccount(actor: string): Promise<ConfAccountRow | nu
   return row && row.owner === actor ? parseRow(row) : null;
 }
 
-/** every registered account (peers you can pay confidentially) */
-export async function listConfAccounts(): Promise<ConfAccountRow[]> {
+/** every account registered for `token` (peers you can pay confidentially) */
+export async function listConfAccounts(token: Token = XPR): Promise<ConfAccountRow[]> {
   const out: ConfAccountRow[] = [];
   let lower = "";
   for (let i = 0; i < 20; i++) {
     const r = await rpc<{ rows: RawAccountRow[]; more: boolean; next_key: string }>("get_table_rows", {
       code: CONTRACT,
-      scope: SYM_RAW,
+      scope: token.raw,
       table: "accounts",
       lower_bound: lower,
       limit: 100,
@@ -209,26 +209,42 @@ export async function listConfAccounts(): Promise<ConfAccountRow[]> {
 }
 
 export interface ConfConfig {
+  token: Token;
   auditorPubkey: Hex;
   withdrawGranularity: bigint;
   depositGranularity: bigint;
   paused: boolean;
   tokenContract: string;
 }
-export async function getConfConfig(): Promise<ConfConfig | null> {
-  const r = await rpc<{ rows: { sym: string | number; token_contract: string; auditor_pubkey: string; withdraw_granularity: string | number; deposit_granularity: string | number; paused: number | boolean }[] }>(
-    "get_table_rows",
-    { code: CONTRACT, scope: CONTRACT, table: "config", lower_bound: SYM_RAW, upper_bound: SYM_RAW, limit: 1, json: true }
-  );
+interface RawConfigRow {
+  sym: string | number;
+  token_contract: string;
+  auditor_pubkey: string;
+  withdraw_granularity: string | number;
+  deposit_granularity: string | number;
+  paused: number | boolean;
+}
+const parseConfig = (c: RawConfigRow): ConfConfig => ({
+  token: tokenFromRaw(c.sym, c.token_contract),
+  auditorPubkey: fullKey(c.auditor_pubkey),
+  withdrawGranularity: BigInt(c.withdraw_granularity),
+  depositGranularity: BigInt(c.deposit_granularity),
+  paused: !!c.paused,
+  tokenContract: c.token_contract,
+});
+
+export async function getConfConfig(token: Token = XPR): Promise<ConfConfig | null> {
+  const r = await rpc<{ rows: RawConfigRow[] }>("get_table_rows", {
+    code: CONTRACT, scope: CONTRACT, table: "config", lower_bound: token.raw, upper_bound: token.raw, limit: 1, json: true,
+  });
   const c = r.rows[0];
-  if (!c) return null;
-  return {
-    auditorPubkey: fullKey(c.auditor_pubkey),
-    withdrawGranularity: BigInt(c.withdraw_granularity),
-    depositGranularity: BigInt(c.deposit_granularity),
-    paused: !!c.paused,
-    tokenContract: c.token_contract,
-  };
+  return c && String(c.sym) === token.raw ? parseConfig(c) : null;
+}
+
+/** every token the contract is configured for (one `config` row each), XPR first */
+export async function listTokens(): Promise<Token[]> {
+  const r = await rpc<{ rows: RawConfigRow[] }>("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "config", limit: 100, json: true });
+  return sortTokens(r.rows.map((c) => parseConfig(c).token));
 }
 
 // ---------------------------------------------------------------- Hyperion history
@@ -278,7 +294,7 @@ async function sendDataFromChain(blockNum: number, trxId: string): Promise<Recor
   }
 }
 
-export async function poolHistory(limit = 200): Promise<PoolAction[]> {
+export async function poolHistory(limit = 200, token: Token = XPR): Promise<PoolAction[]> {
   // Hyperion failover: first endpoint that answers wins
   let res: Response | null = null;
   let lastErr: unknown = null;
@@ -314,6 +330,10 @@ export async function poolHistory(limit = 200): Promise<PoolAction[]> {
     const base = { ts, block: a.block_num, txid: a.trx_id, seq: a.global_sequence };
     const x = a.act.data;
     if (a.act.account === CONTRACT) {
+      // contract actions carry the symbol ("4,XPR") or an asset; keep only this token's
+      const symOk = x.sym === undefined || String(x.sym) === token.symStr;
+      if (!symOk) continue;
+      if (a.act.name === "withdraw" && assetCode(String(x.quantity ?? "")) !== token.code) continue;
       if (a.act.name === "send") {
         // One unreadable row must not empty the whole ledger. Actions from before the
         // key-compression change decode under the current ABI with shifted fields
@@ -334,7 +354,7 @@ export async function poolHistory(limit = 200): Promise<PoolAction[]> {
       } else if (a.act.name === "register") {
         out.push({ ...base, kind: "register", from: String(x.owner), to: String(x.owner) });
       }
-    } else if (a.act.account === TOKEN_CONTRACT && a.act.name === "transfer") {
+    } else if (a.act.account === token.contract && a.act.name === "transfer" && assetCode(String(x.quantity ?? "")) === token.code) {
       const from = String(x.from);
       const to = String(x.to);
       const memo = String(x.memo ?? "");
@@ -352,41 +372,41 @@ export async function poolHistory(limit = 200): Promise<PoolAction[]> {
 
 const auth = (s: Session) => [{ actor: s.auth.actor, permission: s.auth.permission }];
 
-export function registerAction(s: Session, encPubkey: Hex, _pok?: Hex) {
-  return { account: CONTRACT, name: "register", authorization: auth(s), data: { owner: s.auth.actor, sym: SYM, enc_pubkey: bare(encPubkey) } };
+export function registerAction(s: Session, token: Token, encPubkey: Hex) {
+  return { account: CONTRACT, name: "register", authorization: auth(s), data: { owner: s.auth.actor, sym: token.symStr, enc_pubkey: bare(encPubkey) } };
 }
 
 /** deposit = plain token transfer into escrow with memo `conf:<owner>` */
-export function depositAction(s: Session, amount: bigint) {
+export function depositAction(s: Session, token: Token, amount: bigint) {
   return {
-    account: TOKEN_CONTRACT,
+    account: token.contract,
     name: "transfer",
     authorization: auth(s),
-    data: { from: s.auth.actor, to: CONTRACT, quantity: toAsset(amount), memo: `conf:${s.auth.actor}` },
+    data: { from: s.auth.actor, to: CONTRACT, quantity: toAsset(amount, token), memo: `conf:${s.auth.actor}` },
   };
 }
 
-export function applyPendingAction(s: Session) {
-  return { account: CONTRACT, name: "applypending", authorization: auth(s), data: { owner: s.auth.actor, sym: SYM } };
+export function applyPendingAction(s: Session, token: Token) {
+  return { account: CONTRACT, name: "applypending", authorization: auth(s), data: { owner: s.auth.actor, sym: token.symStr } };
 }
 
 /** `ps`/`pr`/`pa`: full sender / receiver / auditor pubkeys; the contract stores them compressed and checks these. */
-export function transferAction(s: Session, to: string, t: TransferCiphertext, newBalance: ChunkedCiphertext, proof: Hex, ps: Hex, pr: Hex, pa: Hex) {
+export function transferAction(s: Session, token: Token, to: string, t: TransferCiphertext, newBalance: ChunkedCiphertext, proof: Hex, ps: Hex, pr: Hex, pa: Hex) {
   return {
     account: CONTRACT,
     name: "send",
     authorization: auth(s),
-    data: { from: s.auth.actor, sym: SYM, to, ps: bare(ps), pr: bare(pr), pa: bare(pa), t: transferSetHex(t), b_new: pairSetHex(newBalance), proof: bare(proof) },
+    data: { from: s.auth.actor, sym: token.symStr, to, ps: bare(ps), pr: bare(pr), pa: bare(pa), t: transferSetHex(t), b_new: pairSetHex(newBalance), proof: bare(proof) },
   };
 }
 
 /** `po`/`pa`: full owner / auditor pubkeys (see `transferAction`). */
-export function withdrawAction(s: Session, amount: bigint, newBalance: ChunkedCiphertext, proof: Hex, po: Hex, pa: Hex) {
+export function withdrawAction(s: Session, token: Token, amount: bigint, newBalance: ChunkedCiphertext, proof: Hex, po: Hex, pa: Hex) {
   return {
     account: CONTRACT,
     name: "withdraw",
     authorization: auth(s),
-    data: { owner: s.auth.actor, quantity: toAsset(amount), po: bare(po), pa: bare(pa), b_new: pairSetHex(newBalance), proof: bare(proof) },
+    data: { owner: s.auth.actor, quantity: toAsset(amount, token), po: bare(po), pa: bare(pa), b_new: pairSetHex(newBalance), proof: bare(proof) },
   };
 }
 

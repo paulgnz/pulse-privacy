@@ -23,18 +23,19 @@ export const Withdraw = ({
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [ack, setAck] = useState(false);
 
+  const T = st.token;
   const parsed = useMemo(() => {
     try {
-      return amt ? parseUnits(amt) : null;
+      return amt ? parseUnits(amt, T) : null;
     } catch {
       return null;
     }
-  }, [amt]);
+  }, [amt, T]);
   const spendable = st.balance + st.pending;
   const over = parsed !== null && parsed > spendable;
   const g = st.config.withdrawGranularity;
   const check = parsed ? checkWithdrawal(parsed, st.incoming, st.edgesSinceLastIncoming, st.config) : null;
-  const chainRejects = parsed !== null && g > 0n && !isRound(parsed, g);
+  const chainRejects = parsed !== null && g > 0n && !isRound(parsed, g, T.units);
   const needsAck = check?.level === "warn" && !chainRejects;
   const can = !!parsed && parsed > 0n && !over && !chainRejects && !busy && (!needsAck || ack);
 
@@ -44,7 +45,7 @@ export const Withdraw = ({
     setProg({ f: 0, s: "Starting" });
     try {
       const tx = await onWithdraw(parsed, (f, s) => setProg({ f, s }));
-      const done = `Withdrew ${fmtUnits(parsed)} XPR to your public balance. Transaction ${tx.slice(0, 12)}.`;
+      const done = `Withdrew ${fmtUnits(parsed, T)} ${T.code} to your public balance. Transaction ${tx.slice(0, 12)}.`;
       if (onDone) onDone(done); else setResult({ ok: true, msg: done });
       setAmt("");
       setAck(false);
@@ -58,15 +59,15 @@ export const Withdraw = ({
   return (
     <div className="form" aria-label="Withdraw">
       <h3>Withdraw</h3>
-      <p>Withdrawing moves XPR back out as a public transfer. Keep it for when you need public XPR; paying inside the contract is the private path.</p>
+      <p>Withdrawing moves {T.code} back out as a public transfer. Keep it for when you need public {T.code}; paying inside the contract is the private path.</p>
       <Field
         label="Amount"
-        error={over ? `More than you can spend. You have ${fmtUnits(spendable)} XPR.` : chainRejects ? `The contract accepts whole multiples of ${fmtUnits(g, { trim: true })} XPR.` : undefined}
-        hint={`You can withdraw up to ${fmtUnits(spendable)} XPR${g > 0n ? `, in multiples of ${fmtUnits(g, { trim: true })}` : ""}.`}
+        error={over ? `More than you can spend. You have ${fmtUnits(spendable, T)} ${T.code}.` : chainRejects ? `The contract accepts whole multiples of ${fmtUnits(g, T, { trim: true })} ${T.code}.` : undefined}
+        hint={`You can withdraw up to ${fmtUnits(spendable, T)} ${T.code}${g > 0n ? `, in multiples of ${fmtUnits(g, T, { trim: true })}` : ""}.`}
       >
-        <AmountInput value={amt} onChange={setAmt} autoFocus />
+        <AmountInput value={amt} onChange={setAmt} autoFocus token={T} />
       </Field>
-      {!chainRejects && check ? <EdgeNote check={check} onSuggest={(a) => setAmt(fmtUnits(a, { trim: true }).replace(/,/g, ""))} /> : null}
+      {!chainRejects && check ? <EdgeNote check={check} token={T} onSuggest={(a) => setAmt(fmtUnits(a, T, { trim: true }).replace(/,/g, ""))} /> : null}
       {needsAck ? (
         <label className="check">
           <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
@@ -78,7 +79,7 @@ export const Withdraw = ({
       ) : (
         <div className="row" style={{ marginBottom: 16 }}>
           <button className="btn" onClick={go} disabled={!can}>
-            {parsed && parsed > 0n && !over && !chainRejects ? `Withdraw ${fmtUnits(parsed)} XPR` : "Withdraw"}
+            {parsed && parsed > 0n && !over && !chainRejects ? `Withdraw ${fmtUnits(parsed, T)} ${T.code}` : "Withdraw"}
           </button>
           <button className="textbtn quiet" onClick={onClose}>
             Cancel
