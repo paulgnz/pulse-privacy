@@ -5,7 +5,7 @@ gates in §12 of the design doc still stand before the caps are raised: the mult
 (`ceremony/`, then `setvk`) and an external audit. Deployed: account `xprconf` (created by
 `paul123`, 350 KB RAM), code `8e4fa44f…`, `init` with the committee's auditor key
 (secret held off-chain by Paul for the committee), `setlimits` pool 20,000 / deposit 1,000 XPR,
-whole-XPR withdrawals. Governance transfer to `admin.proton@committee` pending decision.
+whole-XPR withdrawals. Owner of `xprconf` is `admin.proton@committee` (3-of-6) since tx `346f2250…`; active stays on the operational key until the ceremony key is installed and caps are settled, then moves to the committee too.
 
 ## 1. What ships
 
