@@ -1,0 +1,16 @@
+import { Blockchain } from "@proton/vert";
+import { join, dirname } from "node:path"; import { fileURLToPath } from "node:url";
+import eg from "../../../circuits/lib/elgamal.mjs";
+const HERE = dirname(fileURLToPath(import.meta.url));
+await eg.init(); const F = eg.F;
+const k = eg.keygen(5n); const o = eg.toObj(k.P);
+const bc = new Blockchain(); const c = bc.createContract("dbg", join(HERE, "../assembly/target/bjdbg.contract"));
+for (let i = 0; i < 200 && !c.actions.dbg; i++) await new Promise((r) => setTimeout(r, 25));
+const hx = (n) => n.toString(16).padStart(64, "0");
+const dbl = eg.bj.addPoint(k.P, k.P);
+console.log("JS  p =", F.p.toString(16)); console.log("JS  a =", hx(o[0]));
+console.log("JS  a2=", ((o[0]*o[0]) % F.p).toString(16)); console.log("JS sum=", (o[0]+o[1]).toString(16)); console.log("JS shr=", (o[0]>>1n).toString(16)); console.log("JS and=", (o[0]&1n).toString(16));
+console.log("JS oncurve=", eg.bj.inCurve(k.P) ? 1 : 0); console.log("JS dbl=", eg.toObj(dbl).map(x=>x.toString(16)).join(","));
+bc.enableStorageDeltas?.(); 
+const r = await c.actions.dbg([hx(o[0]), hx(o[1])]).send("dbg@active");
+console.log("--- contract console:"); console.log(bc.console ?? (r && r.console) ?? "(see vert log)");

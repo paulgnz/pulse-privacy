@@ -1,2 +1,4 @@
 node_modules/
 assembly/target/
+tests/.testnet-keys.json
+deploy/

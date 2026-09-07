@@ -118,8 +118,13 @@ export async function getConfAccount(actor: string): Promise<ConfAccountRow | nu
 
 const auth = (s: Session) => [{ actor: s.auth.actor, permission: s.auth.permission }];
 
-export function registerAction(s: Session, encPubkey: Hex, pok: Hex) {
-  return { account: CONTRACT, name: "register", authorization: auth(s), data: { owner: s.auth.actor, enc_pubkey: encPubkey, pok } };
+// Action shapes match the deployed testnet ABI (contracts/xpr-conf-tsc, 2026-09-07):
+//   register(owner, sym, enc_pubkey) · applypending(owner, sym) · send(from, sym, to, t, b_new, proof)
+//   withdraw(owner, quantity, b_new, proof) · deposit = eosio.token::transfer memo conf:<owner>
+export const SYM = "4,XPR";
+
+export function registerAction(s: Session, encPubkey: Hex, _pok?: Hex) {
+  return { account: CONTRACT, name: "register", authorization: auth(s), data: { owner: s.auth.actor, sym: SYM, enc_pubkey: encPubkey } };
 }
 
 /** deposit = plain token transfer into escrow with memo `conf:<owner>` */
@@ -133,15 +138,15 @@ export function depositAction(s: Session, amount: bigint) {
 }
 
 export function applyPendingAction(s: Session) {
-  return { account: CONTRACT, name: "applypending", authorization: auth(s), data: { owner: s.auth.actor } };
+  return { account: CONTRACT, name: "applypending", authorization: auth(s), data: { owner: s.auth.actor, sym: SYM } };
 }
 
 export function transferAction(s: Session, to: string, t: TransferCiphertext, newBalance: ChunkedCiphertext, proof: Hex) {
   return {
     account: CONTRACT,
-    name: "transfer",
+    name: "send",
     authorization: auth(s),
-    data: { from: s.auth.actor, to, t, b_new: newBalance, proof },
+    data: { from: s.auth.actor, sym: SYM, to, t, b_new: newBalance, proof },
   };
 }
 
@@ -150,7 +155,7 @@ export function withdrawAction(s: Session, amount: bigint, newBalance: ChunkedCi
     account: CONTRACT,
     name: "withdraw",
     authorization: auth(s),
-    data: { owner: s.auth.actor, amount: toAsset(amount), b_new: newBalance, proof },
+    data: { owner: s.auth.actor, quantity: toAsset(amount), b_new: newBalance, proof },
   };
 }
 

@@ -1,0 +1,119 @@
+// T3 end-to-end under vert: eosio.token + xprconf, real circuit proofs.
+//   register alice/bob → alice deposits 5,000 XPR → fold → alice sends 1,234 to bob (proof)
+//   → bob reads +1,234 → auditor reads 1,234 → bob folds → bob withdraws 1,000 (proof)
+//   → bob's public balance is 1,000 → granularity / overdraft / replay rejections
+// Needs circuits/build (compile + setup) for the wasm, zkey and vk.
+import { Blockchain, expectToThrow, nameToBigInt } from "@proton/vert";
+import * as snarkjs from "snarkjs";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import eg from "../../../circuits/lib/elgamal.mjs";
+import { encodeProof, encodeVk } from "../../../circuits/lib/encode.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const CB = (p) => join(HERE, "../../../circuits/build", p);
+const WASM = CB("transfer_js/transfer.wasm");
+const ZKEY = CB("transfer_final.zkey");
+const VK = JSON.parse(readFileSync(CB("transfer_vk.json"), "utf8"));
+const t0 = Date.now();
+const lap = (m) => console.log(`[${((Date.now() - t0) / 1000).toFixed(1)}s] ${m}`);
+const XPR = (n) => `${(Number(n) / 1e4).toFixed(4)} XPR`;
+const units = (xpr) => BigInt(Math.round(xpr * 1e4));
+
+await eg.init();
+const alice = eg.keygen();
+const bob = eg.keygen();
+const auditor = eg.keygen();
+
+// --- chain ---
+const bc = new Blockchain();
+const [aliceAcc, bobAcc] = bc.createAccounts("alice", "bob");
+const token = bc.createContract("eosio.token", join(HERE, "../node_modules/proton-tsc/external/eosio.token/eosio.token"));
+const conf = bc.createContract("xprconf", join(HERE, "../assembly/target/xprconf.contract"));
+for (let i = 0; i < 400 && !(conf.actions.send && token.actions.transfer); i++) await new Promise((r) => setTimeout(r, 25));
+if (!conf.actions.send) throw new Error("xprconf did not load");
+await token.actions.create(["eosio.token", "1000000000.0000 XPR"]).send("eosio.token@active");
+await token.actions.issue(["eosio.token", "100000.0000 XPR", ""]).send("eosio.token@active");
+await token.actions.transfer(["eosio.token", "alice", "10000.0000 XPR", "seed"]).send("eosio.token@active");
+lap("chain ready: eosio.token + xprconf, alice has 10,000 XPR");
+
+// --- init: vk from the rehearsal ceremony, auditor key, whole-XPR granularity on withdraw ---
+await conf.actions.init(["4,XPR", "eosio.token", eg.ptHex(auditor.P), encodeVk(VK), "10000", "0"]).send("xprconf@active");
+await conf.actions.register(["alice", "4,XPR", eg.ptHex(alice.P)]).send("alice@active");
+await conf.actions.register(["bob", "4,XPR", eg.ptHex(bob.P)]).send("bob@active");
+await expectToThrow(conf.actions.register(["alice", "4,XPR", eg.ptHex(alice.P)]).send("alice@active"), "eosio_assert: already registered");
+lap("init + register");
+
+// accounts are scoped by the symbol raw value (precision in the low byte, code above it)
+function symScope() {
+  const code = "XPR";
+  let raw = 4n;
+  for (let i = 0; i < code.length; i++) raw |= BigInt(code.charCodeAt(i)) << BigInt(8 * (i + 1));
+  return raw;
+}
+const acct = (name) => conf.tables.accounts(symScope()).getTableRow(nameToBigInt(name));
+
+// --- deposit 5,000 XPR (public), then fold ---
+await token.actions.transfer(["alice", "xprconf", "5000.0000 XPR", "conf:alice"]).send("alice@active");
+let a = acct("alice");
+if (a.pending_count !== 1) throw new Error("deposit not credited");
+await conf.actions.applypending(["alice", "4,XPR"]).send("alice@active");
+a = acct("alice");
+const aliceBal = eg.decrypt64(eg.ctFromHex(a.avail), alice.s);
+if (aliceBal !== units(5000)) throw new Error(`alice avail decrypts to ${aliceBal}`);
+lap(`deposit + fold: alice's avail decrypts to ${XPR(aliceBal)} (chain shows a box)`);
+
+// --- alice → bob 1,234 XPR with a real proof ---
+const bold = eg.ctFromHex(a.avail);
+const voldChunks = [eg.bsgs32(eg.decryptPoint(bold[0].C, bold[0].D, alice.s)), eg.bsgs32(eg.decryptPoint(bold[1].C, bold[1].D, alice.s))];
+const wit = eg.buildTransferWitness({
+  sender: alice, receiverP: bob.P, auditorP: auditor.P, bold, voldChunks, v: units(1234),
+  nonce: BigInt(a.nonce), senderName: nameToBigInt("alice"), receiverName: nameToBigInt("bob"),
+});
+let { proof } = await snarkjs.groth16.fullProve(wit.input, WASM, ZKEY);
+lap("transfer proof generated");
+const tHex = eg.tHex(wit.T);
+const bnewHex = eg.ctHex(wit.Bnew);
+await conf.actions.send(["alice", "4,XPR", "bob", tHex, bnewHex, encodeProof(proof)]).send("alice@active");
+lap("send accepted on chain");
+
+// replay is rejected (nonce and balance moved on)
+await expectToThrow(conf.actions.send(["alice", "4,XPR", "bob", tHex, bnewHex, encodeProof(proof)]).send("alice@active"), "eosio_assert: invalid proof");
+lap("replay rejected");
+
+a = acct("alice");
+let b = acct("bob");
+if (eg.decrypt64(eg.ctFromHex(a.avail), alice.s) !== units(5000 - 1234)) throw new Error("alice new balance wrong");
+const bobPending = eg.decrypt64(eg.tReceiverFromHex(tHex), bob.s); // from the action data
+const bobPendingOnChain = eg.decrypt64(eg.ctFromHex(b.pending), bob.s); // from the table
+const auditorReads = eg.decrypt64(eg.tAuditorFromHex(tHex), auditor.s);
+if (bobPending !== units(1234) || bobPendingOnChain !== units(1234) || auditorReads !== units(1234)) throw new Error("decrypt mismatch");
+lap(`alice reads ${XPR(units(5000 - 1234))} · bob reads +${XPR(bobPending)} · auditor reads ${XPR(auditorReads)}`);
+
+// --- bob folds and withdraws 1,000 XPR (public) ---
+await conf.actions.applypending(["bob", "4,XPR"]).send("bob@active");
+b = acct("bob");
+const bBold = eg.ctFromHex(b.avail);
+const bVold = [eg.bsgs32(eg.decryptPoint(bBold[0].C, bBold[0].D, bob.s)), eg.bsgs32(eg.decryptPoint(bBold[1].C, bBold[1].D, bob.s))];
+const wwit = eg.buildWithdrawWitness({ owner: bob, auditorP: auditor.P, bold: bBold, voldChunks: bVold, v: units(1000), nonce: BigInt(b.nonce), ownerName: nameToBigInt("bob") });
+({ proof } = await snarkjs.groth16.fullProve(wwit.input, WASM, ZKEY));
+lap("withdraw proof generated");
+await conf.actions.withdraw(["bob", "1000.0000 XPR", eg.ctHex(wwit.Bnew), encodeProof(proof)]).send("bob@active");
+const bobPublic = token.tables.accounts(nameToBigInt("bob")).getTableRows();
+if (!bobPublic.some((r) => r.balance === "1000.0000 XPR")) throw new Error(`bob public balance: ${JSON.stringify(bobPublic)}`);
+b = acct("bob");
+if (eg.decrypt64(eg.ctFromHex(b.avail), bob.s) !== units(234)) throw new Error("bob confidential balance after withdraw wrong");
+lap("withdraw: bob has 1,000.0000 XPR public and 234 XPR confidential");
+
+// --- rejections ---
+await expectToThrow(conf.actions.withdraw(["bob", "12.3456 XPR", eg.ctHex(wwit.Bnew), encodeProof(proof)]).send("bob@active"), "eosio_assert: withdrawal must be a multiple of the granularity");
+lap("granularity enforced (12.3456 XPR rejected)");
+let overdraft = null;
+try { eg.buildWithdrawWitness({ owner: bob, auditorP: auditor.P, bold: eg.ctFromHex(b.avail), voldChunks: [units(234), 0n], v: units(300), nonce: 1n, ownerName: 1n }); } catch (e) { overdraft = e.message; }
+if (overdraft !== "insufficient balance") throw new Error("overdraft witness should fail");
+lap("overdraft cannot be proven");
+const escrow = token.tables.accounts(nameToBigInt("xprconf")).getTableRows();
+lap(`escrow (public proof of reserve): ${escrow[0]?.balance}`);
+console.log("T3 end-to-end passed");
+process.exit(0);

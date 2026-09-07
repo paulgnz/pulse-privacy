@@ -149,9 +149,62 @@ export function buildTransferWitness({ sender, receiverP, auditorP, bold, voldCh
   return { input, T, Bnew: Bnew.map((c) => ({ C: c.C, D: c.D.s })), vNew };
 }
 
+/**
+ * Withdraw = the transfer circuit with r_T = 0 and receiver = self: TC_k = v_k·G, all handles
+ * are the identity. The contract recomputes TC from the public amount and checks it.
+ */
+export function buildWithdrawWitness({ owner, auditorP, bold, voldChunks, v, nonce, ownerName }) {
+  const vOld = join64(voldChunks[0], voldChunks[1]);
+  if (BigInt(v) > vOld) throw new Error("insufficient balance");
+  const vNew = vOld - BigInt(v);
+  const vC = split64(v);
+  const nC = split64(vNew);
+  const rN = [randScalar(), randScalar()];
+  const T = [0, 1].map((k) => encrypt(vC[k], 0n, { s: owner.P, r: owner.P, a: auditorP }));
+  const Bnew = [0, 1].map((k) => encrypt(nC[k], rN[k], { s: owner.P }));
+  const P2 = (p) => toObj(p).map(String);
+  const input = {
+    Ps: P2(owner.P),
+    Pr: P2(owner.P),
+    Pa: P2(auditorP),
+    BoldC: bold.map((c) => P2(c.C)),
+    BoldD: bold.map((c) => P2(c.D)),
+    BnewC: Bnew.map((c) => P2(c.C)),
+    BnewD: Bnew.map((c) => P2(c.D.s)),
+    TC: T.map((c) => P2(c.C)),
+    TDs: T.map((c) => P2(c.D.s)),
+    TDr: T.map((c) => P2(c.D.r)),
+    TDa: T.map((c) => P2(c.D.a)),
+    nonce: String(nonce),
+    sender: String(ownerName),
+    receiver: String(ownerName),
+    s: String(owner.s),
+    vold: voldChunks.map(String),
+    v: vC.map(String),
+    vnew: nC.map(String),
+    rT: ["0", "0"],
+    rN: rN.map(String),
+  };
+  return { input, Bnew: Bnew.map((c) => ({ C: c.C, D: c.D.s })), vNew };
+}
+
+// --- byte encodings shared with the contract (big-endian 32-byte words) ---
+const w32 = (n) => BigInt(n).toString(16).padStart(64, "0");
+export const ptHex = (p) => { const o = toObj(p); return w32(o[0]) + w32(o[1]); };
+export const ptFromHex = (h, off = 0) => toPt([BigInt("0x" + h.slice(off, off + 64)), BigInt("0x" + h.slice(off + 64, off + 128))]);
+/** 256-B pair set: lo.C lo.D hi.C hi.D */
+export const ctHex = (ct) => ptHex(ct[0].C) + ptHex(ct[0].D) + ptHex(ct[1].C) + ptHex(ct[1].D);
+export const ctFromHex = (h) => [{ C: ptFromHex(h, 0), D: ptFromHex(h, 128) }, { C: ptFromHex(h, 256), D: ptFromHex(h, 384) }];
+/** 512-B transfer set: per chunk C Ds Dr Da */
+export const tHex = (T) => T.map((c) => ptHex(c.C) + ptHex(c.D.s) + ptHex(c.D.r) + ptHex(c.D.a)).join("");
+/** receiver-side view of a transfer's `t` hex: [{C, D: Dr}] per chunk */
+export const tReceiverFromHex = (h) => [0, 1].map((k) => ({ C: ptFromHex(h, k * 512), D: ptFromHex(h, k * 512 + 256) }));
+export const tAuditorFromHex = (h) => [0, 1].map((k) => ({ C: ptFromHex(h, k * 512), D: ptFromHex(h, k * 512 + 384) }));
+
 const api = {
   init, keygen, encrypt, encryptPublic, decryptPoint, decrypt64, bsgs32, buildBabyTable, ctAdd,
-  split64, join64, randScalar, toObj, toPt, buildTransferWitness,
+  split64, join64, randScalar, toObj, toPt, buildTransferWitness, buildWithdrawWitness,
+  ptHex, ptFromHex, ctHex, ctFromHex, tHex, tReceiverFromHex, tAuditorFromHex,
   get F() { return F; }, get G() { return G; }, get H() { return H; }, get INF() { return INF; }, get bj() { return bj; },
 };
 export default api;

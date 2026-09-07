@@ -5,12 +5,13 @@
   "description": "Confidential token for XPR Network testnet (proton-tsc). T1: Groth16 verifier.",
   "type": "module",
   "scripts": {
-    "build": "npx proton-asc ./assembly/groth16.contract.ts --target release",
-    "test": "node tests/groth16.test.mjs"
+    "build": "npx proton-asc ./assembly/groth16.contract.ts --target release && npx proton-asc ./assembly/xprconf.contract.ts --target release",
+    "test": "node tests/groth16.test.mjs && node tests/xprconf.test.mjs"
   },
   "dependencies": {
     "@proton/vert": "^0.3.24",
-    "proton-tsc": "^0.3.58"
+    "proton-tsc": "^0.3.58",
+    "snarkjs": "^0.7.6"
   },
   "devDependencies": {
     "typescript": "^4.9.5"

@@ -577,8 +577,26 @@ except key custody.
 | T1 | **Groth16 verifier on testnet.** ✅ **Done 2026-09-07.** proton-tsc contract `verify(vk, proof, inputs)` deployed to testnet account `xprconf`; an arkworks proof (2 public inputs) verified on chain in tx `ca44bcaf…` (block 404,501,003) at **4,123 µs CPU**; tampered input rejected ("invalid proof"); off-curve point rejected by the host function itself. G2 encoding is imaginary-first as in EIP-197; `@proton/vert` simulates the intrinsics faithfully | encoding conventions, the wrappers, real CPU cost | `contracts/xpr-conf-tsc/`, `bench --emit-evm-fixture` |
 | T2 | **Transfer circuit (circom) + ceremony rehearsal.** Twisted ElGamal on Baby Jubjub, 2 × 32-bit chunks, the §2.4 statement; snarkjs phase-2 with a small Powers-of-Tau; vk exported to the contract | the statement, constraint count, prove time in browser and native | `circuits/transfer/` |
 | T3 | **Confidential token contract.** Tables and actions of §4 in proton-tsc, including `withdraw_granularity`; Baby Jubjub adds in AssemblyScript (cost measured); vert tests for every action | the contract semantics end to end | `contracts/xpr.conf-tsc/` |
-| T4 | **Dapp.** Register, deposit, send, receive, fold, withdraw; dapp-held key with export; edge warning; WebAuth signing via `@proton/web-sdk` | the whole flow on testnet without wallet changes | `dapp/` |
+| T4 | **Dapp.** Shell ✅ (2026-09-07): Vite/React, WebAuth testnet login, live public balance, §1.9 rules, key export/import, auditor mode, mock crypto behind typed seams. **T4b pending:** wire the real prover (snarkjs in the browser with `circuits/build/transfer_js` + zkey) and the deployed contract | the whole flow on testnet without wallet changes | `dapp/` |
 | T5 | **Auditor CLI** against testnet history; escrow reconciliation | auditability | `tools/auditor-cli/` |
 
 The contract ports to `pulse-cdt-rust` later with the same tables and actions; the circuit,
 vk and dapp carry over unchanged.
+
+**Observations from the testnet build (2026-09-07):**
+
+- A proven `send` costs **≈ 7.8 ms CPU on Leap**: 41 `alt_bn128_mul` + adds + one 4-pair pairing
+  (≈ 4 ms, cf. T1) plus 4 Baby Jubjub adds via `mod_exp` and ABI/table overhead. Fine for testnet;
+  for production, reducing public inputs (hash them with a *host-function* hash and open it
+  in-circuit, or compress points) and native Baby Jubjub adds on PulseVM bring this down.
+- Toolchain gotchas worth knowing: `as-chain`'s `U256.toString(16)` is wrong, and its `modExp`
+  wrapper depends on it, so the contract binds `mod_exp` directly with byte encoding; `proton-asc`
+  needs TypeScript 4.9; a contract needs ≈ 10× its WASM size in RAM (28 KB → 278 KB) and
+  `proton contract:set` reports the RAM failure but still deploys the ABI, leaving old code
+  under a new ABI (unknown actions are then silently ignored).
+- Register has no proof-of-knowledge of the secret in v0 (on-curve check only); the transfer
+  circuit binds the sender's key, so a bogus receiver key only harms its owner. Add a Schnorr PoK
+  when native Baby Jubjub multiplication is available (PulseVM) or accept the cost on Leap.
+- 5,000 XPR sits in the testnet escrow from a transfer made while the old code was deployed
+  (no confidential claim exists for it); harmless on testnet, and the reason `deposit` must
+  never be a plain transfer in production (the notify handler asserts).
