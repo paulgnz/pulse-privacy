@@ -13,9 +13,26 @@ import type { OwnedNote, ShieldKeys } from "./notes";
 const WASM = "/circuit/joinsplit-r3.wasm";
 const ZKEY = "/circuit/joinsplit-r3_final.zkey";
 
+// Testnet nodes fall behind each other by minutes at times: order the endpoints by head block,
+// probed once per few minutes, so table reads come from the freshest node.
+let ordered: { at: number; list: string[] } | null = null;
+async function endpoints(): Promise<string[]> {
+  if (ordered && Date.now() - ordered.at < 180000) return ordered.list;
+  const heads = await Promise.all(ENDPOINTS.map(async (ep) => {
+    try {
+      const r = await fetch(`${ep}/v1/chain/get_info`, { signal: AbortSignal.timeout(4000) });
+      const j = (await r.json()) as { head_block_num: number };
+      return { ep, head: j.head_block_num };
+    } catch { return { ep, head: -1 }; }
+  }));
+  const list = heads.sort((a, b) => b.head - a.head).map((h) => h.ep);
+  ordered = { at: Date.now(), list };
+  return list;
+}
+
 async function rpc<T>(path: string, body: unknown): Promise<T> {
   let lastErr: unknown;
-  for (const ep of ENDPOINTS) {
+  for (const ep of await endpoints()) {
     try {
       const res = await fetch(`${ep}/v1/chain/${path}`, { method: "POST", body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
       if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);

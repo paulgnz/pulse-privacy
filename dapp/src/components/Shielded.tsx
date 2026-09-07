@@ -116,13 +116,28 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     } finally { setBusy(false); }
   };
 
+  /** re-read until the chain shows the change (the node may not have the block yet), up to ~12 s */
+  const refreshUntil = async (changed: (r: sh.ScanResult) => boolean) => {
+    for (let i = 0; i < 8; i++) {
+      await new Promise((res) => setTimeout(res, i === 0 ? 1200 : 1500));
+      try {
+        const r = await sh.scan(keys!);
+        setNotes(r.notes); setSpent(r.spent);
+        if (changed(r)) break;
+      } catch { /* try again */ }
+    }
+    refresh().catch(() => undefined);
+  };
+
   const run = async (label: string, f: (onProgress: (fr: number, s: string) => void) => Promise<{ txid: string }>) => {
     setBusy(true); setNotice(null); setStage({ f: 0, s: "Starting" });
+    const before = { unspent: (notes ?? []).map((n) => n.index).join(","), count: (notes ?? []).length };
     try {
       const r = await f((fr, s) => setStage({ f: fr, s }));
       setNotice({ ok: true, text: label, txid: r.txid });
       setForm(null);
-      await refresh();
+      setStage({ f: 1, s: "Confirming on chain" });
+      await refreshUntil((res) => res.notes.map((n) => n.index).join(",") !== before.unspent || res.notes.length !== before.count);
     } catch (e) {
       const detail = describeLastError();
       const msg = (e as Error).message;
