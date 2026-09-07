@@ -390,27 +390,82 @@ details[open] summary { margin-bottom: 12px; }
   .topbar .right .who { padding-left: 0; border-left: 0; margin-left: auto; }
 }
 
-/* ---- Watch it happen (About) ---- */
-.walkthrough { margin-top: 18px; max-width: min(var(--measure), 100%); min-width: 0; }
-.walkthrough .wt-scroll { overflow-x: auto; max-width: 100%; }
-.walkthrough svg { display: block; min-width: 600px; font-family: var(--font); }
-.walkthrough .wt-name { font-size: 15px; font-weight: 600; fill: var(--ink); }
-.walkthrough .wt-label { font-size: 13px; fill: var(--graphite); }
-.walkthrough .wt-num { font-size: 15px; fill: var(--ink); font-variant-numeric: tabular-nums lining-nums; }
-.walkthrough .wt-escrow { font-size: 17px; font-weight: 500; }
-.walkthrough .wt-move { font-weight: 500; }
-.walkthrough .wt-tag { font-size: 11px; fill: var(--private); }
-.walkthrough .wt-bar { fill: var(--ink); }
-.walkthrough .wt-contract { fill: var(--sheet); stroke: var(--ink); stroke-width: 1; }
-.walkthrough .wt-rule { stroke: var(--rule); stroke-width: 1; }
-.walkthrough .wt-auditor { fill: var(--auditor); }
-.walkthrough .wt-key { fill: none; stroke: var(--auditor); stroke-width: 2; stroke-linecap: round; }
-.walkthrough .wt-bar-row { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
-.walkthrough .wt-caption { max-width: 56ch; }
-.walkthrough .wt-step { color: var(--graphite); font-size: 13px; margin-right: 10px; font-variant-numeric: tabular-nums; }
-.walkthrough .wt-controls { display: flex; gap: 14px; }
-.walkthrough .wt-captions { margin: 10px 0 0; padding-left: 20px; }
-.walkthrough .wt-captions li { margin: 4px 0; }
+/* ---- Interactive payment walkthrough (About and onboarding) ---- */
+.walkthrough { margin-top: 22px; width: 100%; min-width: 0; border: 1px solid var(--rule); border-radius: 10px; background: var(--sheet); overflow: hidden; }
+.wt-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--rule); }
+.wt-step-button { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 54px; padding: 10px 6px; border: 0; background: transparent; font: inherit; font-size: 13px; color: var(--graphite); cursor: pointer; }
+.wt-step-button:hover { background: var(--paper); color: var(--ink); }
+.wt-step-button[aria-current] { color: var(--private); background: var(--private-soft); font-weight: 600; }
+.wt-step-button:focus-visible { outline-offset: -4px; }
+.wt-step-number { font-size: 11px; width: 21px; height: 21px; border: 1px solid var(--rule); border-radius: 50%; display: inline-grid; place-items: center; font-variant-numeric: tabular-nums; }
+.wt-step-button[aria-current] .wt-step-number { border-color: var(--private); }
+.wt-step-progress { position: absolute; left: 0; bottom: 0; width: 100%; height: 2px; background: var(--private); transform-origin: left; }
+.walkthrough .wt-story { padding: 22px 24px 0; min-height: 112px; }
+.walkthrough .wt-story h3 { margin: 0 0 8px; font-size: 19px; letter-spacing: -0.015em; }
+.walkthrough .wt-story p { margin: 0; color: var(--graphite); font-size: 14px; line-height: 1.5; }
+.wt-stage { padding: 22px 24px; font-variant-numeric: tabular-nums; }
+.wt-wallets, .wt-routes, .wt-boxes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.wt-wallet { display: flex; flex-direction: column; align-items: center; padding: 14px; border: 1px solid var(--rule); border-radius: 7px; background: var(--paper); transition: border-color 200ms; }
+.wt-wallet.wt-active { border-color: var(--graphite); }
+.wt-person { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+.wt-avatar { display: inline-grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--rule); background: var(--sheet); border-radius: 50%; font-size: 11px; color: var(--graphite); }
+.wt-wallet-label { font-size: 11px; color: var(--graphite); margin-top: 8px; }
+.wt-wallet strong { font-size: 23px; font-weight: 500; letter-spacing: -0.025em; }
+.wt-wallet small, .wt-total small { font-size: 12px; font-weight: 400; letter-spacing: 0; color: var(--graphite); }
+.wt-route { position: relative; height: 68px; display: grid; place-items: center; opacity: 0.22; }
+.wt-route-active { opacity: 1; }
+.wt-route-line { width: 1px; position: absolute; inset: 0 auto; background: var(--graphite); }
+.wt-route-arrow { font-size: 18px; color: var(--graphite); padding: 0 5px; background: var(--sheet); }
+.wt-money { position: absolute; padding: 3px 9px; background: var(--ink); color: white; border-radius: 4px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.wt-pool { border: 1px solid var(--rule); background: var(--paper); border-radius: 7px; padding: 16px; }
+.wt-pool-heading, .wt-total, .wt-ledger-heading, .wt-ledger-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.wt-pool-heading { font-size: 13px; font-weight: 600; flex-wrap: wrap; }
+.wt-view { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--graphite); font-weight: 400; }
+.wt-view svg { width: 13px; height: 13px; }
+.wt-total { padding: 10px 0 12px; margin-bottom: 12px; border-bottom: 1px solid var(--rule); font-size: 12px; color: var(--graphite); }
+.wt-total strong { font-size: 19px; color: var(--ink); font-weight: 500; }
+.wt-boxes { gap: 14px; }
+.wt-box { min-width: 0; display: flex; flex-direction: column; gap: 9px; align-items: center; padding: 12px 6px; border: 1px solid var(--rule); border-radius: 5px; background: var(--sheet); font-size: 12px; }
+.wt-box-funded { border-color: #b8c2ef; }
+.wt-hidden { height: 16px; width: 76px; border-radius: 2px; background: var(--ink); opacity: 0.14; }
+.wt-box-funded .wt-hidden { opacity: 1; }
+.wt-box small { color: var(--graphite); font-size: 11px; }
+.wt-transfer { color: var(--graphite); text-align: center; font-size: 11px; }
+.wt-transfer-active { color: var(--private); }
+.wt-transfer-track { height: 42px; position: relative; margin: 0 12%; }
+.wt-transfer-line { position: absolute; left: 10%; right: 10%; top: 20px; border-top: 1px dashed var(--rule); }
+.wt-transfer-active .wt-transfer-line { border-color: var(--private); }
+.wt-packet { position: absolute; top: 7px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; background: var(--private); color: white; transform: translateX(-50%); box-shadow: 0 2px 5px #10121414; }
+.wt-ledger { margin-top: 18px; }
+.wt-ledger-heading { padding-bottom: 8px; font-size: 12px; font-weight: 600; }
+.wt-ledger-row { min-height: 33px; border-top: 1px solid var(--rule-soft); font-size: 12px; color: var(--graphite); }
+.wt-ledger-row strong { font-weight: 500; color: var(--ink); }
+.wt-ledger-hidden { display: inline-flex; align-items: center; gap: 5px; color: var(--graphite); }
+.wt-ledger-hidden svg { width: 12px; height: 12px; }
+.wt-auditing .wt-ledger-heading, .wt-auditing .wt-ledger-heading .wt-view { color: var(--auditor); }
+.wt-ledger-revealed { background: var(--auditor-soft); padding: 0 8px; border-radius: 3px; }
+.wt-ledger-revealed strong { color: var(--auditor); animation: wt-reveal 350ms ease-out both; }
+@keyframes wt-reveal { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.wt-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 10px 24px; border-top: 1px solid var(--rule); background: var(--paper); }
+.wt-example { font-size: 11px; color: var(--graphite); }
+.wt-controls { display: flex; gap: 16px; }
+.wt-controls button { font-size: 12px; min-height: 32px; }
+@media (max-width: 480px) {
+  .wt-step-button { flex-direction: column; gap: 4px; font-size: 11px; min-height: 64px; }
+  .walkthrough .wt-story { padding: 18px 14px 0; min-height: 136px; }
+  .walkthrough .wt-story h3 { font-size: 17px; }
+  .walkthrough .wt-story p { font-size: 13px; }
+  .wt-stage { padding: 16px 14px; }
+  .wt-wallets, .wt-routes { gap: 14px; }
+  .wt-wallet { padding: 12px 6px; }
+  .wt-pool { padding: 12px; }
+  .wt-pool-heading { gap: 4px; }
+  .wt-boxes { gap: 8px; }
+  .wt-box { font-size: 11px; }
+  .wt-hidden { width: 60px; }
+  .wt-footer { padding: 8px 14px; }
+  .wt-controls { gap: 14px; }
+}
 
 /* phones: keep each statement line on one row and tighten the rhythm, so the actions stay in reach */
 @media (max-width: 600px) {

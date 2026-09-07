@@ -117,7 +117,7 @@ const Connect = ({ onConnect, connectBusy, connectError, actor, publicBalance, o
         </p>
         <div className="peek">
           <h2>What it looks like</h2>
-          <p className="muted">Alice deposits, pays Bob, Bob withdraws a round amount, and the auditor reads it all. The chain sees who and when, never how much.</p>
+          <p className="muted">Follow Alice’s deposit, her confidential payment to Bob, and his withdrawal. Deposits and withdrawals are public; the payment amount inside is encrypted.</p>
           <Walkthrough />
         </div>
       </>

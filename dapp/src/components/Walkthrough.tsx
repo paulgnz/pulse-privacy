@@ -1,243 +1,181 @@
-import { useEffect, useRef, useState } from "react";
-
-// "Watch it happen": one 24-second loop, four scenes of six seconds, drawn as inline SVG from a
-// single clock so every element is a pure function of time. Pause/replay; reduced motion shows
-// the final frame with all four captions.
+import { useEffect, useId, useRef, useState } from "react";
 
 const SCENES = [
-  { at: 0, text: "A deposit is public, like any transfer." },
-  { at: 6, text: "Inside, only boxes move. The chain sees who and when, not how much." },
-  { at: 12, text: "Withdrawing is public again. Bob takes a round amount, so the edge says little." },
-  { at: 18, text: "The auditor can read every amount. Nobody else can." },
+  { label: "Deposit", title: "Public money goes in.", text: "Alice deposits 5,000 XPR. The deposit and the total held by the contract are public." },
+  { label: "Send", title: "The payment amount stays private.", text: "Alice pays Bob inside the contract. The network checks the proof and records who paid whom, without reading the amount." },
+  { label: "Withdraw", title: "Money comes out in public.", text: "Bob adds his incoming payment to his balance, then withdraws 1,000 XPR. That withdrawal is public." },
+  { label: "Auditor", title: "A viewing key opens the payment record.", text: "The auditor reads the 1,234 XPR payment and reconstructs balances from the ledger. The viewing key does not authorise spending." },
 ];
-const LOOP = 24;
+const STEP = 6;
+const DURATION = SCENES.length * STEP;
+const clamp = (n: number) => Math.max(0, Math.min(1, n));
+const progress = (t: number, from: number, to: number) => {
+  const x = clamp((t - from) / (to - from));
+  return x * x * (3 - 2 * x);
+};
+const format = (n: number) => n.toLocaleString("en-US");
+const prefersReducedMotion = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-const clamp = (x: number, a = 0, b = 1) => Math.min(b, Math.max(a, x));
-const ease = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2);
-/** 0 → 1 between t0 and t1, eased */
-const seg = (t: number, t0: number, t1: number) => ease(clamp((t - t0) / (t1 - t0)));
-const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+function initialTime() {
+  // Freeze an illustrative frame for review without running a wallet or a transaction.
+  const value = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("wt") : null;
+  if (value !== null && value.trim() !== "" && Number.isFinite(Number(value))) return Math.max(0, Math.min(DURATION, Number(value)));
+  return null;
+}
 
-// layout (viewBox 720 × 330)
-const W = 720;
-const H = 330;
-const ALICE_X = 90;
-const BOB_X = 630;
-const CX = 360; // contract centre
-const C = { x: 232, y: 96, w: 256, h: 168 }; // contract rectangle
-const ROW_ALICE = C.y + 74;
-const ROW_BOB = C.y + 116;
-const PUBLIC_Y = 212; // people's public balance line
-const BAR_W = 88;
-const BAR_H = 13;
+function Lock() {
+  return <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /><path d="M12 14v3" /></svg>;
+}
 
-export const Walkthrough = () => {
-  const reduced = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  // `?wt=<seconds>` freezes the clock at a point in the loop (screenshots, reviews)
-  const frozen = typeof window !== "undefined" ? Number(new URLSearchParams(window.location.search).get("wt")) : 0;
-  const [t, setT] = useState(reduced ? 23.2 : frozen > 0 ? frozen % LOOP : 0);
-  const [paused, setPaused] = useState(reduced || frozen > 0);
-  const raf = useRef(0);
-  const last = useRef<number | null>(null);
+export function Walkthrough() {
+  const [frozen] = useState(initialTime);
+  const [reduced, setReduced] = useState(prefersReducedMotion);
+  const [t, setT] = useState(() => frozen ?? (reduced ? STEP - 0.1 : 0));
+  const [paused, setPaused] = useState(() => reduced || frozen !== null);
+  const [inView, setInView] = useState(false);
+  const [visible, setVisible] = useState(() => typeof document === "undefined" || !document.hidden);
+  const root = useRef<HTMLDivElement>(null);
+  const time = useRef(t);
+  const captionId = useId();
+  const scene = Math.min(SCENES.length - 1, Math.floor(t / STEP));
+  const ended = t >= DURATION;
 
   useEffect(() => {
-    if (paused) {
-      last.current = null;
-      return;
-    }
-    const tick = (now: number) => {
-      if (last.current !== null) setT((x) => (x + (now - last.current!) / 1000) % LOOP);
-      last.current = now;
-      raf.current = requestAnimationFrame(tick);
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const change = () => {
+      setReduced(media.matches);
+      if (media.matches) {
+        setPaused(true);
+        time.current = Math.min(DURATION, (Math.floor(time.current / STEP) + 1) * STEP - 0.1);
+        setT(time.current);
+      }
     };
-    raf.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf.current);
-  }, [paused]);
+    const visibility = () => setVisible(!document.hidden);
+    media.addEventListener("change", change);
+    document.addEventListener("visibilitychange", visibility);
+    const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), { threshold: 0.15 });
+    if (root.current) observer.observe(root.current);
+    return () => {
+      media.removeEventListener("change", change);
+      document.removeEventListener("visibilitychange", visibility);
+      observer.disconnect();
+    };
+  }, []);
 
-  const scene = SCENES.filter((s) => t >= s.at).length - 1;
+  useEffect(() => {
+    if (paused || reduced || !inView || !visible) return;
+    let frame = 0;
+    let last: number | null = null;
+    const tick = (now: number) => {
+      if (last !== null) {
+        time.current = Math.min(DURATION, time.current + (now - last) / 1000);
+        setT(time.current);
+      }
+      last = now;
+      if (time.current >= DURATION) setPaused(true);
+      else frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [paused, reduced, inView, visible]);
 
-  // ---- scene 1: deposit (0–6) ----
-  const dep = seg(t, 0.6, 3.2); // figure travelling Alice → contract
-  const depDone = t >= 3.2;
-  const aliceBoxIn = seg(t, 3.4, 4.4);
-  const alicePublic = depDone ? 0 : 5000;
+  const seek = (step: number) => {
+    time.current = step * STEP + STEP - 0.1;
+    setT(time.current);
+    setPaused(true);
+  };
+  const replay = () => {
+    time.current = reduced ? STEP - 0.1 : 0;
+    setT(time.current);
+    setPaused(reduced);
+  };
 
-  // ---- scene 2: send (6–12) ----
-  const snd = seg(t, 7.0, 10.0); // box travelling Alice row → Bob pending row
-  const sndDone = t >= 10.0;
-  const bobPendingIn = seg(t, 10.0, 10.8);
-
-  // ---- scene 3: fold + withdraw (12–18) ----
-  const fold = seg(t, 12.6, 13.6); // pending merges into Bob's box
-  const folded = t >= 13.6;
-  const wd = seg(t, 14.2, 16.8); // figure travelling contract → Bob
-  const wdDone = t >= 16.8;
-  const bobPublic = wdDone ? 1000 : 0;
-  const escrow = depDone ? (wdDone ? 4000 : 5000) : 0;
-
-  // ---- scene 4: auditor (18–24) ----
-  const open = seg(t, 18.6, 19.6) * (1 - seg(t, 22.8, 23.6));
-
-  // travelling positions
-  const depX = lerp(ALICE_X, CX, dep);
-  const depY = lerp(PUBLIC_Y, C.y + 40, dep);
-  const sndX = lerp(C.x + 128, C.x + 128, snd);
-  const sndY = lerp(ROW_ALICE, ROW_BOB, snd);
-  const wdX = lerp(CX, BOB_X, wd);
-  const wdY = lerp(C.y + 40, PUBLIC_Y, wd);
-
-  const Bar = ({ x, y, w = BAR_W, opacity = 1, label, value, revealed }: { x: number; y: number; w?: number; opacity?: number; label?: string; value?: string; revealed?: number }) => (
-    <g opacity={opacity}>
-      {label ? (
-        <text x={x} y={y} className="wt-label">
-          {label}
-        </text>
-      ) : null}
-      <g opacity={1 - (revealed ?? 0)}>
-        <rect x={x + (label ? 92 : 0)} y={y - BAR_H + 2} width={w} height={BAR_H} rx={2} className="wt-bar" />
-      </g>
-      {value !== undefined ? (
-        <text x={x + (label ? 92 : 0)} y={y} className="wt-num wt-auditor" opacity={revealed ?? 0}>
-          {value}
-        </text>
-      ) : null}
-    </g>
-  );
+  const deposited = t >= 3.5;
+  const sent = t >= 9.7;
+  const folded = t >= 13.5;
+  const withdrawn = t >= 16;
+  const auditing = scene === 3;
+  const depositing = scene === 0 && t >= 0.7 && !deposited;
+  const sending = scene === 1 && t >= 6.8 && !sent;
+  const withdrawing = scene === 2 && t >= 14 && !withdrawn;
+  const total = deposited ? (withdrawn ? 4000 : 5000) : 0;
+  const transferProgress = progress(t, 6.8, 9.7);
+  const description = `Illustration, step ${scene + 1}: ${SCENES[scene].text} Alice's public wallet: ${deposited ? "0" : "5,000"} XPR. Bob's public wallet: ${withdrawn ? "1,000" : "0"} XPR. Public contract total: ${format(total)} XPR. ${auditing ? "Auditor ledger: Alice deposited 5,000, paid Bob 1,234, and Bob withdrew 1,000 XPR. Individual balance boxes remain encrypted." : "Individual confidential balances and the internal payment amount are hidden in this public view."}`;
 
   return (
-    <div className="walkthrough">
-      <div className="wt-scroll">
-        <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Animated walkthrough of a deposit, a confidential send, a withdrawal and the auditor's view">
-          {/* people */}
-          <text x={ALICE_X} y={72} className="wt-name" textAnchor="middle">
-            alice
-          </text>
-          <text x={BOB_X} y={72} className="wt-name" textAnchor="middle">
-            bob
-          </text>
-          <text x={ALICE_X} y={PUBLIC_Y - 22} className="wt-label" textAnchor="middle">
-            public
-          </text>
-          <text x={BOB_X} y={PUBLIC_Y - 22} className="wt-label" textAnchor="middle">
-            public
-          </text>
-          <text x={ALICE_X} y={PUBLIC_Y} className="wt-num" textAnchor="middle" opacity={dep > 0 && !depDone ? 0.35 : 1}>
-            {fmt(alicePublic)} XPR
-          </text>
-          <text x={BOB_X} y={PUBLIC_Y} className="wt-num" textAnchor="middle">
-            {fmt(bobPublic)} XPR
-          </text>
-
-          {/* contract */}
-          <rect x={C.x} y={C.y} width={C.w} height={C.h} rx={6} className="wt-contract" />
-          <text x={CX} y={C.y - 12} className="wt-name" textAnchor="middle">
-            xprconf
-          </text>
-          <text x={CX} y={C.y + 26} className="wt-label" textAnchor="middle">
-            escrow
-          </text>
-          <text x={CX} y={C.y + 48} className="wt-num wt-escrow" textAnchor="middle">
-            {fmt(escrow)} XPR
-          </text>
-          <line x1={C.x + 20} y1={C.y + 58} x2={C.x + C.w - 20} y2={C.y + 58} className="wt-rule" />
-
-          {/* Alice's box inside the contract */}
-          <Bar x={C.x + 20} y={ROW_ALICE} label="alice" opacity={aliceBoxIn} value={fmt(3766)} revealed={open} />
-          {/* Bob's row: pending until folded */}
-          <text x={C.x + 20} y={ROW_BOB} className="wt-label" opacity={bobPendingIn}>
-            {folded ? "bob" : "bob, pending"}
-          </text>
-          <g opacity={bobPendingIn}>
-            <g opacity={1 - open}>
-              <rect x={C.x + 112} y={ROW_BOB - BAR_H + 2} width={lerp(BAR_W * 0.7, BAR_W, fold)} height={BAR_H} rx={2} className="wt-bar" />
-            </g>
-            <text x={C.x + 112} y={ROW_BOB} className="wt-num wt-auditor" opacity={open}>
-              {fmt(folded ? (wdDone ? 234 : 1234) : 1234)}
-            </text>
-          </g>
-          {/* transfer record, opened by the auditor */}
-          <text x={C.x + 20} y={C.y + C.h - 14} className="wt-label" opacity={sndDone ? 1 : 0}>
-            alice → bob
-          </text>
-          <g opacity={sndDone ? 1 : 0}>
-            <g opacity={1 - open}>
-              <rect x={C.x + 112} y={C.y + C.h - 14 - BAR_H + 2} width={BAR_W * 0.7} height={BAR_H} rx={2} className="wt-bar" />
-            </g>
-            <text x={C.x + 112} y={C.y + C.h - 14} className="wt-num wt-auditor" opacity={open}>
-              {fmt(1234)} sent
-            </text>
-          </g>
-
-          {/* scene 1: travelling deposit figure */}
-          {dep > 0 && !depDone ? (
-            <g>
-              <image href="/token-xpr.png" x={depX - 72} y={depY - 15} width={18} height={18} />
-              <text x={depX + 8} y={depY} className="wt-num wt-move" textAnchor="middle">
-                {fmt(5000)} XPR
-              </text>
-            </g>
-          ) : null}
-
-          {/* scene 2: travelling box with proof tag */}
-          {snd > 0 && !sndDone ? (
-            <g>
-              <rect x={sndX - BAR_W * 0.35} y={sndY - BAR_H + 2} width={BAR_W * 0.7} height={BAR_H} rx={2} className="wt-bar" />
-              <text x={sndX + BAR_W * 0.35 + 10} y={sndY} className="wt-tag">
-                proof, 128 bytes
-              </text>
-            </g>
-          ) : null}
-
-          {/* scene 3: travelling withdrawal figure */}
-          {wd > 0 && !wdDone ? (
-            <g>
-              <image href="/token-xpr.png" x={wdX - 72} y={wdY - 15} width={18} height={18} />
-              <text x={wdX + 8} y={wdY} className="wt-num wt-move" textAnchor="middle">
-                {fmt(1000)} XPR
-              </text>
-            </g>
-          ) : null}
-
-          {/* scene 4: the auditor's key */}
-          <g opacity={open} transform={`translate(${C.x + C.w + 28} ${C.y + C.h - 30})`}>
-            <circle cx={0} cy={0} r={5} className="wt-key" />
-            <path d="M5 0h16M15 0v4M20 0v4" className="wt-key" />
-            <text x={0} y={22} className="wt-label wt-auditor">
-              auditor
-            </text>
-          </g>
-        </svg>
+    <div className="walkthrough" ref={root} role="group" aria-label="How a confidential payment works">
+      <div className="wt-steps" aria-label="Choose an explanation step">
+        {SCENES.map((s, i) => <button key={s.label} type="button" className="wt-step-button" aria-current={scene === i ? "step" : undefined} onClick={() => seek(i)}>
+          <span className="wt-step-number">{i + 1}</span>{s.label}
+          <span className="wt-step-progress" style={{ transform: `scaleX(${clamp((t - i * STEP) / STEP)})` }} />
+        </button>)}
       </div>
 
-      {reduced ? (
-        <ol className="wt-captions">
-          {SCENES.map((s) => (
-            <li key={s.at}>{s.text}</li>
-          ))}
-        </ol>
-      ) : (
-        <div className="wt-bar-row">
-          <p className="wt-caption" aria-live="polite">
-            <span className="wt-step">{scene + 1} of 4</span>
-            {SCENES[scene].text}
-          </p>
-          <span className="wt-controls">
-            <button className="textbtn quiet" onClick={() => setPaused((p) => !p)}>
-              {paused ? "Play" : "Pause"}
-            </button>
-            <button
-              className="textbtn quiet"
-              onClick={() => {
-                setT(0);
-                setPaused(false);
-              }}
-            >
-              Replay
-            </button>
-          </span>
+      <div className="wt-story" id={captionId} aria-live={paused ? "polite" : "off"} aria-atomic="true">
+        <h3>{SCENES[scene].title}</h3>
+        <p>{SCENES[scene].text}</p>
+      </div>
+
+      <div className={`wt-stage${auditing ? " wt-auditing" : ""}`} role="img" aria-label={description}>
+        <div aria-hidden="true">
+          <div className="wt-wallets">
+            <div className={`wt-wallet${depositing ? " wt-active" : ""}`}>
+              <span className="wt-person"><span className="wt-avatar">A</span>Alice</span>
+              <span className="wt-wallet-label">Public wallet</span>
+              <strong>{deposited ? "0" : "5,000"}<small> XPR</small></strong>
+            </div>
+            <div className={`wt-wallet${withdrawing ? " wt-active" : ""}`}>
+              <span className="wt-person"><span className="wt-avatar">B</span>Bob</span>
+              <span className="wt-wallet-label">Public wallet</span>
+              <strong>{withdrawn ? "1,000" : "0"}<small> XPR</small></strong>
+            </div>
+          </div>
+
+          <div className="wt-routes">
+            <div className={`wt-route${scene === 0 ? " wt-route-active" : ""}`}>
+              <span className="wt-route-line" />
+              <span className="wt-route-arrow">↓</span>
+              {scene === 0 && <span className="wt-money" style={{ transform: `translateY(${depositing ? -18 + 36 * progress(t, 0.7, 3.5) : deposited ? 18 : -18}px)`, opacity: deposited ? 0 : 1 }}>5,000 XPR</span>}
+            </div>
+            <div className={`wt-route${scene === 2 ? " wt-route-active" : ""}`}>
+              <span className="wt-route-line" />
+              <span className="wt-route-arrow">↑</span>
+              {scene === 2 && <span className="wt-money" style={{ transform: `translateY(${withdrawing ? 18 - 36 * progress(t, 14, 16) : withdrawn ? -18 : 18}px)`, opacity: withdrawn || !folded ? 0 : 1 }}>1,000 XPR</span>}
+            </div>
+          </div>
+
+          <div className="wt-pool">
+            <div className="wt-pool-heading"><span>Inside the contract</span><span className="wt-view"><Lock />Encrypted balances</span></div>
+            <div className="wt-total"><span>Total held · public</span><strong>{format(total)} <small>XPR</small></strong></div>
+            <div className="wt-boxes">
+              <div className={`wt-box${deposited ? " wt-box-funded" : ""}`}><span>Alice’s balance</span><span className="wt-hidden" /><small>{deposited ? "Encrypted" : "No deposit yet"}</small></div>
+              <div className={`wt-box${sent ? " wt-box-funded" : ""}`}><span>{sent && !folded ? "Bob’s incoming" : "Bob’s balance"}</span><span className="wt-hidden" /><small>{sent ? folded ? "Encrypted" : "Ready to add" : "No payment yet"}</small></div>
+            </div>
+            <div className={`wt-transfer${scene === 1 ? " wt-transfer-active" : ""}`}>
+              <div className="wt-transfer-track"><span className="wt-transfer-line" />
+                {(sending || sent) && <span className="wt-packet" style={{ left: `${10 + 80 * transferProgress}%`, opacity: scene === 1 ? 1 : 0 }}><Lock /></span>}
+              </div>
+              <span>{scene === 0 ? "Confidential payments stay inside" : scene === 1 ? sent ? "✓ Proof checked · payment received" : "Alice → Bob · encrypted payment" : "Alice → Bob · proof checked"}</span>
+            </div>
+          </div>
+
+          <div className="wt-ledger">
+            <div className="wt-ledger-heading"><span>{auditing ? "Auditor’s payment ledger" : "What the public can read"}</span><span className="wt-view">{auditing ? "Viewing key" : "Public view"}</span></div>
+            <div className="wt-ledger-row"><span>Alice deposits</span><strong>{deposited ? "5,000 XPR" : "—"}</strong></div>
+            <div className={`wt-ledger-row${auditing ? " wt-ledger-revealed" : ""}`}><span>Alice pays Bob</span><strong>{!sent ? "—" : auditing ? "1,234 XPR" : <span className="wt-ledger-hidden"><Lock />Hidden</span>}</strong></div>
+            <div className="wt-ledger-row"><span>Bob withdraws</span><strong>{withdrawn ? "1,000 XPR" : "—"}</strong></div>
+          </div>
         </div>
-      )}
+      </div>
+
+      <div className="wt-footer">
+        <span className="wt-example">Illustrative amounts · {reduced ? "choose a step" : "24-second example"}</span>
+        <div className="wt-controls">
+          {reduced ? <button type="button" className="textbtn" onClick={() => seek((scene + 1) % SCENES.length)}>Next step</button> :
+            <button type="button" className="textbtn" aria-describedby={captionId} onClick={() => ended ? replay() : setPaused((p) => !p)}>{ended ? "Play again" : paused ? "Play" : "Pause"}</button>}
+          <button type="button" className="textbtn quiet" onClick={replay}>Restart</button>
+        </div>
+      </div>
     </div>
   );
-};
+}
