@@ -88,6 +88,17 @@ Deploy: `vercel --prod` from `dapp/` (static Vite output; `vercel.json` carries 
 
 ## Hosting
 
+Two Vercel projects build the same repo (root `dapp`), selected by `VITE_NETWORK`:
+
+| project | network | domain |
+|---|---|---|
+| `pulse-privacy` | testnet today; switch `VITE_NETWORK=mainnet` at launch | https://private.protonnz.com |
+| `pulse-privacy-testnet` | testnet | https://testnet.private.protonnz.com |
+
+Mainnet config (chain id, endpoints, Hyperion list with `hyperion-xpr-mainnet.protonnz.com` first)
+is in `src/config.ts`; the mainnet contract account does not exist yet and mainnet is gated on
+the real ceremony (docs §12). Hyperion reads fail over across the list.
+
 Vercel project `pulse-privacy` (team paulgnzs-projects), production alias
 <https://private.protonnz.com>. Deploy with `vercel --prod` from `dapp/` (the directory is
 linked; `.vercel/` is gitignored). `vercel.json` sets an immutable
