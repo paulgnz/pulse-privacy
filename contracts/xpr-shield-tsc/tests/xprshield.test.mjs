@@ -87,9 +87,15 @@ local.append(js.outNotes[0].cm); local.append(js.outNotes[1].cm);
 assert.equal(treeRow().root, hex(local.root), "root after the transfer matches");
 assert.equal(nullifiers().length, 2, "two nullifiers recorded");
 assert.deepEqual(leaves().slice(-2).map((l) => l.cm), [hex(js.outNotes[0].cm), hex(js.outNotes[1].cm)]);
-const bobNote = N.tryDecryptReceiver(bob, js.expected.epk[0], js.expected.cr[0], js.outNotes[0].cm);
+// the on-chain outputs table carries what a receiver needs: find bob's note from the chain alone
+const outs = sh.tables.outputs(scope).getTableRows();
+assert.equal(outs.length, 4, "two deposit rows and two transfer outputs");
+const row4 = outs.find((o) => Number(o.index) === 4);
+const words = (h) => h.match(/.{64}/g).map((w) => BigInt("0x" + w));
+const bobNote = N.tryDecryptReceiver(bob, words(row4.epk), words(row4.cr), js.outNotes[0].cm);
+assert.deepEqual(words(outs[0].cr), [a1.v, N.TOKENS.XPR, a1.rho, a1.r], "deposit row carries the plaintext note");
 assert.ok(bobNote && bobNote.v === AMOUNT, "bob finds his note by trial decryption");
-const aud = N.decryptAuditor(auditor.ask, js.expected.epk[0], js.expected.ca[0], js.outNotes[0].cm);
+const aud = N.decryptAuditor(auditor.ask, words(row4.epk), words(row4.ca), js.outNotes[0].cm);
 assert.ok(aud.valid && aud.sender[0] === alice.pk[0] && aud.pk[0] === bob.pk[0], "auditor names both keys");
 lap("relay submitted alice → bob 1,234 XPR: no party in the action; bob and the auditor read it");
 

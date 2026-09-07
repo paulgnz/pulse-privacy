@@ -163,7 +163,9 @@ insertions into a separate `settle` action.
 | `config` | singleton | auditor key, verifying key, paused, caps per token | contract |
 | `pool` | token | escrow counters (deposits, withdrawals) | contract |
 
-The contract pays RAM for leaves and nullifiers (about 400 bytes per transfer). On testnet that
+An `outputs` table keeps each output's ephemeral key and both ciphertexts (and, for deposits,
+the plaintext note) so a receiver needs no history indexer, which testnet lacks. The contract
+pays RAM for leaves, outputs and nullifiers (about 1.3 KB per transfer). On testnet that
 is fine. On mainnet a spender could split their own notes to burn the contract's RAM; the
 mitigation is a small per-transfer fee taken inside the circuit (a public `fee` term in the
 balance equation credited to the contract) or a rate-limited relay. Decided at the mainnet
@@ -235,7 +237,7 @@ idea, the key derivation, the auditor key, the dapp shell and the ceremony's pha
 | S1 | Montgomery field multiplication and Poseidon in AssemblyScript, matching circomlibjs bit for bit; a bench action on testnet. **Done 2026-09-08**: `contracts/xpr-shield-tsc/` (`fr.ts`, `poseidon.ts`, `shbench.contract.ts`, conformance test), numbers in §3.1 | the on-chain hashing budget | measured CPU for Poseidon(2) and a 21-hash insertion, recorded here |
 | S2 | join-split circuit, note library, tests, rehearsal setup on the existing 2^16 ptau. **Done 2026-09-08**: `circuits/shielded/joinsplit.circom` (**31,418 constraints** with `--O2`, 38 public signals), `circuits/lib/notes.mjs`, `test/joinsplit.test.mjs` (two-in two-out, dummy input, withdrawal, receiver and auditor decryption, six refusals, prove + verify, redirected withdrawal rejected); proof **≈ 1.4 s in Node**; rehearsal zkey `build/joinsplit_final.zkey` | the statement, constraint count, proving time | `npm run test:shielded` green |
 | S3 | the contract with vert tests for every action, including double spend, stale root, wrong token, relayer redirect. **Done 2026-09-08**: `contracts/xpr-shield-tsc/assembly/xprshield.contract.ts` (78 KB WASM; tables config, tokens, keys, leaves, tree, roots, nullifiers; actions init, addtoken, setvk, setauditor, pause, viewkey, register, transfer, and the deposit notification), `tests/xprshield.test.mjs` under vert with real proofs: deposits match the library's tree, relay-submitted transfer, double spend, tampered publics, foreign auditor key, proof against a previous root accepted, redirected withdrawal refused, withdrawal paid, pause | the semantics | tests green |
-| S4 | testnet deployment on a new account, relay permission, CLI demo: register, deposit, shielded transfer, withdraw; auditor CLI reads it back | end to end on a live chain | the explorer shows a transfer with no names and the auditor names both parties |
+| S4 | testnet deployment on a new account, relay permission, CLI demo: register, deposit, shielded transfer, withdraw; auditor CLI reads it back. **Done 2026-09-08** on testnet account `xprshield`: relay permission `xprshield@relay` with a published key linked to `transfer`; paul123 deposited 500 XPR (tx `cf1764d8…`, 8.7 ms), two shielded payments of 123.4 XPR to testclient1 submitted by the relay (tx `98f69751…`, **14.5 ms CPU**, no account named in the action), testclient1 withdrew 100 XPR to its public account, and `testnet-demo.mjs audit` lists every leaf as `paul123 → testclient1 1,234,000` from the auditor key alone. Receivers rebuild their notes from the `outputs`, `leaves` and `nullifiers` tables with no history indexer | end to end on a live chain | the explorer shows a transfer with no names and the auditor names both parties |
 | S5 | dapp: shielded mode on the testnet site (statement from notes, send and withdraw without wallet prompts, activity from decrypted notes) | usable by testers | testers send to each other |
 | S6 | review briefs, phase-2 ceremony, `setvk`, then the mainnet decision | | |
 

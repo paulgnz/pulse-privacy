@@ -3,3 +3,5 @@ assembly/target/
 tests/.testnet-keys.json
 deploy/
 tests/.mainnet-keys.json
+tests/.testnet-shield-keys.json
+tests/.mainnet-shield-keys.json

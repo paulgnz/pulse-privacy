@@ -110,6 +110,22 @@ class RootRow extends Table {
   }
 }
 
+/**
+ * What a receiver needs to find and open a note, kept on chain so no history indexer is
+ * needed: for transfer outputs the ephemeral key and both ciphertexts; for deposits the
+ * plaintext (v, token, rho, r) in `cr` with `epk` and `ca` empty, since a deposit is public.
+ */
+@table("outputs")
+class OutputRow extends Table {
+  constructor(public index: u64 = 0, public epk: u8[] = [], public cr: u8[] = [], public ca: u8[] = []) {
+    super();
+  }
+  @primary
+  get primary(): u64 {
+    return this.index;
+  }
+}
+
 @table("nullifiers")
 class NullifierRow extends Table {
   constructor(public key: u64 = 0, public nf: u8[] = []) {
@@ -194,6 +210,7 @@ class XprShield extends Contract {
   trees: TableStore<TreeRow> = new TableStore<TreeRow>(this.receiver);
   roots: TableStore<RootRow> = new TableStore<RootRow>(this.receiver);
   nullifiers: TableStore<NullifierRow> = new TableStore<NullifierRow>(this.receiver);
+  outputs: TableStore<OutputRow> = new TableStore<OutputRow>(this.receiver);
 
   config(): Config {
     const c = this.configs.get(0);
@@ -390,6 +407,8 @@ class XprShield extends Contract {
     const cm = poseidon(inp);
     const cmBytes = toBytesBE(cm);
     const index = this.insertPair(cm, null, cmBytes, []);
+    const plain = toBytesBE(fromU64(v)).concat(toBytesBE(fromU64(t.token_id))).concat(rho).concat(r);
+    this.outputs.store(new OutputRow(index, [], plain, []), this.receiver);
     print("shield leaf " + index.toString() + " cm " + hex(cmBytes));
   }
 
@@ -427,6 +446,12 @@ class XprShield extends Contract {
     this.spend(nf1);
     this.spend(nf2);
     const index = this.insertPair(fromBytesBE(cm1, 0), fromBytesBE(cm2, 0), cm1, cm2);
+    for (let j = 0; j < 2; j++) {
+      const epk = word(publics, 4 + 2 * j).concat(word(publics, 5 + 2 * j));
+      const cr = publics.slice((8 + 4 * j) * 32, (12 + 4 * j) * 32);
+      const ca = publics.slice((16 + 8 * j) * 32, (24 + 8 * j) * 32);
+      this.outputs.store(new OutputRow(index + (j as u64), epk, cr, ca), this.receiver);
+    }
 
     if (vPub > 0) {
       const t = this.tokenById(tokenPub);
