@@ -23,7 +23,7 @@ const MAINNET = process.env.NET === "mainnet";
 const RPC = MAINNET ? "https://proton.greymass.com" : "https://tn1.protonnz.com";
 const CONTRACT = "xprconf";
 const ALICE = process.env.ALICE ?? "paul123";
-const BOB = process.env.BOB ?? (MAINNET ? "paul" : "testclient1");
+const BOB = process.env.BOB ?? (MAINNET ? "protonnz" : "testclient1");
 // TOKEN=XMD switches to Metal Dollar (6 decimals, xmd.token)
 const XMD = process.env.TOKEN === "XMD";
 const SYM = XMD ? "6,XMD" : "4,XPR";
