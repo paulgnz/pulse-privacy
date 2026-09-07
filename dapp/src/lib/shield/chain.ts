@@ -10,8 +10,8 @@ import type { Token } from "../token";
 import { Tree, buildJoinSplit, commitment, hex32, nameToU64, newNote, nullifier, tryDecryptReceiver, words } from "./notes";
 import type { OwnedNote, ShieldKeys } from "./notes";
 
-const WASM = "/circuit/joinsplit.wasm";
-const ZKEY = "/circuit/joinsplit_final.zkey";
+const WASM = "/circuit/joinsplit-r2.wasm";
+const ZKEY = "/circuit/joinsplit-r2_final.zkey";
 
 async function rpc<T>(path: string, body: unknown): Promise<T> {
   let lastErr: unknown;

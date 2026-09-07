@@ -6,5 +6,5 @@ import * as notes from "./notes";
 import { poseidon } from "./poseidon";
 
 if (import.meta.env.DEV) {
-  (window as unknown as { __shield: unknown }).__shield = { ...chain, ...notes, poseidon, verify: (vk: unknown, signals: string[], proof: unknown) => snarkjs.groth16.verify(vk, signals, proof), fullProve: (input: Record<string, unknown>) => snarkjs.groth16.fullProve(input, "/circuit/joinsplit.wasm", "/circuit/joinsplit_final.zkey") };
+  (window as unknown as { __shield: unknown }).__shield = { ...chain, ...notes, poseidon, verify: (vk: unknown, signals: string[], proof: unknown) => snarkjs.groth16.verify(vk, signals, proof), fullProve: (input: Record<string, unknown>) => snarkjs.groth16.fullProve(input, "/circuit/joinsplit-r2.wasm", "/circuit/joinsplit-r2_final.zkey") };
 }
