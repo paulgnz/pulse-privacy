@@ -5,7 +5,7 @@
 //   withdraw(owner, quantity, b_new, proof) · deposit = eosio.token::transfer memo conf:<owner>
 // Byte layouts (bare hex on chain, 0x-prefixed in the app):
 //   point = x‖y (64 B) · pair set = lo.C lo.D hi.C hi.D (256 B) · t = per chunk C Ds Dr Da (512 B)
-import ProtonWebSDK from "@proton/web-sdk";
+import ProtonWebSDK, { type ConnectWalletArgs, type ConnectWalletRet } from "@proton/web-sdk";
 import "@proton/link";
 import { APP_NAME, CHAIN_ID, CONTRACT, ENDPOINTS, HYPERION, SYM_RAW, TOKEN_CONTRACT } from "../config";
 import type { ChunkedCiphertext, Ciphertext, Hex, TransferCiphertext } from "./crypto/types";
@@ -16,26 +16,34 @@ export interface Session {
   transact(tx: { actions: unknown[] }, opts?: { broadcast?: boolean }): Promise<unknown>;
 }
 
-type AnyLink = { removeSession(app: never, auth: never, chainId: never): Promise<void> } | null | undefined;
-let link: AnyLink = null;
+// @proton/web-sdk 5.x: app identity and theme live under `uiOptions`; `selectorOptions` only
+// selects wallet types; `requestAccount` is required for the mobile deep-link return.
+let link: ConnectWalletRet["link"] | null = null;
 
-const sdkOptions = (restoreSession: boolean) => ({
+const sdkOptions = (restoreSession: boolean): ConnectWalletArgs => ({
   linkOptions: { chainId: CHAIN_ID, endpoints: ENDPOINTS, restoreSession },
   transportOptions: { requestAccount: CONTRACT, requestStatus: true },
-  selectorOptions: { appName: APP_NAME, enabledWalletTypes: ["proton", "webauth", "anchor"] },
+  selectorOptions: { enabledWalletTypes: ["proton", "webauth", "anchor"] },
+  uiOptions: { theme: "light", appInfo: { name: APP_NAME, logo: `${location.origin}/icon.svg`, logoRounded: true } },
 });
 
+const asSession = (r: ConnectWalletRet): Session | null => {
+  if (!r.session) return null;
+  return r.session as unknown as Session;
+};
+
 export async function login(): Promise<Session | null> {
-  const r = (await ProtonWebSDK(sdkOptions(false) as never)) as unknown as { link: AnyLink; session: Session | null };
-  link = r.link;
-  return r.session;
+  const r = await ProtonWebSDK(sdkOptions(false));
+  if (r.error) throw r.error instanceof Error ? r.error : new Error(String(r.error));
+  link = r.link ?? null;
+  return asSession(r);
 }
 
 export async function restore(): Promise<Session | null> {
   try {
-    const r = (await ProtonWebSDK(sdkOptions(true) as never)) as unknown as { link: AnyLink; session: Session | null };
-    link = r.link;
-    return r.session ?? null;
+    const r = await ProtonWebSDK(sdkOptions(true));
+    link = r.link ?? null;
+    return asSession(r);
   } catch {
     return null;
   }
@@ -44,7 +52,7 @@ export async function restore(): Promise<Session | null> {
 export async function logout(session: Session | null) {
   if (link && session) {
     try {
-      await link.removeSession(APP_NAME as never, session.auth as never, CHAIN_ID as never);
+      await (link as unknown as { removeSession(app: string, auth: unknown, chainId: string): Promise<void> }).removeSession(APP_NAME, session.auth, CHAIN_ID);
     } catch {
       /* ignore */
     }
