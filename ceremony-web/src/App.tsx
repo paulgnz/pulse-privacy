@@ -8,7 +8,9 @@ interface Head { file: string; sha256: string; index: number; name: string; url:
 interface Contribution { phase: 1 | 2; index: number; actor: string; timestamp: string; input: { file: string; sha256: string }; output: { file: string; sha256: string; url: string }; contributionHash: string | null; signerKey: string; note: string; signature: string }
 interface State { version: number; phase: 1 | 2; finished: boolean; head: Head | null; lock: { actor: string; until: string } | null; contributions: Contribution[]; phase1Final?: Head | null; updatedAt: string }
 
-type Step = "idle" | "locking" | "downloading" | "entropy" | "computing" | "signing" | "uploading" | "recording" | "done";
+type Step = "idle" | "locking" | "downloading" | "entropy" | "computing" | "sign" | "signing" | "uploading" | "recording" | "done";
+const AFTER_SIGN: Step[] = ["uploading", "recording"];
+const AFTER_COMPUTE: Step[] = ["sign", "signing", ...AFTER_SIGN];
 
 const short = (h: string, n = 12) => (h ? h.slice(0, n) + "…" : "");
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -27,6 +29,15 @@ export function App() {
   const [turn, setTurn] = useState<{ index: number; head: Head; phase: 1 | 2 } | null>(null);
   const sentenceReady = useRef<((s: string) => void) | null>(null);
   const timer = useRef<number | null>(null);
+  // the finished contribution, held until the user clicks to sign: the wallet popup is only
+  // allowed inside a click, and the mixing step ends minutes after the last one
+  const ready = useRef<{ out: Uint8Array; outputSha: string; inputSha: string; phase: 1 | 2; index: number; contributionHash: string | null } | null>(null);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (step !== "signing") { setSlow(false); return; }
+    const t = setTimeout(() => setSlow(true), 4000);
+    return () => clearTimeout(t);
+  }, [step]);
 
   const refresh = useCallback(async () => {
     try {
@@ -106,15 +117,46 @@ export function App() {
       if (timer.current) clearInterval(timer.current);
       const outputSha = await sha256Hex(out.out);
 
-      // 5. sign the attestation (never broadcast)
-      setStep("signing");
-      const note = noteFor(phase, index, outputSha);
-      const signature = await signAttestation(session, note);
+      // 5. hand over to a click: the attestation signature needs the wallet popup
+      ready.current = { out: out.out, outputSha, inputSha, phase, index, contributionHash: out.contributionHash };
+      setStep("sign");
+    } catch (e) {
+      fail(e as Error, actor);
+    }
+  };
 
+  const fail = (e: Error, actor: string) => {
+    if (timer.current) clearInterval(timer.current);
+    setErr(e.message);
+    setStep("idle");
+    ready.current = null;
+    // give the turn back if we hold it
+    fetch("/api/lock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actor, release: true }) }).catch(() => {});
+    refresh();
+  };
+
+  /** from a click: sign the attestation (never broadcast), then upload and record */
+  const signAndFinish = async () => {
+    const r = ready.current;
+    if (!session || !r) return;
+    const actor = session.auth.actor;
+    const { out, outputSha, inputSha, phase, index } = r;
+    setErr(null);
+    setStep("signing");
+    let signature: string;
+    try {
+      signature = await signAttestation(session, noteFor(phase, index, outputSha));
+    } catch (e) {
+      // not signed: keep the finished file and let the user click again
+      setErr(`Not signed. ${(e as Error).message}`);
+      setStep("sign");
+      return;
+    }
+    try {
       // 6. upload straight to storage, then record
       setStep("uploading");
       const pathname = `p${phase}/${String(index).padStart(2, "0")}-${actor}.${phase === 1 ? "ptau" : "zkey"}`;
-      await upload(pathname, new Blob([out.out as BlobPart], { type: "application/octet-stream" }), {
+      await upload(pathname, new Blob([out as BlobPart], { type: "application/octet-stream" }), {
         access: "public",
         handleUploadUrl: "/api/upload-token",
         multipart: true,
@@ -125,20 +167,16 @@ export function App() {
       const cr = await fetch("/api/contribute", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ actor, permission: session.auth.permission, phase, index, inputSha256: inputSha, outputSha256: outputSha, contributionHash: out.contributionHash, signature }),
+        body: JSON.stringify({ actor, permission: session.auth.permission, phase, index, inputSha256: inputSha, outputSha256: outputSha, contributionHash: ready.current?.contributionHash ?? null, signature }),
       });
       const cj = (await cr.json()) as { error?: string };
       if (!cr.ok) throw new Error(cj.error ?? "the coordinator rejected the contribution");
-      setResult({ index, phase, sha256: outputSha, contributionHash: out.contributionHash, file: pathname });
+      setResult({ index, phase, sha256: outputSha, contributionHash: ready.current?.contributionHash ?? null, file: pathname });
+      ready.current = null;
       setStep("done");
       refresh();
     } catch (e) {
-      if (timer.current) clearInterval(timer.current);
-      setErr((e as Error).message);
-      setStep("idle");
-      // give the turn back if we hold it
-      fetch("/api/lock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actor, release: true }) }).catch(() => {});
-      refresh();
+      fail(e as Error, actor);
     }
   };
 
@@ -206,8 +244,8 @@ export function App() {
         {step !== "idle" && step !== "done" ? (
           <ol className="steps">
             <li className={step === "locking" ? "now" : "done"}>Taking your turn{turn ? `: contribution ${turn.index} of phase ${turn.phase}` : ""}</li>
-            <li className={step === "downloading" ? "now" : ["entropy", "computing", "signing", "uploading", "recording"].includes(step) ? "done" : ""}>Downloading the current file ({turn?.phase === 1 ? "about 36 MB" : "about 25 MB"})</li>
-            <li className={step === "entropy" ? "now" : ["computing", "signing", "uploading", "recording"].includes(step) ? "done" : ""}>
+            <li className={step === "downloading" ? "now" : ["entropy", "computing", ...AFTER_COMPUTE].includes(step) ? "done" : ""}>Downloading the current file ({turn?.phase === 1 ? "about 36 MB" : "about 25 MB"})</li>
+            <li className={step === "entropy" ? "now" : ["computing", ...AFTER_COMPUTE].includes(step) ? "done" : ""}>
               Adding your randomness
               {step === "entropy" ? (
                 <div className="entropy">
@@ -222,11 +260,25 @@ export function App() {
                 </div>
               ) : null}
             </li>
-            <li className={step === "computing" ? "now" : ["signing", "uploading", "recording"].includes(step) ? "done" : ""}>
+            <li className={step === "computing" ? "now" : AFTER_COMPUTE.includes(step) ? "done" : ""}>
               Mixing it into the key in your browser{step === "computing" ? ` (${elapsed}s; phase 1 can take a few minutes)` : ""}
               {step === "computing" && log.length ? <pre className="log">{log.join("\n")}</pre> : null}
             </li>
-            <li className={step === "signing" ? "now" : ["uploading", "recording"].includes(step) ? "done" : ""}>Signing your attestation in the wallet (one signature, nothing is sent to the chain)</li>
+            <li className={step === "sign" || step === "signing" ? "now" : AFTER_SIGN.includes(step) ? "done" : ""}>
+              Signing your attestation in the wallet (one signature, nothing is sent to the chain)
+              {step === "sign" ? (
+                <div className="row" style={{ marginTop: 10 }}>
+                  <button className="btn private" onClick={signAndFinish}>Sign the attestation</button>
+                  <span className="muted">Your file is ready. This opens your wallet.</span>
+                </div>
+              ) : null}
+              {step === "signing" && slow ? (
+                <p className="muted" style={{ marginTop: 10 }}>
+                  Still waiting? Your browser may have blocked the wallet popup. Allow popups for {location.host}, then{" "}
+                  <button className="link" onClick={() => setStep("sign")}>try again</button>. On a phone, approve the request in the WebAuth app and come back to this tab.
+                </p>
+              ) : null}
+            </li>
             <li className={step === "uploading" ? "now" : step === "recording" ? "done" : ""}>Uploading your file</li>
             <li className={step === "recording" ? "now" : ""}>Recording your contribution</li>
           </ol>
