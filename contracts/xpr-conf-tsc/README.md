@@ -21,7 +21,9 @@ proton CLI keychain on Paul's Mac). Explorer: <https://testnet.explorer.xprnetwo
 
 ```
 assembly/xprconf.contract.ts   T3: the confidential token (config/accounts tables; init, configure,
-                               setvk, register, applypending, send, withdraw; deposit via notify)
+                               setvk, register, applypending, send, withdraw; deposit via notify;
+                               viewkey/unlock: never-broadcast actions the wallet signs so the dapp
+                               can derive the viewing key; Ricardian text added to the ABI post-build)
 assembly/groth16.ts            Groth16 verifier over bn128Add/Mul/Pair (shared)
 assembly/groth16.contract.ts   T1: standalone `verify(vk, proof, inputs)` action
 assembly/babyjub.ts            Baby Jubjub adds / on-curve / v·G in-contract via `mod_exp`

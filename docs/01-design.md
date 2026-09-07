@@ -576,6 +576,17 @@ keys randomise nonces) the dapp falls back to a generated key with a mandatory b
 secret lives in memory only. Production can move the same derivation inside WebAuth (§2.7) so
 no signature prompt is needed, with identical keys.
 
+Refinements after the first testers (2026-09-07): the signed action is now `viewkey(owner, note)`
+whose `note` field the wallet displays ("Derives your Confidential XPR viewing key on
+private.protonnz.com. Never sent to the chain. Moves nothing."), with a Ricardian clause in the
+ABI; a phisher cannot alter the text without changing the derived key. Accounts registered under
+the earlier `unlock` message unlock through a one-click legacy path. Each wallet prompt is
+requested from its own click (browsers block a second popup from one click), so first-time
+setup is "Sign to unlock" then "Sign again to confirm". Known limits of signature-derived keys:
+anyone who gets the user to sign the exact message learns the viewing secret (read-only, not
+spend); the in-wallet derivation removes this. The SDK must be loaded with dynamic imports for
+the mobile app transport to work.
+
 **Milestones (in order; each is a checkpoint that can fail cheaply):**
 
 | # | milestone | proves | artefacts |
