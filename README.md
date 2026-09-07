@@ -24,8 +24,12 @@ Withdrawing turns the balance back into ordinary tokens.
   the proof enforces it. A payment the auditor cannot read cannot be created.
 - **Your wallet is the key.** The user's encryption key is derived from a WebAuth signature over a
   fixed, never-broadcast message. There is nothing extra to back up.
-- **Pending box.** Incoming payments land in a separate box and are folded into the balance by the
-  receiver, so a balance changes only when its owner acts.
+- **Incoming box.** Payments to you land in a separate box and are added to your balance when you
+  act, so a balance changes only under its owner's control.
+- **Recovery.** Accounts whose wallet signs with a passkey keep a saved key instead of a derived
+  one. They can store a passphrase-protected copy on chain to restore it on any device, and an
+  encrypted copy that only the committee's viewing key opens. If a key is ever beyond recovery, the
+  committee can pause the token and return the account's balance from escrow.
 
 The full design, including the ELI5 walk-through, the threat model and the edge-privacy analysis,
 is in [docs/01-design.md](docs/01-design.md). The mainnet operations record is
@@ -39,8 +43,8 @@ This is early access. Read this before holding value in it.
 | | |
 |---|---|
 | Proving key | From a one-person rehearsal until the public ceremony completes. Anyone can contribute at the ceremony site. |
-| Audit | None yet. |
-| Caps, set on chain | XPR: 1,000,000 per deposit, 100,000,000 in the contract. XMD: 10,000 per deposit, 100,000 in the contract. Withdrawals in whole units. |
+| Review | Two adversarial reviews on 2026-09-07, findings and fixes in [docs/03-security-review.md](docs/03-security-review.md). No external audit yet. |
+| Caps, set on chain | XPR: 10,000 per deposit, 100,000,000 in the contract. XMD: 100 per deposit, 100,000 in the contract. Withdrawals in whole units, except an exact final withdrawal that empties the box. The live figures are read from the contract on the site's How it works page. |
 | Contract owner | `admin.proton@committee` (3 of 6). |
 | Auditor key | Held for the committee. The public key is in the contract's config. |
 
