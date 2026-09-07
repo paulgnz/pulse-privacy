@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK, NETWORK_LABEL, OTHER_NETWORK } from "./config";
+import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_NETWORK } from "./config";
 import { fmtUnits } from "./lib/format";
 import * as chain from "./lib/chain";
 import type { Session } from "./lib/chain";
