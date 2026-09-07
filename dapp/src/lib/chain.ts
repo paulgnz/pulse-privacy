@@ -115,7 +115,7 @@ async function rpc<T>(path: string, body: unknown): Promise<T> {
   let lastErr: unknown;
   for (const ep of ENDPOINTS) {
     try {
-      const res = await fetch(`${ep}/v1/chain/${path}`, { method: "POST", body: JSON.stringify(body) });
+      const res = await fetch(`${ep}/v1/chain/${path}`, { method: "POST", body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
       if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
       return (await res.json()) as T;
     } catch (e) {
@@ -261,7 +261,7 @@ interface HyperionAction {
 /** Every action that touched the pool, newest first (deduplicated by tx+seq). */
 export async function poolHistory(limit = 200): Promise<PoolAction[]> {
   const url = `${HYPERION}/v2/history/get_actions?account=${CONTRACT}&limit=${limit}&sort=desc`;
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`history: HTTP ${res.status}`);
   const d = (await res.json()) as { actions: HyperionAction[] };
   const seen = new Set<string>();

@@ -317,7 +317,7 @@ export default function App() {
           onSend={(to, amount, p) => wrap(() => client.send(to, amount, p))}
           onDeposit={(a) => wrap(() => client.deposit(a))}
           onWithdraw={(a, p) => wrap(() => client.withdraw(a, p))}
-          busy={busy || refreshing}
+          busy={busy} refreshing={refreshing}
         />
       ) : tab === "activity" ? (
         <Activity st={st} isMock={backend.isMock} />
@@ -346,7 +346,7 @@ export default function App() {
           onSimulateIncoming={(from, a) => wrap(() => client.simulateIncoming(from, a))}
           onSimulatePool={(n) => wrap(() => client.simulatePoolActivity(n))}
           onResetMock={() => wrap(() => client.resetMock())}
-          busy={busy || refreshing}
+          busy={busy}
         />
       ) : (
         <Auditor isMock={backend.isMock} onOpen={(s) => client.auditorLedger(s)} onEdges={() => client.poolEdges()} mockSecret={mockSecret} />

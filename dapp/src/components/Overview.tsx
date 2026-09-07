@@ -27,6 +27,8 @@ export const Overview = ({
   onDeposit: (amount: bigint) => Promise<string>;
   onWithdraw: (amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
   busy: boolean;
+  /** a background refresh is running: animate the figures, do not disable anything */
+  refreshing?: boolean;
 }) => {
   const [revealed, setRevealed] = useState<boolean>(() => {
     try {
@@ -75,7 +77,7 @@ export const Overview = ({
     <section className="statement">
       <h2>Statement</h2>
       <Line label="Confidential balance" sub={revealed ? "decrypted on this device; the chain holds only the box" : "what everyone else sees"} hero>
-        <Amount value={st.balance} hidden revealed={revealed} size="big" busy={busy} />
+        <Amount value={st.balance} hidden revealed={revealed} size="big" busy={busy || refreshing} />
         <button className="textbtn" onClick={() => setRevealed(!revealed)} aria-pressed={revealed}>
           {revealed ? "Hide" : "Reveal"}
         </button>
@@ -85,7 +87,7 @@ export const Overview = ({
           label="Pending"
           sub={`${st.pendingCount} incoming ${st.pendingCount === 1 ? "transfer" : "transfers"} waiting in a separate box; folded before your next send`}
         >
-          <Amount value={st.pending} hidden revealed={revealed} size="mid" sign="+" busy={busy} />
+          <Amount value={st.pending} hidden revealed={revealed} size="mid" sign="+" busy={busy || refreshing} />
           <button className="textbtn" onClick={() => onFold()} disabled={busy}>
             {busy ? "Folding" : "Fold in now"}
           </button>
