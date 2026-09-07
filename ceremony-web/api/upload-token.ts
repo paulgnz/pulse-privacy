@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { del } from "@vercel/blob";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { lockActive, readState } from "./_lib/state.js";
 
@@ -22,11 +23,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (pathname !== expected) throw new Error(`upload path must be ${expected}`);
         const recorded = s.contributions.some((c) => c.output.file === pathname) || s.head?.file === pathname;
         if (recorded) throw new Error("that file is already part of the transcript");
+        // a retry after a failed attempt: clear the partial file first (the store refuses overwrites)
+        await del(pathname).catch(() => undefined);
         return {
           allowedContentTypes: ["application/octet-stream"],
           maximumSizeInBytes: 80 * 1024 * 1024,
           addRandomSuffix: false,
-          allowOverwrite: true, // retries before the file is recorded; refused above once it is
           validUntil: Date.now() + 25 * 60_000,
           tokenPayload: JSON.stringify({ actor, pathname }),
         };
