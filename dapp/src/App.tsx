@@ -304,9 +304,10 @@ export default function App() {
   };
   useEffect(() => {
     if (!st?.activity) return;
-    const seen = new Set(st.activity.map((a) => a.onChain.txid).filter(Boolean));
+    // retire an optimistic row as soon as any token's ledger has the transaction
+    const seen = new Set([...st.activity, ...otherActivity].map((a) => a.onChain.txid).filter(Boolean));
     setOptimistic((o) => o.filter((x) => !seen.has(x.onChain.txid)));
-  }, [st]);
+  }, [st, otherActivity]);
 
   const wrap = async <T,>(f: () => Promise<T>): Promise<T> => {
     setBusy(true);
