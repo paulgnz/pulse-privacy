@@ -444,7 +444,10 @@ class XprShield extends Contract {
    * registered for `sender`, and to the withdrawal destination, which must be `sender` itself.
    */
   @action("spend")
-  spend(sender: Name, proof: u8[], publics: u8[]): void {
+  spend(owner: Name, proof: u8[], publics: u8[]): void {
+    // the field is `owner`, not `sender`: WebAuth reads a data field named `sender` as one of
+    // its own message senders and refuses the request ("Signal sender not found")
+    const sender = owner;
     requireAuth(sender);
     const c = this.config();
     check(!c.paused, "paused");

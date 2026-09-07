@@ -138,7 +138,7 @@ export async function prove(s: Session, built: ReturnType<typeof buildJoinSplit>
   const publics = built.actionPublics.map(w32).join("");
   onProgress?.(0.85, "Waiting for your wallet");
   return {
-    action: { account: SHIELD.contract, name: "spend", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { sender: s.auth.actor, proof: proofHex, publics } },
+    action: { account: SHIELD.contract, name: "spend", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { owner: s.auth.actor, proof: proofHex, publics } },
     outputs: built.outNotes.map((n) => ({ cm: n.cm, v: n.v })),
     nf: built.nf,
   };

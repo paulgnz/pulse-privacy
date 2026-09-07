@@ -122,7 +122,7 @@ async function submit(js, who, pub, label) {
   console.log("proving…");
   const { proof } = await snarkjs.groth16.fullProve(js.input, CB("joinsplit_js/joinsplit.wasm"), CB("joinsplit_final.zkey"));
   console.log(`proof in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-  const out = action(CONTRACT, "spend", { sender: ACCOUNTS[who], proof: encodeProof(proof), publics: encodeInputs(N.actionPublics(js.expected, pub)) }, `${ACCOUNTS[who]}@active`);
+  const out = action(CONTRACT, "spend", { owner: ACCOUNTS[who], proof: encodeProof(proof), publics: encodeInputs(N.actionPublics(js.expected, pub)) }, `${ACCOUNTS[who]}@active`);
   console.log(`${label}: tx ${txId(out)} cpu ${cpuOf(out)} µs\n${explorer(txId(out))}`);
 }
 
