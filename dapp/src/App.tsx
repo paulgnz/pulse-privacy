@@ -422,11 +422,11 @@ export default function App() {
           </div>
         </Note>
       ) : null}
-      {!st || !client || st.token.code !== token.code ? (
+      {!st || !client ? (
         <div className="empty">Loading your statement</div>
       ) : tab === "overview" ? (
         <Overview
-          st={st}
+          st={st.token.code === token.code ? st : { ...st, token, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], historyLoaded: false }}
           hasKey={!!keypair}
           onRegister={() => wrap(() => client.register())}
           publicBalance={pub}
@@ -435,7 +435,7 @@ export default function App() {
           onSend={(to, amount, p) => wrap(async () => { const tx = await client.send(to, amount, p); trackTx(tx, { kind: "send", amount, counterparty: to }); return tx; })}
           onDeposit={(a) => wrap(async () => { const tx = await client.deposit(a); trackTx(tx, { kind: "deposit", amount: a, onChain: { public: true } }); return tx; })}
           onWithdraw={(a, p) => wrap(async () => { const tx = await client.withdraw(a, p); trackTx(tx, { kind: "withdraw", amount: a, onChain: { public: true } }); return tx; })}
-          busy={busy} refreshing={refreshing}
+          busy={busy} refreshing={refreshing || st.token.code !== token.code}
           tokens={tokens} onSelectToken={chooseToken}
         />
       ) : tab === "activity" ? (

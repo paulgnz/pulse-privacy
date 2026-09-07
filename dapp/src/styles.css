@@ -335,7 +335,6 @@ details[open] summary { margin-bottom: 12px; }
 /* ---- Watch it happen (About) ---- */
 .walkthrough { margin-top: 18px; max-width: min(var(--measure), 100%); min-width: 0; }
 .walkthrough .wt-scroll { overflow-x: auto; max-width: 100%; }
-.about, .about section { min-width: 0; max-width: 100%; }
 .walkthrough svg { display: block; min-width: 600px; font-family: var(--font); }
 .walkthrough .wt-name { font-size: 15px; font-weight: 600; fill: var(--ink); }
 .walkthrough .wt-label { font-size: 13px; fill: var(--graphite); }
