@@ -76,7 +76,7 @@ export const Settings = ({
       <section className="section">
         <h2>Encryption key</h2>
         {keyDerived ? (
-          <p className="lede">Your key is derived from your wallet. Each time you sign in, one signature unlocks your boxes on this device; nothing is stored here.</p>
+          <p className="lede">Your key is derived from your wallet. Each time you sign in, one signature unlocks your boxes on this device; nothing is stored here. It stays the same as long as your wallet's signing key does.</p>
         ) : (
           <>
             <p className="lede">This is a saved key. It opens your boxes, is separate from your wallet's signing key, and stays in this browser.</p>
@@ -120,7 +120,7 @@ export const Settings = ({
                   <button className="textbtn" onClick={copy}>
                     {copied ? "Copied" : "Copy secret"}
                   </button>
-                  <span className="small muted">Only needed if you move to a wallet whose signatures are not stable.</span>
+                  <span className="small muted">Your key is re-derived from your wallet's signature, so normally there is nothing to keep. Export a backup before you change your wallet's keys: a new signing key gives a different signature, and with it a different key.</span>
                 </div>
               ) : null}
               <Field label="Secret to import" hint="Replaces the stored key. Only do this to restore a backup of the key registered for this account.">

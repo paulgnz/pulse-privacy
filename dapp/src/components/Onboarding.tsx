@@ -306,7 +306,7 @@ const Key = (p: OnboardingProps) => {
             ? "Sign once more. The two signatures must match, which proves your wallet always derives the same key. This check happens only the first time."
             : chainKey
               ? "Sign once to unlock your private balance. Nothing is sent to the chain."
-              : "Sign once to unlock your private balance. Nothing is sent to the chain, and there is no key to back up: your wallet is the key."}
+              : "Sign once to unlock your private balance. Nothing is sent to the chain, and there is nothing extra to back up: your wallet is the key."}
         </p>
         {done ? (
           <Note level="ok">
