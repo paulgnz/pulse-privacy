@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { CONTRACT, CRYPTO_MODE, EXPLORER } from "./config";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL } from "./config";
+import { fmtUnits } from "./lib/format";
 import * as chain from "./lib/chain";
 import type { Session } from "./lib/chain";
 import { ConfidentialClient, type ConfState } from "./lib/client";
@@ -7,6 +8,7 @@ import { selectBackend } from "./lib/crypto";
 import type { EncryptionKeypair, Hex } from "./lib/crypto/types";
 import { createKeypair, forgetKeypair, importSecret, loadKeypair } from "./lib/keys";
 import { About } from "./components/About";
+import { Note } from "./components/ui";
 import { Activity } from "./components/Activity";
 import { Auditor } from "./components/Auditor";
 import { Brand } from "./components/Brand";
@@ -128,9 +130,29 @@ export default function App() {
 
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 15000);
+    const t = setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 15000);
     return () => clearInterval(t);
   }, [refresh]);
+
+  // Notify on incoming confidential transfers: compare pending between refreshes.
+  const [received, setReceived] = useState<string | null>(null);
+  const prevPending = useRef<{ count: number; amount: bigint } | null>(null);
+  useEffect(() => {
+    if (!st) return;
+    const cur = { count: st.pendingCount, amount: st.pending };
+    const prev = prevPending.current;
+    prevPending.current = cur;
+    if (!prev || cur.count <= prev.count) return;
+    const delta = cur.amount - prev.amount;
+    const msg = delta > 0n ? `You received ${fmtUnits(delta)} XPR inside the contract. It is in your pending box.` : "You received a confidential transfer. It is in your pending box.";
+    setReceived(msg);
+    document.title = `(${cur.count}) Confidential XPR`;
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("Confidential XPR", { body: msg });
+    } catch { /* ignore */ }
+  }, [st]);
+  useEffect(() => { if (!received) document.title = "Confidential XPR"; }, [received]);
+  const askNotify = async () => { try { await Notification.requestPermission(); } catch { /* ignore */ } };
 
   const doLogin = async () => {
     setLoginBusy(true);
@@ -228,7 +250,7 @@ export default function App() {
   const foot = (
     <div className="foot">
       {backend.isMock ? "Simulation. " : ""}
-      Running on XPR Network testnet. Contract <a href={`${EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>.
+      Running on {NETWORK_LABEL}. Contract <a href={`${EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>.
     </div>
   );
 
@@ -306,6 +328,19 @@ export default function App() {
         ))}
       </nav>
 
+      {received ? (
+        <Note level="ok">
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 16 }}>
+            <span>{received}</span>
+            <span className="row" style={{ gap: 14 }}>
+              {typeof Notification !== "undefined" && Notification.permission === "default" ? (
+                <button className="textbtn quiet" onClick={askNotify}>Notify me on this device</button>
+              ) : null}
+              <button className="textbtn quiet" onClick={() => setReceived(null)}>Dismiss</button>
+            </span>
+          </div>
+        </Note>
+      ) : null}
       {!st || !client ? (
         <div className="empty">Loading your statement</div>
       ) : tab === "overview" ? (

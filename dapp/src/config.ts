@@ -19,7 +19,7 @@ const NETWORKS: Record<"testnet" | "mainnet", Net> = {
   },
   mainnet: {
     chainId: "384da888112027f0321850a169f737c33e53b388aad48b5adace4bab97f437e0",
-    endpoints: ["https://proton.protonnz.com", "https://proton.greymass.com", "https://proton.eosusa.io"],
+    endpoints: ["https://proton.greymass.com", "https://proton.eosusa.io"],
     hyperions: ["https://hyperion-xpr-mainnet.protonnz.com", "https://proton.eosusa.io"],
     contract: "xprconf", // placeholder: the mainnet contract account is not created yet
     explorer: "https://explorer.xprnetwork.org",
@@ -40,6 +40,8 @@ export const TOKEN_CONTRACT = "eosio.token";
 export const SYMBOL = "XPR";
 export const PRECISION = 4;
 export const EXPLORER = NET.explorer;
+/** "XPR Network testnet" | "XPR Network" for copy */
+export const NETWORK_LABEL = NETWORK === "mainnet" ? "XPR Network" : "XPR Network testnet";
 export const APP_NAME = "Confidential XPR";
 
 /** "real" (default) proves in the browser and broadcasts to the contract; VITE_CRYPTO=mock simulates. */

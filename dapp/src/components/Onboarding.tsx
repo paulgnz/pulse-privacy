@@ -7,6 +7,7 @@ import { checkDeposit } from "../lib/privacy";
 import { unlockOnce } from "../lib/unlock";
 import type { Session } from "../lib/chain";
 import { AmountInput, Busy, EdgeNote, Field, Note } from "./ui";
+import { NETWORK } from "../config";
 
 export type Step = "connect" | "key" | "register" | "deposit";
 export type KeyMode = "unlock" | "unlock-pending" | "confirm" | "confirm-pending" | "legacy" | "legacy-pending" | "unlock-done" | "import" | "create" | "backup";
@@ -102,7 +103,7 @@ const Connect = ({ onConnect, connectBusy, connectError, actor, publicBalance, o
         ) : null}
       </>
     )}
-    <p className="quiet">{isMock ? "Simulation. " : ""}Testnet. Nothing here is real money.</p>
+    <p className="quiet">{isMock ? "Simulation. " : ""}{NETWORK === "mainnet" ? "Mainnet, early access: the pool is capped while the trusted-setup ceremony and audit complete." : "Testnet. Nothing here is real money."}</p>
   </section>
 );
 

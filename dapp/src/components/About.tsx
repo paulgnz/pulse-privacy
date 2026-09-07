@@ -1,4 +1,4 @@
-import { CONTRACT, EXPLORER } from "../config";
+import { CONTRACT, EXPLORER, NETWORK_LABEL } from "../config";
 import { Excerpt } from "./Brand";
 
 /** How it works. Facts follow docs/01-design.md; written for a user. */
@@ -91,7 +91,7 @@ export const About = ({ signedIn, onConnect }: { signedIn: boolean; onConnect?: 
       <h2>Status</h2>
       <ul className="plain">
         <li>
-          Running on XPR Network testnet. Contract{" "}
+          Running on {NETWORK_LABEL}. Contract{" "}
           <a href={`${EXPLORER}/account/${CONTRACT}`} target="_blank" rel="noreferrer">
             {CONTRACT}
           </a>

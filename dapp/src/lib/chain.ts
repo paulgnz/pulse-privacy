@@ -286,7 +286,18 @@ export async function poolHistory(limit = 200): Promise<PoolAction[]> {
     const x = a.act.data;
     if (a.act.account === CONTRACT) {
       if (a.act.name === "send") {
-        out.push({ ...base, kind: "send", from: String(x.from), to: String(x.to), t: parseTransferSet(String(x.t)), bNew: parsePairSet(String(x.b_new)), proof: hx(String(x.proof)) });
+        // One unreadable row must not empty the whole ledger. Actions from before the
+        // key-compression change decode under the current ABI with shifted fields
+        // (ps ← t, pr ← b_new, pa ← proof); recover that layout.
+        try {
+          let t = String(x.t ?? ""), bNew = String(x.b_new ?? ""), proof = String(x.proof ?? "");
+          if (t.replace(/^0x/i, "").length !== 1024 && String(x.ps ?? "").replace(/^0x/i, "").length === 1024) {
+            t = String(x.ps); bNew = String(x.pr); proof = String(x.pa);
+          }
+          out.push({ ...base, kind: "send", from: String(x.from), to: String(x.to), t: parseTransferSet(t), bNew: parsePairSet(bNew), proof: hx(proof) });
+        } catch (e) {
+          console.warn("history: skipping unreadable send", a.trx_id, (e as Error).message);
+        }
       } else if (a.act.name === "withdraw") {
         out.push({ ...base, kind: "withdraw", from: CONTRACT, to: String(x.owner), amount: fromAsset(String(x.quantity)) });
       } else if (a.act.name === "applypending") {
