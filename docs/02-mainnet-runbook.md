@@ -31,7 +31,7 @@ whole-XPR withdrawals. Owner of `xprconf` is `admin.proton@committee` (3-of-6) s
 
 ## 3. Ceremony
 
-Browser-based contribution site: https://pulse-privacy-ceremony.vercel.app (Vercel project
+Browser-based contribution site: https://ceremony.private.protonnz.com (Vercel project
 `pulse-privacy-ceremony`, root `ceremony-web/`, Blob store `pulse-privacy-ceremony`; custom domain
 `ceremony.private.protonnz.com` pending DNS). Contributors connect WebAuth, take a 20-minute turn,
 mix randomness in a web worker, and sign an attestation with the never-broadcast `viewkey` note

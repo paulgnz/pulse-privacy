@@ -7,7 +7,7 @@ import { Excerpt } from "./Brand";
 import { TokenIcon } from "./ui";
 import { Walkthrough } from "./Walkthrough";
 
-const CEREMONY_URL = "https://pulse-privacy-ceremony.vercel.app";
+const CEREMONY_URL = "https://ceremony.private.protonnz.com";
 
 /** Tokens and their early-access caps, read from the contract (the simulation shows the mainnet values). */
 const Limits = () => {
