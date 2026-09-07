@@ -76,13 +76,11 @@ async function accountRows() {
   return r.rows ?? [];
 }
 
-// Default start: the block of the latest `setcode` on the contract account, so events that
-// predate the current code (which could not have created claims) are excluded.
-async function latestSetcodeBlock() {
-  const d = await (await fetch(`${HYPERION}/v2/history/get_actions?account=${CONTRACT}&filter=eosio:setcode&limit=1&sort=desc`)).json();
-  return d.actions?.[0]?.block_num ?? 0;
-}
-if (!FROM_BLOCK) FROM_BLOCK = await latestSetcodeBlock();
+// Default start: the block where the confidential contract FIRST went live (later redeploys
+// keep earlier claims valid). Override with --from or START_BLOCK. Transfers into the account
+// before that block carry no claim (the testnet has 8,000 XPR of those).
+const START_BLOCK = Number(process.env.START_BLOCK ?? (CONTRACT === "xprconf" ? 404503797 : 0));
+if (!FROM_BLOCK) FROM_BLOCK = START_BLOCK;
 
 await eg.init();
 const secret = loadSecret();
@@ -117,7 +115,7 @@ const line = (e) =>
   `${String(e.block).padStart(10)}  ${e.time.slice(0, 19)}  ${e.kind.padEnd(18)} ${String(e.from).padEnd(13)} → ${String(e.to).padEnd(13)} ${e.amount === null ? (e.kind === "send" ? "UNREADABLE" : "") : fmt(e.amount)}${e.ciphertext ? "   " + e.ciphertext : ""}`;
 
 if (cmd === "ledger") {
-  console.log(`auditor ledger · ${CONTRACT} on ${HYPERION} · from block ${FROM_BLOCK} (latest setcode) · viewing pubkey ${eg.ptHex(auditor.P).slice(0, 16)}…`);
+  console.log(`auditor ledger · ${CONTRACT} on ${HYPERION} · from block ${FROM_BLOCK} (contract start) · viewing pubkey ${eg.ptHex(auditor.P).slice(0, 16)}…`);
   for (const e of ledger) console.log(line(e));
   console.log(`${ledger.length} events`);
 } else if (cmd === "account") {
@@ -135,7 +133,7 @@ if (cmd === "ledger") {
     } else if (e.kind === "plain-transfer-in") stray += e.amount;
   }
   const rows = await accountRows();
-  console.log(`ledger from block ${FROM_BLOCK} (latest setcode on ${CONTRACT}); earlier transfers into the contract are pre-code and carry no claim\n`);
+  console.log(`ledger from block ${FROM_BLOCK} (contract start); earlier transfers into the account carry no claim\n`);
   console.log("account        reconstructed balance (deposits − withdrawals + received − sent)   on-chain nonce  pending_count");
   for (const r of rows) console.log(`${r.owner.padEnd(14)} ${fmt(bal[r.owner] ?? 0n).padStart(24)}   ${String(r.nonce).padStart(14)}  ${String(r.pending_count).padStart(13)}`);
   const sum = Object.values(bal).reduce((a, b) => a + b, 0n);
