@@ -2,9 +2,9 @@
 
 The contract behind [docs/06-shielded-design.md](../../docs/06-shielded-design.md): a pile of
 sealed notes in a Poseidon Merkle tree, nullifiers against double spending, and a Groth16
-join-split proof per payment. A payment on chain shows two nullifiers, two commitments and
-ciphertexts; neither the sender's nor the receiver's account appears anywhere. The auditor's
-key opens every note.
+join-split proof per payment. The sender's wallet signs each payment, so the chain shows who
+initiated it; the receiver, the amount and which notes were spent stay hidden (docs/06 §8). The
+auditor's key opens every note.
 
 Deployed on XPR **testnet** as account `xprshield` (2026-09-08). Not on mainnet.
 
@@ -24,24 +24,16 @@ Deployed on XPR **testnet** as account `xprshield` (2026-09-08). Not on mainnet.
 ## Actions and tables
 
 Actions: `init(auditor_pubkey, vk)`, `addtoken(sym, contract, token_id, max_pool, max_deposit)`,
-`setvk`, `setauditor`, `pause`, `viewkey` (never broadcast; the wallet signs it to derive the
-key), `register(owner, pubkey)`, and `transfer(proof, publics)`, which is both a payment and a
-withdrawal and checks no authority. Deposits are token transfers with memo `shield:<rho>:<r>`.
+`setvk`, `setauditor`, `pause`, `reset` (testnet only), `viewkey` (never broadcast; the wallet
+signs it to derive the key), `register(owner, pubkey)`, and `transfer(sender, proof, publics)`,
+which is both a payment and a withdrawal: `sender` signs and pays RAM, the proof is bound to
+`sender` and to the key registered for `sender`, and a withdrawal pays `sender` only. The action
+carries 28 public words; the contract supplies the sender's key, the sender's name and the
+auditor key to the verifier. Deposits are token transfers with memo `shield:<rho>:<r>`.
 
 Tables: `config`, `tokens`, `keys`, `leaves` (index → commitment), `tree` (frontier and root),
 `roots` (the last 128 roots), `nullifiers`, `outputs` (what a receiver needs to find and open a
 note, so no history indexer is required).
-
-## The relay permission
-
-`transfer` is submitted under `xprshield@relay`, a permission whose key is deliberately
-public, linked to that one action. Anyone can use it; nobody's own account appears. It spends
-the contract account's CPU, which is fine on testnet.
-
-    public:  PUB_K1_6uuABd7d8vGDxCQjk6nQa49AcbLY7teCFcSPxFKmPofyXHfcH9
-    private: PVT_K1_ne985hZeQ2eUuDghEaBbnTEqUjTsn33Fhxx9zd71Qga8uL4Fz   (public by design)
-
-`proton key:add <private>` puts it in the CLI keychain; the demo then signs as `xprshield@relay`.
 
 ## Run
 
@@ -52,6 +44,7 @@ npm run build           # bench + contract → assembly/target
 npm test                # Poseidon conformance, then the vert end-to-end (needs circuits/build)
 
 # live testnet (proton CLI on proton-test; keys in the keychain; alice = paul123, bob = testclient1)
+# the sender's account signs each transfer
 node tests/testnet-demo.mjs keys        # generates alice/bob/auditor secrets (gitignored)
 node tests/testnet-demo.mjs setup       # init, addtoken XPR and XMD, register
 node tests/testnet-demo.mjs deposit alice 500
@@ -71,15 +64,15 @@ in `circuits/`).
 |---|---|
 | Poseidon(2), one hash | 380 to 600 µs |
 | deposit (Poseidon(6) + 20-hash insertion) | 8.7 ms |
-| shielded transfer (verify 38 inputs + 21 hashes + tables) | 14.5 ms |
+| shielded transfer, relay build (verify 38 inputs + 21 hashes + tables) | 14.5 ms |
 
-Proof generation: about 1.3 s in Node. Circuit: 31,418 constraints, 38 public signals.
+Proof generation: about 1.1 s in Node. Circuit (revision 2): 29,523 constraints, 33 public signals.
 
 ## Known limits of this build
 
 - Rehearsal proving key (one contributor). A real phase-2 ceremony precedes any mainnet use.
-- The contract pays RAM for leaves, outputs and nullifiers (about 1.3 KB per transfer). On
-  mainnet this needs a fee or a rate-limited relay.
+- The sender pays RAM for leaves, outputs and nullifiers (about 1 KB per transfer); deposits
+  are billed to the contract.
 - Nullifiers and roots are keyed by their low 64 bits; a collision between two different
   values is refused rather than silently merged (probability about 2⁻⁶⁴ per pair).
 - No emergency `restore`; add before mainnet, as `xprconf` has.

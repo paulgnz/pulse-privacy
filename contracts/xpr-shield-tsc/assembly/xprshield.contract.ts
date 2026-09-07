@@ -9,16 +9,20 @@ import { hash2, poseidon, zeroAt } from "./poseidon";
 // A note is (pk, v, token, rho, r); cm = Poseidon(pk.x, pk.y, v, token, rho, r). Commitments sit
 // in a depth-20 Poseidon Merkle tree that the contract maintains; every insertion is a pair
 // (a transfer's two outputs, or a deposit's note with an empty slot). Spending publishes
-// nullifiers. `transfer` checks no authority: a relay permission with a public key submits it,
-// so neither party's account appears in the transaction.
+// nullifiers. The sender's wallet signs `transfer` (docs/06 §8): the chain sees who initiated
+// it; the receiver, the amount and which notes were spent stay hidden.
 //
-// Public signals of the join-split proof, 38 words of 32 bytes (circuits/shielded/joinsplit.circom):
-//   [0,1] nf   [2,3] cm   [4..7] epk (x,y × 2)   [8..15] cr   [16..31] ca
-//   [32] root  [33] vPub  [34] tokenPub  [35] to  [36,37] auditor key (x, y)
+// Public signals of the join-split proof, 33 words of 32 bytes (circuits/shielded/joinsplit.circom):
+//   [0,1] nf  [2,3] cm  [4..7] epk (x,y × 2)  [8..13] cr (3 × 2)  [14..23] ca (5 × 2)
+//   [24,25] senderPk  [26] root  [27] vPub  [28] tokenPub  [29] to  [30] sender  [31,32] A
+// The action carries the 28 words the chain cannot know (0..23 and 26..29); the contract
+// inserts senderPk from the sender's registration, sender from the authorisation and A from
+// its config.
 
 const DEPTH: i32 = 20;
-const N_PUB: i32 = 38;
-const PUB_LEN: i32 = N_PUB * 32;
+const N_PUB: i32 = 33;
+const N_ACTION: i32 = 28;
+const ACTION_LEN: i32 = N_ACTION * 32;
 const PROOF_LEN: i32 = 256;
 const RING: u64 = 128;
 
@@ -239,7 +243,7 @@ class XprShield extends Contract {
     requireAuth(this.receiver);
     check(this.configs.get(0) == null, "already initialised");
     check(onCurve(auditor_pubkey), "auditor pubkey not on curve");
-    check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 38 public inputs");
+    check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 33 public inputs");
     this.configs.store(new Config(0, auditor_pubkey, vk, false), this.receiver);
     const filled = new Array<u8>(DEPTH * 32);
     for (let i = 0; i < filled.length; i++) filled[i] = 0;
@@ -271,7 +275,7 @@ class XprShield extends Contract {
   setvk(vk: u8[]): void {
     requireAuth(this.receiver);
     const c = this.config();
-    check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 38 public inputs");
+    check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 33 public inputs");
     c.vk = vk;
     this.configs.update(c, this.receiver);
   }
@@ -283,6 +287,26 @@ class XprShield extends Contract {
     check(onCurve(auditor_pubkey), "auditor pubkey not on curve");
     c.auditor_pubkey = auditor_pubkey;
     this.configs.update(c, this.receiver);
+  }
+
+  /**
+   * Testnet only: wipe every table so the contract can be re-initialised after a circuit
+   * change. Requires the contract authority and the paused state. Escrowed tokens are not
+   * returned; remove this action before any mainnet deployment.
+   */
+  @action("reset")
+  reset(): void {
+    requireAuth(this.receiver);
+    const c = this.configs.get(0);
+    check(c != null && c!.paused, "pause first");
+    let l = this.leaves.first(); while (l != null) { const n = this.leaves.next(l); this.leaves.remove(l); l = n; }
+    let o = this.outputs.first(); while (o != null) { const n = this.outputs.next(o); this.outputs.remove(o); o = n; }
+    let f = this.nullifiers.first(); while (f != null) { const n = this.nullifiers.next(f); this.nullifiers.remove(f); f = n; }
+    let r = this.roots.first(); while (r != null) { const n = this.roots.next(r); this.roots.remove(r); r = n; }
+    let k = this.keys.first(); while (k != null) { const n = this.keys.next(k); this.keys.remove(k); k = n; }
+    let t = this.tokens.first(); while (t != null) { const n = this.tokens.next(t); this.tokens.remove(t); t = n; }
+    const tr = this.trees.get(0); if (tr != null) this.trees.remove(tr);
+    this.configs.remove(c!);
   }
 
   @action("pause")
@@ -332,8 +356,8 @@ class XprShield extends Contract {
     }
   }
 
-  /** insert (cm1, cm2) as leaves next_leaf and next_leaf + 1 (20 hashes), record the root */
-  insertPair(cm1: Limbs, cm2: Limbs | null, cm1Bytes: u8[], cm2Bytes: u8[]): u64 {
+  /** insert (cm1, cm2) as leaves next_leaf and next_leaf + 1 (20 hashes), record the root; `payer` pays the leaf rows */
+  insertPair(cm1: Limbs, cm2: Limbs | null, cm1Bytes: u8[], cm2Bytes: u8[], payer: Name): u64 {
     const t = this.tree();
     const index = t.next_leaf;
     check(index % 2 == 0, "tree corrupt");
@@ -350,15 +374,15 @@ class XprShield extends Contract {
       }
       i >>= 1;
     }
-    this.leaves.store(new Leaf(index, cm1Bytes), this.receiver);
-    if (cm2 != null) this.leaves.store(new Leaf(index + 1, cm2Bytes), this.receiver);
+    this.leaves.store(new Leaf(index, cm1Bytes), payer);
+    if (cm2 != null) this.leaves.store(new Leaf(index + 1, cm2Bytes), payer);
     t.next_leaf = index + 2;
     this.rememberRoot(t, toBytesBE(cur));
     this.trees.update(t, this.receiver);
     return index;
   }
 
-  spend(nf: u8[]): void {
+  spend(nf: u8[], payer: Name): void {
     if (isZeroWord(nf)) return;
     const key = low64(nf);
     const row = this.nullifiers.get(key);
@@ -366,7 +390,7 @@ class XprShield extends Contract {
       check(!bytesEq(row.nf, nf), "note already spent");
       check(false, "nullifier key collision; contact the operator");
     }
-    this.nullifiers.store(new NullifierRow(key, nf), this.receiver);
+    this.nullifiers.store(new NullifierRow(key, nf), payer);
   }
 
   // ---------------------------------------------------------------- deposit (notify)
@@ -406,7 +430,7 @@ class XprShield extends Contract {
     unchecked((inp[5] = fromBytesBE(r, 0)));
     const cm = poseidon(inp);
     const cmBytes = toBytesBE(cm);
-    const index = this.insertPair(cm, null, cmBytes, []);
+    const index = this.insertPair(cm, null, cmBytes, [], this.receiver);
     const plain = toBytesBE(fromU64(v)).concat(toBytesBE(fromU64(t.token_id))).concat(rho).concat(r);
     this.outputs.store(new OutputRow(index, [], plain, []), this.receiver);
     print("shield leaf " + index.toString() + " cm " + hex(cmBytes));
@@ -415,53 +439,64 @@ class XprShield extends Contract {
   // ---------------------------------------------------------------- shielded transfer / withdraw
 
   /**
-   * No authority is required: whoever submits pays the CPU. The proof binds everything that
-   * matters, including the withdrawal destination.
+   * Signed by `sender`, who pays CPU and RAM. The proof is bound to `sender`, to the key
+   * registered for `sender`, and to the withdrawal destination, which must be `sender` itself.
    */
   @action("transfer")
-  transfer(proof: u8[], publics: u8[]): void {
+  transfer(sender: Name, proof: u8[], publics: u8[]): void {
+    requireAuth(sender);
     const c = this.config();
     check(!c.paused, "paused");
     check(proof.length == PROOF_LEN, "proof must be 256 bytes");
-    check(publics.length == PUB_LEN, "publics must be 38 words");
-    for (let i = 0; i < N_PUB; i++) check(isCanonicalBE(publics, i * 32), "public word not canonical");
+    check(publics.length == ACTION_LEN, "publics must be 28 words");
+    for (let i = 0; i < N_ACTION; i++) check(isCanonicalBE(publics, i * 32), "public word not canonical");
+    const key = this.keys.get(sender.N);
+    check(key != null, "sender has not registered a shielded key");
 
     const nf1 = word(publics, 0);
     const nf2 = word(publics, 1);
     const cm1 = word(publics, 2);
     const cm2 = word(publics, 3);
-    const root = word(publics, 32);
-    const vPub = wordToU64(word(publics, 33));
-    const tokenPub = wordToU64(word(publics, 34));
-    const to = wordToU64(word(publics, 35));
-    const A = word(publics, 36).concat(word(publics, 37));
+    const root = word(publics, 24);
+    const vPub = wordToU64(word(publics, 25));
+    const tokenPub = wordToU64(word(publics, 26));
+    const to = wordToU64(word(publics, 27));
 
-    check(bytesEq(A, c.auditor_pubkey), "proof is not for the current auditor key");
     check(!isZeroWord(nf1), "first input must be a real note");
     check(!bytesEq(nf1, nf2), "the same note twice");
     const known = this.roots.get(low64(root));
     check(known != null && bytesEq(known!.root, root), "unknown or stale root");
-    check(groth16Verify(c.vk, proof, publics), "invalid proof");
+    if (vPub > 0) check(to == sender.N, "withdrawals go to the sender's own account");
 
-    this.spend(nf1);
-    this.spend(nf2);
-    const index = this.insertPair(fromBytesBE(cm1, 0), fromBytesBE(cm2, 0), cm1, cm2);
+    // the verifier's 33 words: action words 0..23, senderPk, root vPub tokenPub to, sender, A
+    const senderWord = new Array<u8>(32);
+    for (let i = 0; i < 24; i++) senderWord[i] = 0;
+    let n = sender.N;
+    for (let i = 31; i >= 24; i--) { senderWord[i] = (n & 0xff) as u8; n >>= 8; }
+    const inputs = publics.slice(0, 24 * 32)
+      .concat(key!.pubkey)
+      .concat(publics.slice(24 * 32, 28 * 32))
+      .concat(senderWord)
+      .concat(c.auditor_pubkey);
+    check(groth16Verify(c.vk, proof, inputs), "invalid proof");
+
+    this.spend(nf1, sender);
+    this.spend(nf2, sender);
+    const index = this.insertPair(fromBytesBE(cm1, 0), fromBytesBE(cm2, 0), cm1, cm2, sender);
     for (let j = 0; j < 2; j++) {
       const epk = word(publics, 4 + 2 * j).concat(word(publics, 5 + 2 * j));
-      const cr = publics.slice((8 + 4 * j) * 32, (12 + 4 * j) * 32);
-      const ca = publics.slice((16 + 8 * j) * 32, (24 + 8 * j) * 32);
-      this.outputs.store(new OutputRow(index + (j as u64), epk, cr, ca), this.receiver);
+      const cr = publics.slice((8 + 3 * j) * 32, (11 + 3 * j) * 32);
+      const ca = publics.slice((14 + 5 * j) * 32, (19 + 5 * j) * 32);
+      this.outputs.store(new OutputRow(index + (j as u64), epk, cr, ca), sender);
     }
 
     if (vPub > 0) {
       const t = this.tokenById(tokenPub);
-      const dest = Name.fromU64(to);
-      check(dest.N != 0, "withdrawal needs a destination");
       t.pool = t.pool > vPub ? t.pool - vPub : 0;
       t.withdrawals += vPub;
       this.tokens.update(t, this.receiver);
       const sym = Symbol.fromU64(t.sym);
-      sendTransferTokens(this.receiver, dest, [new ExtendedAsset(new Asset(<i64>vPub, sym), t.token_contract)], "shielded withdraw");
+      sendTransferTokens(this.receiver, sender, [new ExtendedAsset(new Asset(<i64>vPub, sym), t.token_contract)], "shielded withdraw");
     }
     print("shield leaf " + index.toString());
   }

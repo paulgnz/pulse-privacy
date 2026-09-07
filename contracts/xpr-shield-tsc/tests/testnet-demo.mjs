@@ -3,11 +3,10 @@
 //
 //   node tests/testnet-demo.mjs keys                      # generate alice/bob/auditor secrets (gitignored)
 //   node tests/testnet-demo.mjs setup                     # init, addtoken XPR + XMD, register alice and bob
-//   node tests/testnet-demo.mjs relay <PUB_K1_...>        # relay permission on xprshield, linked to transfer
 //   node tests/testnet-demo.mjs deposit alice 500         # alice (paul123) deposits 500 XPR
 //   node tests/testnet-demo.mjs scan bob                  # notes and balance from the chain alone
-//   node tests/testnet-demo.mjs send alice bob 123.4      # shielded payment, submitted as xprshield@relay
-//   node tests/testnet-demo.mjs withdraw bob 100          # to bob's public account, submitted by the relay
+//   node tests/testnet-demo.mjs send alice bob 123.4      # shielded payment, signed by paul123
+//   node tests/testnet-demo.mjs withdraw bob 100          # to bob's own public account, signed by testclient1
 //   node tests/testnet-demo.mjs audit                     # the auditor's ledger with names
 // TOKEN=XMD switches to Metal Dollar (6 decimals, xmd.token, token id 2).
 import * as snarkjs from "snarkjs";
@@ -56,7 +55,7 @@ const explorer = (id) => `https://testnet.explorer.xprnetwork.org/transaction/${
 
 await N.init();
 let keys = existsSync(KEYS) ? JSON.parse(readFileSync(KEYS, "utf8")) : null;
-if (cmd === "keys" || (!keys && cmd !== "relay")) {
+if (cmd === "keys" || !keys) {
   if (keys) throw new Error(`${KEYS} exists; delete it first if you really want new keys`);
   keys = {};
   for (const who of ["alice", "bob", "auditor"]) keys[who] = N.randScalar().toString();
@@ -113,16 +112,20 @@ function pick(notes, amount) {
   return chosen;
 }
 
-async function submit(js, label) {
+async function submit(js, who, pub, label) {
   const t0 = Date.now();
   console.log("proving…");
-  const { proof, publicSignals } = await snarkjs.groth16.fullProve(js.input, CB("joinsplit_js/joinsplit.wasm"), CB("joinsplit_final.zkey"));
+  const { proof } = await snarkjs.groth16.fullProve(js.input, CB("joinsplit_js/joinsplit.wasm"), CB("joinsplit_final.zkey"));
   console.log(`proof in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-  const out = action(CONTRACT, "transfer", { proof: encodeProof(proof), publics: encodeInputs(publicSignals) }, `${CONTRACT}@relay`);
+  const out = action(CONTRACT, "transfer", { sender: ACCOUNTS[who], proof: encodeProof(proof), publics: encodeInputs(N.actionPublics(js.expected, pub)) }, `${ACCOUNTS[who]}@active`);
   console.log(`${label}: tx ${txId(out)} cpu ${cpuOf(out)} µs\n${explorer(txId(out))}`);
 }
 
-if (cmd === "setup") {
+if (cmd === "reset") {
+  action(CONTRACT, "pause", { paused: true }, `${CONTRACT}@active`);
+  action(CONTRACT, "reset", {}, `${CONTRACT}@active`);
+  console.log("tables wiped; run setup");
+} else if (cmd === "setup") {
   const vk = JSON.parse(readFileSync(CB("joinsplit_vk.json"), "utf8"));
   const cfg = await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "config", json: true, limit: 1 });
   if (cfg.rows.length === 0) action(CONTRACT, "init", { auditor_pubkey: ptHex(K.auditor.pk), vk: encodeVk(vk) }, `${CONTRACT}@active`);
@@ -131,12 +134,6 @@ if (cmd === "setup") {
   const registered = new Set((await rows("keys")).map((r) => r.owner));
   for (const who of ["alice", "bob"]) if (!registered.has(ACCOUNTS[who])) action(CONTRACT, "register", { owner: ACCOUNTS[who], pubkey: ptHex(K[who].pk) }, `${ACCOUNTS[who]}@active`);
   console.log("setup done");
-} else if (cmd === "relay") {
-  const pub = args[0];
-  if (!pub?.startsWith("PUB_K1_")) throw new Error("relay <PUB_K1_...>");
-  action("eosio", "updateauth", { account: CONTRACT, permission: "relay", parent: "active", auth: { threshold: 1, keys: [{ key: pub, weight: 1 }], accounts: [], waits: [] } }, `${CONTRACT}@active`);
-  action("eosio", "linkauth", { account: CONTRACT, code: CONTRACT, type: "transfer", requirement: "relay" }, `${CONTRACT}@active`);
-  console.log("relay permission set; add its private key to the CLI keychain to submit transfers");
 } else if (cmd === "deposit") {
   const [who, amt] = args;
   const note = N.newNote(K[who].pk, units(amt), TOKEN_ID);
@@ -158,8 +155,8 @@ if (cmd === "setup") {
   if (!toKey) throw new Error(`${to} has not registered`);
   const auditor = (await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "config", json: true, limit: 1 })).rows[0].auditor_pubkey;
   const change = notes.reduce((s, n) => s + n.v, 0n) - amount;
-  const js = N.buildJoinSplit({ keys: K[from], tree, auditorPk: words(auditor), inputs: notes.map((n) => ({ note: n, index: n.index })), outputs: [{ pk: words(toKey.pubkey), v: amount }, { pk: K[from].pk, v: change }] });
-  await submit(js, `${from} → ${to} ${asset(amount)} (nobody named in the action)`);
+  const js = N.buildJoinSplit({ keys: K[from], tree, auditorPk: words(auditor), sender: N.nameToU64(ACCOUNTS[from]), inputs: notes.map((n) => ({ note: n, index: n.index })), outputs: [{ pk: words(toKey.pubkey), v: amount }, { pk: K[from].pk, v: change }] });
+  await submit(js, from, { root: tree.root }, `${from} → ${to} ${asset(amount)} (signed by ${ACCOUNTS[from]}; receiver and amount hidden)`);
 } else if (cmd === "withdraw") {
   const [who, amt] = args;
   const amount = units(amt);
@@ -167,8 +164,9 @@ if (cmd === "setup") {
   const tree = await chainTree();
   const auditor = (await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "config", json: true, limit: 1 })).rows[0].auditor_pubkey;
   const change = notes.reduce((s, n) => s + n.v, 0n) - amount;
-  const js = N.buildJoinSplit({ keys: K[who], tree, auditorPk: words(auditor), inputs: notes.map((n) => ({ note: n, index: n.index })), outputs: [{ pk: K[who].pk, v: 0n }, { pk: K[who].pk, v: change }], vPub: amount, tokenPub: TOKEN_ID, to: N.nameToU64(ACCOUNTS[who]) });
-  await submit(js, `${who} withdraws ${asset(amount)} to ${ACCOUNTS[who]}`);
+  const pub = { root: tree.root, vPub: amount, tokenPub: TOKEN_ID, to: N.nameToU64(ACCOUNTS[who]) };
+  const js = N.buildJoinSplit({ keys: K[who], tree, auditorPk: words(auditor), sender: N.nameToU64(ACCOUNTS[who]), inputs: notes.map((n) => ({ note: n, index: n.index })), outputs: [{ pk: K[who].pk, v: 0n }, { pk: K[who].pk, v: change }], ...pub });
+  await submit(js, who, pub, `${who} withdraws ${asset(amount)} to ${ACCOUNTS[who]}`);
 } else if (cmd === "audit") {
   const names = new Map((await rows("keys")).map((r) => [r.pubkey.slice(0, 64), r.owner]));
   const leaves = new Map((await rows("leaves")).map((l) => [Number(l.index), BigInt("0x" + l.cm)]));
@@ -178,9 +176,9 @@ if (cmd === "setup") {
     if (o.epk.length === 0) { const [v, token, rho, r] = words(o.cr); console.log(`  leaf ${index}: deposit ${v} of token ${token} (public)`); continue; }
     const n = N.decryptAuditor(K.auditor.ask, words(o.epk), words(o.ca), cm);
     const name = (pk) => names.get(hex(pk[0])) ?? `unregistered ${hex(pk[0]).slice(0, 10)}…`;
-    console.log(`  leaf ${index}: ${name(n.sender)} → ${name(n.pk)} ${n.v} of token ${n.token}${n.valid ? "" : "  (DOES NOT MATCH THE COMMITMENT)"}`);
+    console.log(`  leaf ${index}: → ${name(n.pk)} ${n.v} of token ${n.token}${n.valid ? "" : "  (DOES NOT MATCH THE COMMITMENT)"}  (sender: named in the signed action)`);
   }
 } else {
-  console.log("commands: keys | setup | relay <PUB_K1> | deposit <who> <amt> | scan <who> | send <from> <to> <amt> | withdraw <who> <amt> | audit");
+  console.log("commands: keys | setup | reset | deposit <who> <amt> | scan <who> | send <from> <to> <amt> | withdraw <who> <amt> | audit");
 }
 process.exit(0); // snarkjs leaves worker threads alive
