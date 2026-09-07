@@ -325,10 +325,12 @@ export function App() {
 
       <section>
         <h2>Verify it yourself</h2>
-        <p>Every file and attestation above is public. From a checkout of the repository:</p>
-        <pre className="publish">{`cd ceremony && npm install
-# download the files listed above into contributions/ and final/, then:
-node verify.mjs`}</pre>
+        <p>
+          Every file and attestation above is public, and each one links to the file it was built from. The verification tool checks that every
+          file carries all earlier contributions unchanged plus one new one, that each attestation was signed by the account named, and that the
+          final key is the last contribution plus the announced beacon block, recomputed byte for byte. The tool ships with the source code, which
+          is published before the final contribution so that anyone can run it against this transcript.
+        </p>
         <p className="muted">
           Finalisation (the random beacon from an announced XPR block, and the verifying key) is done by the coordinator with the command-line tools and
           published here when complete.
