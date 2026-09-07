@@ -83,6 +83,7 @@ export const Settings = ({
 
   const payMe = `${location.origin}/?to=${actor}`;
   const [pass, setPass] = useState("");
+  const [passCopied, setPassCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
 
   return (
@@ -101,11 +102,12 @@ export const Settings = ({
               </div>
             ) : null}
             {onStoreBackup ? (
-              <Field label={backupOnChain ? "New passphrase" : "Passphrase"} hint={`At least ${MIN_PASSPHRASE} characters, several words; the encrypted copy is public, so it must resist offline guessing.`} error={pass ? passphraseProblem(pass) ?? undefined : undefined}>
+              <Field label={backupOnChain ? "New passphrase" : "Passphrase"} hint={`At least ${MIN_PASSPHRASE} characters, several words; the encrypted copy is public, so it must resist offline guessing. Copy it before you set it: it is never stored anywhere.`} error={pass ? passphraseProblem(pass) ?? undefined : undefined}>
                 <div className="row" style={{ gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                   <input type="text" value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="off" placeholder="four or more words" />
-                  <button className="textbtn quiet" onClick={() => setPass(generatePassphrase())}>Generate</button>
-                  <button className="btn secondary" onClick={() => run(() => onStoreBackup(pass).then(() => setPass("")), "Passphrase backup stored on chain.")} disabled={busy || !!passphraseProblem(pass)}>
+                  <button className="textbtn quiet" onClick={() => { setPass(generatePassphrase()); setPassCopied(false); }}>Generate</button>
+                  <button className="textbtn" onClick={async () => { try { await navigator.clipboard.writeText(pass); setPassCopied(true); } catch { /* selectable */ } }} disabled={!pass}>{passCopied ? "Copied" : "Copy"}</button>
+                  <button className="btn secondary" onClick={() => run(() => onStoreBackup(pass).then(() => { setPass(""); setPassCopied(false); }), "Passphrase backup stored on chain. Keep the passphrase: it is not stored anywhere.")} disabled={busy || !!passphraseProblem(pass) || !passCopied}>
                     {busy ? "Storing" : backupOnChain ? "Change" : "Set"}
                   </button>
                 </div>
