@@ -89,7 +89,7 @@ Deploy: `vercel --prod` from `dapp/` (static Vite output; `vercel.json` carries 
 ## Hosting
 
 Vercel project `pulse-privacy` (team paulgnzs-projects), production alias
-<https://pulse-privacy-alpha.vercel.app>. Deploy with `vercel --prod` from `dapp/` (the directory is
+<https://private.protonnz.com>. Deploy with `vercel --prod` from `dapp/` (the directory is
 linked; `.vercel/` is gitignored). `vercel.json` sets COOP/COEP (snarkjs threads), an immutable
 cache on `/circuit/*`, and the SPA rewrite.
 

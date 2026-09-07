@@ -2,16 +2,18 @@ import { useMemo, useState } from "react";
 import type { ConfState } from "../lib/client";
 import { fmtUnits, parseUnits } from "../lib/format";
 import { checkWithdrawal, isRound } from "../lib/privacy";
-import { AmountInput, Card, EdgeNotice, Field, Notice, Progress, Tag } from "./ui";
+import { AmountInput, EdgeNote, Field, Note, Progress } from "./ui";
 
 export const Withdraw = ({
   st,
   onWithdraw,
   busy,
+  onClose,
 }: {
   st: ConfState;
   onWithdraw: (amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
   busy: boolean;
+  onClose: () => void;
 }) => {
   const [amt, setAmt] = useState("");
   const [prog, setProg] = useState<{ f: number; s: string } | null>(null);
@@ -27,99 +29,66 @@ export const Withdraw = ({
   }, [amt]);
   const spendable = st.balance + st.pending;
   const over = parsed !== null && parsed > spendable;
+  const g = st.config.withdrawGranularity;
   const check = parsed ? checkWithdrawal(parsed, st.incoming, st.edgesSinceLastIncoming, st.config) : null;
-  const chainRejects = parsed !== null && !isRound(parsed, st.config.withdrawGranularity) && st.config.withdrawGranularity > 0n;
+  const chainRejects = parsed !== null && g > 0n && !isRound(parsed, g);
   const needsAck = check?.level === "warn" && !chainRejects;
   const can = !!parsed && parsed > 0n && !over && !chainRejects && !busy && (!needsAck || ack);
 
   const go = async () => {
     if (!parsed) return;
     setResult(null);
-    setProg({ f: 0, s: "starting" });
+    setProg({ f: 0, s: "Starting" });
     try {
       const tx = await onWithdraw(parsed, (f, s) => setProg({ f, s }));
-      setResult({ ok: true, msg: `Withdrew ${fmtUnits(parsed)} XPR to your public balance. Transaction ${tx.slice(0, 12)}…` });
+      setResult({ ok: true, msg: `Withdrew ${fmtUnits(parsed)} XPR to your public balance. Transaction ${tx.slice(0, 12)}.` });
       setAmt("");
       setAck(false);
     } catch (e) {
-      setResult({ ok: false, msg: (e as Error).message });
+      setResult({ ok: false, msg: `Not withdrawn. ${(e as Error).message}` });
     } finally {
       setProg(null);
     }
   };
 
-  const g = st.config.withdrawGranularity;
-
   return (
-    <div className="grid two">
-      <Card accent="warm">
-        <div className="row between">
-          <h2>Withdraw</h2>
-          <Tag kind="public">PUBLIC TRANSFER</Tag>
+    <div className="form" aria-label="Withdraw">
+      <h3>Withdraw</h3>
+      <p>Withdrawing moves XPR back out as a public transfer. Keep it for when you need public XPR; paying inside the contract is the private path.</p>
+      <Field
+        label="Amount"
+        error={over ? `More than you can spend. You have ${fmtUnits(spendable)} XPR.` : chainRejects ? `The contract accepts whole multiples of ${fmtUnits(g, { trim: true })} XPR.` : undefined}
+        hint={`You can withdraw up to ${fmtUnits(spendable)} XPR${g > 0n ? `, in multiples of ${fmtUnits(g, { trim: true })}` : ""}.`}
+      >
+        <AmountInput value={amt} onChange={setAmt} autoFocus />
+      </Field>
+      {!chainRejects && check ? <EdgeNote check={check} onSuggest={(a) => setAmt(fmtUnits(a, { trim: true }).replace(/,/g, ""))} /> : null}
+      {needsAck ? (
+        <label className="check">
+          <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+          <span>I understand this amount can be linked to something I received, and I want to withdraw it anyway.</span>
+        </label>
+      ) : null}
+      {prog ? (
+        <Progress fraction={prog.f} stage={prog.s} />
+      ) : (
+        <div className="row" style={{ marginBottom: 16 }}>
+          <button className="btn" onClick={go} disabled={!can}>
+            {parsed && parsed > 0n && !over && !chainRejects ? `Withdraw ${fmtUnits(parsed)} XPR` : "Withdraw"}
+          </button>
+          <button className="textbtn quiet" onClick={onClose}>
+            Cancel
+          </button>
         </div>
-        <p>Withdrawing moves XPR back out of the pool as a public transfer. It is the exception, not the routine: pay inside the pool when you can.</p>
-        <div className="stack" style={{ marginTop: 16 }}>
-          <Field
-            label="Amount"
-            hint={
-              over ? (
-                <span className="bad">more than your spendable balance</span>
-              ) : (
-                <>
-                  spendable {fmtUnits(spendable)} XPR · the contract accepts multiples of {g > 0n ? fmtUnits(g, { trim: true }) : "any"} XPR
-                </>
-              )
-            }
-          >
-            <AmountInput value={amt} onChange={setAmt} />
-          </Field>
-          {chainRejects ? (
-            <Notice level="bad" title="The contract will reject this">
-              Withdrawals must be a multiple of {fmtUnits(g, { trim: true })} XPR (withdraw granularity, set by the contract config).
-            </Notice>
-          ) : check ? (
-            <EdgeNotice check={check} onSuggest={(a) => setAmt(fmtUnits(a, { trim: true }).replace(/,/g, ""))} />
-          ) : null}
-          {needsAck ? (
-            <label className="row dim" style={{ fontSize: 13, cursor: "pointer" }}>
-              <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> I understand this amount is easy to link, and I want it anyway.
-            </label>
-          ) : null}
-          {prog ? (
-            <Progress fraction={prog.f} stage={prog.s} />
-          ) : (
-            <div>
-              <button className="btn warm" onClick={go} disabled={!can}>
-                Prove and withdraw
-              </button>
-            </div>
-          )}
-          {result ? (
-            <Notice level={result.ok ? "ok" : "bad"} title={result.ok ? "Done" : "Not sent"}>
-              {result.msg}
-            </Notice>
-          ) : null}
-        </div>
-      </Card>
-      <Card>
-        <h3>Edge privacy, honestly</h3>
-        <p>Inside the pool your amounts are hidden by cryptography. At the edge they are hidden by statistics: round numbers, time, and volume.</p>
-        <div className="grid three" style={{ gap: 12, marginTop: 8 }}>
-          <div className="stat">
-            <div className="v">{st.edgesSinceLastIncoming}</div>
-            <div className="k">pool edges since your last incoming</div>
-          </div>
-          <div className="stat">
-            <div className="v">{st.incoming.length}</div>
-            <div className="k">incoming transfers on record</div>
-          </div>
-          <div className="stat">
-            <div className="v">{g > 0n ? fmtUnits(g, { trim: true }) : "off"}</div>
-            <div className="k">granularity, XPR</div>
-          </div>
-        </div>
-        <p style={{ marginTop: 14, fontSize: 13 }}>Splitting a withdrawal into chunks does not help: an analyst sums. Withdrawing to another account does not help: you still sign it. Only the amount shape and the pool's activity do the work. The wallet warns; the chain enforces the granularity; nothing here is a hard block.</p>
-      </Card>
+      )}
+      {result ? <Note level={result.ok ? "ok" : "error"}>{result.msg}</Note> : null}
+      <div className="kv">
+        <span className="k">Pool activity since your last incoming transfer</span>
+        <span className="num">{st.edgesSinceLastIncoming}</span>
+        <span className="k">Incoming transfers on record</span>
+        <span className="num">{st.incoming.length}</span>
+      </div>
+      <p className="small muted">Inside, amounts are hidden by cryptography. At the edge they are hidden by round numbers, time and volume. Splitting a withdrawal does not help; an observer sums.</p>
     </div>
   );
 };

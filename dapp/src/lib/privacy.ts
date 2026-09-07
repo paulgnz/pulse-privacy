@@ -78,7 +78,9 @@ export function checkWithdrawal(
 
   const exact = recent.find((e) => e.amount === amount);
   if (exact) {
-    reasons.push(`This is exactly what ${exact.from} sent you ${Math.round((now - exact.ts) / 3600000)}h ago. Withdrawing it now links the two.`);
+    const mins = Math.round((now - exact.ts) / 60000);
+    const when = mins < 2 ? "just now" : mins < 120 ? `${mins} minutes ago` : mins < 2880 ? `${Math.round(mins / 60)} hours ago` : `${Math.round(mins / 1440)} days ago`;
+    reasons.push(`This is exactly what ${exact.from} sent you ${when}. Withdrawing it now links the two.`);
     level = "warn";
   } else if (recentSums(recent).includes(amount)) {
     reasons.push("This equals the sum of a few recent incoming transfers. An observer who sums can match it.");

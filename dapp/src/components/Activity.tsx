@@ -1,83 +1,93 @@
+import { useState } from "react";
 import type { ActivityItem, ConfState } from "../lib/client";
 import { EXPLORER } from "../config";
-import { ago, fmtUnits } from "../lib/format";
-import { Card, Tag } from "./ui";
+import { Amount } from "./Amount";
 
-const LABEL: Record<ActivityItem["kind"], string> = {
-  register: "registered key",
-  deposit: "deposit",
-  send: "sent",
-  receive: "received",
-  fold: "folded pending",
-  withdraw: "withdraw",
+const what = (a: ActivityItem): string => {
+  switch (a.kind) {
+    case "register":
+      return "Registered encryption key";
+    case "deposit":
+      return "Deposit";
+    case "send":
+      return `Sent to ${a.counterparty ?? ""}`;
+    case "receive":
+      return `Received from ${a.counterparty ?? ""}`;
+    case "fold":
+      return "Folded pending into balance";
+    case "withdraw":
+      return "Withdrawal";
+  }
 };
 
-export const Activity = ({ st, isMock }: { st: ConfState; isMock: boolean }) => (
-  <Card>
-    <div className="row between">
+const when = (ts: number) =>
+  new Date(ts).toLocaleString("en-NZ", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+export const Activity = ({ st, isMock }: { st: ConfState; isMock: boolean }) => {
+  const [revealed, setRevealed] = useState(true);
+  const rows = st.activity;
+  return (
+    <section className="section">
       <h2>Activity</h2>
-      <span className="dim" style={{ fontSize: 13 }}>
-        left: what you can read · right: what the chain shows
-      </span>
-    </div>
-    {st.activity.length === 0 ? (
-      <div className="empty">Nothing yet. Register, deposit, and send to see the two views side by side.</div>
-    ) : (
-      <table className="table" style={{ marginTop: 10 }}>
-        <thead>
-          <tr>
-            <th>when</th>
-            <th>what</th>
-            <th>with</th>
-            <th className="num">you read</th>
-            <th>on chain</th>
-            <th>tx</th>
-          </tr>
-        </thead>
-        <tbody>
-          {st.activity.map((a) => (
-            <tr key={a.id}>
-              <td className="dim" style={{ whiteSpace: "nowrap" }}>
-                {ago(a.ts)}
-              </td>
-              <td>{LABEL[a.kind]}</td>
-              <td className="mono">{a.counterparty ?? (a.kind === "deposit" || a.kind === "withdraw" ? "eosio.token" : "")}</td>
-              <td className={`num ${a.kind === "send" || a.kind === "withdraw" ? "" : a.kind === "receive" || a.kind === "deposit" ? "good" : "dim"}`}>
-                {a.amount === undefined ? "" : (a.kind === "send" || a.kind === "withdraw" ? "−" : a.kind === "receive" || a.kind === "deposit" ? "+" : "") + fmtUnits(a.amount)}
-              </td>
-              <td>
-                {a.onChain.public ? (
-                  <span className="row" style={{ gap: 8 }}>
-                    <Tag kind="public" />
-                    {a.amount !== undefined ? <span className="mono warm">{fmtUnits(a.amount)} XPR</span> : null}
-                  </span>
-                ) : (
-                  <span className="row" style={{ gap: 8 }}>
-                    <Tag kind="hidden" />
-                    <span className="mono faint" style={{ fontSize: 12 }}>
-                      {a.onChain.ciphertext ?? "●●●●"}
-                      {a.onChain.proof ? ` · proof ${a.onChain.proof}` : ""}
-                    </span>
-                  </span>
-                )}
-              </td>
-              <td className="mono faint" style={{ fontSize: 12 }}>
-                {a.onChain.txid ? (
-                  isMock ? (
-                    <span title="simulated">{a.onChain.txid.slice(0, 8)}… (mock)</span>
-                  ) : (
-                    <a href={`${EXPLORER}/tx/${a.onChain.txid}`} target="_blank" rel="noreferrer">
-                      {a.onChain.txid.slice(0, 8)}…
-                    </a>
-                  )
-                ) : (
-                  ""
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    )}
-  </Card>
-);
+      <p className="lede">Each line is what the chain recorded. Amounts you can read are shown because this device holds your key.</p>
+      {rows.length === 0 ? (
+        <div className="empty">No activity yet. Deposit to start.</div>
+      ) : (
+        <>
+          <div className="legend">
+            <span>
+              <span className="redact" /> hidden on chain
+            </span>
+            <button className="textbtn" onClick={() => setRevealed(!revealed)} aria-pressed={revealed}>
+              {revealed ? "Hide what only you can read" : "Show what only you can read"}
+            </button>
+          </div>
+          <table className="ledger">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th className="amount">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((a) => {
+                const hidden = !a.onChain.public;
+                const sign = a.kind === "send" || a.kind === "withdraw" ? "−" : a.kind === "receive" || a.kind === "deposit" ? "+" : undefined;
+                const hasAmount = a.amount !== undefined;
+                return (
+                  <tr key={a.id}>
+                    <td className="when">{when(a.ts)}</td>
+                    <td className="what">
+                      {what(a)}
+                      <span className="meta">
+                        {a.onChain.public ? "Public" : "Box"}
+                        {a.onChain.proof ? `, proof ${a.onChain.proof}` : ""}
+                        {a.onChain.txid ? (
+                          <>
+                            {", "}
+                            {isMock ? <span title="simulated">{a.onChain.txid.slice(0, 8)} (mock)</span> : <a href={`${EXPLORER}/tx/${a.onChain.txid}`} target="_blank" rel="noreferrer">{a.onChain.txid.slice(0, 8)}</a>}
+                          </>
+                        ) : null}
+                      </span>
+                    </td>
+                    <td className="amount">
+                      {a.kind === "fold" || a.kind === "register" ? (
+                        <span className="muted">{a.kind === "fold" && hasAmount && revealed ? <Amount value={a.amount} hidden revealed unit={false} /> : ""}</span>
+                      ) : (
+                        <>
+                          <Amount value={a.amount} hidden={hidden} revealed={revealed && hasAmount} sign={sign} digits={hasAmount ? undefined : 9} />
+                          {hidden && hasAmount && revealed ? <span className="onlyyou">only you can read this</span> : null}
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </>
+      )}
+    </section>
+  );
+};

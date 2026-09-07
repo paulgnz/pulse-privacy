@@ -1,10 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AuditorRow } from "../lib/client";
 import type { Hex } from "../lib/crypto/types";
-import { ago, fmtUnits } from "../lib/format";
-import { Card, Field, KeyGlyph, Notice, Tag } from "./ui";
+import { fmtUnits } from "../lib/format";
+import { Amount } from "./Amount";
+import { Field, Line, Note } from "./ui";
 
 type Edges = { deposits: bigint; withdrawals: bigint; unclaimed: bigint; escrow: bigint; count: number };
+
+const when = (ts: number) =>
+  new Date(ts).toLocaleString("en-NZ", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export const Auditor = ({
   isMock,
@@ -22,6 +26,15 @@ export const Auditor = ({
   const [edges, setEdges] = useState<Edges | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [opened, setOpened] = useState(false);
+
+  // bars first, then the viewing key lifts them
+  useEffect(() => {
+    if (!rows) return;
+    setOpened(false);
+    const t = setTimeout(() => setOpened(true), 60);
+    return () => clearTimeout(t);
+  }, [rows]);
 
   const open = async () => {
     setErr(null);
@@ -40,95 +53,98 @@ export const Auditor = ({
   };
 
   const total = rows?.reduce((s, r) => s + r.amount, 0n) ?? 0n;
+  const backed = edges ? edges.escrow - edges.unclaimed === edges.deposits - edges.withdrawals : null;
 
   return (
-    <div className="stack" style={{ gap: 18 }}>
-      <div className="grid two">
-        <Card accent="good">
-          <div className="row between">
-            <h2>Auditor mode</h2>
-            <Tag kind="audit">VIEWING KEY</Tag>
-          </div>
-          <p>Every transfer in the pool carries a handle for the designated auditor. With the viewing key, every amount decrypts. Without it, nothing does. The key can read; it cannot spend.</p>
-          <div className="stack" style={{ marginTop: 14 }}>
-            <Field label="Viewing key (secret, hex)" hint={isMock && mockSecret ? <span>mock viewing key: <code onClick={() => setKey(mockSecret)} style={{ cursor: "pointer" }}>{mockSecret}</code> (click to use)</span> : "held by the supervisor, offline"}>
-              <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="0x…" />
-            </Field>
-            <div className="row">
-              <button className="btn primary" onClick={open} disabled={!key || busy}>
-                <span className="row" style={{ gap: 8 }}>
-                  <KeyGlyph size={16} color="#0b101f" /> {busy ? "Decrypting…" : "Open the ledger"}
-                </span>
-              </button>
-            </div>
-            {err ? <Notice level="bad">{err}</Notice> : null}
-          </div>
-        </Card>
-        <Card>
-          <h3>What the auditor gets</h3>
-          <p>A complete, decrypted ledger: sender, receiver, amount, block. Deposits and withdrawals are public anyway. Reconciling the decrypted balances to the escrow gives a live proof of reserve.</p>
-          <p style={{ fontSize: 13 }}>Key rotation appends a new auditor public key on chain; transfers after that block are readable by the new key, earlier ones by the old one. The supervisor keeps both.</p>
-        </Card>
-      </div>
-
-      {rows && edges && !isMock ? (
-        <Card>
-          <div className="row between">
-            <h3>Reconciliation (public edges vs escrow)</h3>
-            <Tag kind="public">PROOF OF RESERVE</Tag>
-          </div>
-          <div className="grid four" style={{ marginTop: 10 }}>
-            <div className="stat"><div className="v warm">{fmtUnits(edges.deposits)}</div><div className="k">deposits (public)</div></div>
-            <div className="stat"><div className="v warm">{fmtUnits(edges.withdrawals)}</div><div className="k">withdrawals (public)</div></div>
-            <div className="stat"><div className="v">{fmtUnits(edges.deposits - edges.withdrawals)}</div><div className="k">claims outstanding</div></div>
-            <div className="stat"><div className={`v ${edges.escrow - edges.unclaimed === edges.deposits - edges.withdrawals ? "good" : "bad"}`}>{fmtUnits(edges.escrow)}</div><div className="k">escrow balance{edges.unclaimed > 0n ? ` (incl. ${fmtUnits(edges.unclaimed)} unclaimed plain transfers)` : ""}</div></div>
-          </div>
-          <p style={{ fontSize: 13, marginTop: 10 }}>
-            {edges.escrow - edges.unclaimed === edges.deposits - edges.withdrawals ? "Escrow equals deposits minus withdrawals. The pool is fully backed." : "Escrow does not equal deposits minus withdrawals over the indexed history window."}
-          </p>
-        </Card>
-      ) : null}
+    <>
+      <section className="section">
+        <h2>Auditor</h2>
+        <p className="lede">Every transfer carries a copy the designated auditor can open. With the viewing key, every amount reads. The key can read; it cannot spend.</p>
+        <Field
+          label="Viewing key"
+          hint={
+            isMock && mockSecret ? (
+              <>
+                Simulation key:{" "}
+                <button className="textbtn" onClick={() => setKey(mockSecret)}>
+                  use it
+                </button>
+              </>
+            ) : (
+              "Held by the supervisor. Paste it here to open the ledger on this device."
+            )
+          }
+        >
+          <input className="mono" value={key} onChange={(e) => setKey(e.target.value)} placeholder="0x" />
+        </Field>
+        <div className="row" style={{ marginBottom: 16 }}>
+          <button className="btn" onClick={open} disabled={!key || busy}>
+            {busy ? "Opening" : "Open the ledger"}
+          </button>
+        </div>
+        {err ? <Note level="error">Could not open the ledger. {err}</Note> : null}
+      </section>
 
       {rows ? (
-        <Card accent="good">
-          <div className="row between">
-            <h3>Decrypted ledger {isMock ? "(simulated pool)" : ""}</h3>
-            <span className="mono dim" style={{ fontSize: 13 }}>
-              {rows.length} transfers · {fmtUnits(total)} XPR total
-            </span>
-          </div>
+        <section className="section">
+          <h2>Transfers</h2>
+          <p className="lede">
+            {rows.length} {rows.length === 1 ? "transfer" : "transfers"}, {fmtUnits(total)} XPR in total{isMock ? ", simulated" : ""}.
+          </p>
           {rows.length === 0 ? (
-            <div className="empty">No confidential transfers in the pool yet.</div>
+            <div className="empty">No confidential transfers yet.</div>
           ) : (
-            <table className="table">
+            <table className="ledger">
               <thead>
                 <tr>
-                  <th>when</th>
-                  <th>block</th>
-                  <th>from</th>
-                  <th>to</th>
-                  <th>ciphertext</th>
-                  <th className="num">amount</th>
+                  <th>Date</th>
+                  <th>Transfer</th>
+                  <th className="amount">Amount</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i}>
-                    <td className="dim">{ago(r.ts)}</td>
-                    <td className="mono faint">{r.block?.toLocaleString("en-US") ?? ""}</td>
-                    <td className="mono">{r.from}</td>
-                    <td className="mono">{r.to}</td>
-                    <td className="mono faint" style={{ fontSize: 12 }}>
-                      {r.ciphertext}
+                    <td className="when">{when(r.ts)}</td>
+                    <td className="what">
+                      {r.from} to {r.to}
+                      <span className="meta">
+                        Box {r.ciphertext}
+                        {r.block ? `, block ${r.block.toLocaleString("en-US")}` : ""}
+                      </span>
                     </td>
-                    <td className="num good">{fmtUnits(r.amount)}</td>
+                    <td className="amount">
+                      <Amount value={r.amount} hidden revealed={opened} tone="auditor" />
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-        </Card>
+        </section>
       ) : null}
-    </div>
+
+      {rows && edges && !isMock ? (
+        <section className="section">
+          <h2>Reconciliation</h2>
+          <p className="lede">Deposits and withdrawals are public, so the escrow can be checked by anyone.</p>
+          <Line label="Deposits">
+            <Amount value={edges.deposits} size="mid" />
+          </Line>
+          <Line label="Withdrawals">
+            <Amount value={edges.withdrawals} size="mid" sign="−" />
+          </Line>
+          <Line label="Claims outstanding">
+            <Amount value={edges.deposits - edges.withdrawals} size="mid" />
+          </Line>
+          <Line label="Escrow balance" sub={edges.unclaimed > 0n ? `includes ${fmtUnits(edges.unclaimed)} XPR from plain transfers with no claim` : undefined}>
+            <Amount value={edges.escrow} size="mid" />
+          </Line>
+          <p className={`small ${backed ? "" : ""}`} style={{ marginTop: 14, color: backed ? "var(--auditor)" : "var(--error)" }}>
+            {backed ? "Escrow equals deposits minus withdrawals. The pool is fully backed." : "Escrow does not equal deposits minus withdrawals over the indexed history."}
+          </p>
+        </section>
+      ) : null}
+    </>
   );
 };
