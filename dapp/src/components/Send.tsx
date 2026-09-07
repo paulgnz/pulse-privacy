@@ -20,6 +20,9 @@ export const Send = ({
   onSelectToken?: (code: string) => void;
   /** success: the parent shows the confirmation at the top of the statement and closes the form */
   onDone?: (msg: string, txid?: string) => void;
+  /** the public balance, to suggest a deposit when the confidential one is short */
+  publicBalance?: bigint | null;
+  onDepositFirst?: (amount: bigint) => void;
 }) => {
   // pay-me link: ?to=<account> opens the form with the recipient filled in
   const [to, setTo] = useState(() => {
@@ -85,8 +88,25 @@ export const Send = ({
       </Field>
       <Field
         label="Amount"
-        error={over ? `More than you can spend. You have ${fmtUnits(spendable, T)} ${T.code}.` : amountProblem(amt, T) ?? undefined}
-        hint={`You can spend ${fmtUnits(spendable, T)} ${T.code}${st.pending > 0n ? ", after pending is folded in" : ""}.`}
+        error={
+          over ? (
+            <>
+              Only {fmtUnits(spendable, T)} {T.code} is inside the contract.
+              {publicBalance !== null && publicBalance !== undefined && parsed !== null && publicBalance >= parsed - spendable && onDepositFirst ? (
+                <>
+                  {" "}You have {fmtUnits(publicBalance, T)} public {T.code}:{" "}
+                  <button type="button" className="textbtn" onClick={() => onDepositFirst(parsed - spendable)}>
+                    deposit {fmtUnits(parsed - spendable, T, { trim: true })} {T.code} first
+                  </button>
+                  .
+                </>
+              ) : (
+                " Deposit more first."
+              )}
+            </>
+          ) : amountProblem(amt, T) ?? undefined
+        }
+        hint={`${fmtUnits(spendable, T)} ${T.code} is inside the contract to spend${st.pending > 0n ? " (incoming payments included)" : ""}. Public ${T.code} has to be deposited first.`}
       >
         <div className="row" style={{ gap: 12, alignItems: "center" }}>
           <AmountInput value={amt} onChange={setAmt} token={T} tokens={tokens} onSelectToken={onSelectToken} />

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ConfState } from "../lib/client";
+import { fmtUnits } from "../lib/format";
 import { EXPLORER } from "../config";
 import { Amount } from "./Amount";
 import { Deposit } from "./Deposit";
@@ -85,6 +86,11 @@ export const Overview = ({
   }, [revealed]);
 
   const toggle = (f: Form) => setForm((cur) => (cur === f ? null : f));
+  const [depositPrefill, setDepositPrefill] = useState<string | undefined>(undefined);
+  const depositFirst = (amount: bigint) => {
+    setDepositPrefill(fmtUnits(amount, st.token, { trim: true }).replace(/,/g, ""));
+    setForm("deposit");
+  };
 
   const registered = figures.filter((f) => f.st.registered);
   const unregistered = figures.filter((f) => !f.st.registered);
@@ -144,20 +150,20 @@ export const Overview = ({
             </Line>
             {f.st.pendingCount > 0 ? (
               <Line
-                label={`Pending ${T.code}`}
+                label={`Incoming ${T.code}`}
                 sub={
                   <>
-                    {f.st.pendingCount} incoming {f.st.pendingCount === 1 ? "payment" : "payments"}, not yet in your balance
+                    {f.st.pendingCount} {f.st.pendingCount === 1 ? "payment" : "payments"} received, not yet added to your balance
                     <Explain label="Why is this separate?">
                       <p>
-                        Payments to you land in a pending box rather than straight into your balance. That keeps your balance
-                        under your control alone: a payment you are in the middle of making can never be broken by someone
-                        paying you at the same moment, and nobody can spam your balance to interfere with it.
+                        Payments to you land in a separate incoming box rather than straight into your balance. That keeps
+                        your balance under your control alone: a payment you are in the middle of making can never be broken
+                        by someone paying you at the same moment, and nobody can spam your balance to interfere with it.
                       </p>
                       <p>
-                        Folding adds the pending box into your balance. It is one quick signature and nothing leaves the
-                        contract. If you do not fold, the app folds for you as part of your next send, so you never lose
-                        anything by waiting.
+                        "Add to balance" moves the incoming box into your balance. It is one quick signature and nothing
+                        leaves the contract. If you skip it, the app does it for you when you next send more than your
+                        balance holds, so you never lose anything by waiting.
                       </p>
                     </Explain>
                   </>
@@ -165,7 +171,7 @@ export const Overview = ({
               >
                 <Amount value={f.st.pending} hidden revealed={revealed} size="mid" sign="+" busy={sweeping} token={T} />
                 <button className="btn private small" onClick={() => onFold(T.code)} disabled={busy}>
-                  {busy ? "Folding" : "Fold in now"}
+                  {busy ? "Adding" : "Add to balance"}
                 </button>
               </Line>
             ) : null}
@@ -220,8 +226,8 @@ export const Overview = ({
             </button>
           </div>
 
-          {form === "send" ? <Send st={st} onSend={onSend} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} /> : null}
-          {form === "deposit" ? <Deposit st={st} publicBalance={figures.find((f) => f.st.token.code === st.token.code)?.publicBalance ?? null} onDeposit={onDeposit} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} /> : null}
+          {form === "send" ? <Send st={st} onSend={onSend} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} publicBalance={figures.find((f) => f.st.token.code === st.token.code)?.publicBalance ?? null} onDepositFirst={depositFirst} /> : null}
+          {form === "deposit" ? <Deposit key={depositPrefill ?? "deposit"} st={st} publicBalance={figures.find((f) => f.st.token.code === st.token.code)?.publicBalance ?? null} onDeposit={onDeposit} busy={busy} onClose={() => { setForm(null); setDepositPrefill(undefined); }} onDone={(m, t) => { setDepositPrefill(undefined); done(m, t); }} tokens={tokens} onSelectToken={onSelectToken} initialAmount={depositPrefill} /> : null}
           {form === "withdraw" ? <Withdraw st={st} onWithdraw={onWithdraw} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} allTokens={figures.filter((f) => f.st.registered)} onWithdrawAll={onWithdrawToken} /> : null}
         </>
       ) : (

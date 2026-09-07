@@ -13,9 +13,12 @@ export const Deposit = ({
   tokens,
   onSelectToken,
   onDone,
+  initialAmount,
 }: {
   st: ConfState;
   publicBalance: bigint | null;
+  /** prefilled amount, e.g. from "deposit N first" on the Send form */
+  initialAmount?: string;
   onDeposit: (amount: bigint) => Promise<string>;
   busy: boolean;
   onClose: () => void;
@@ -24,7 +27,7 @@ export const Deposit = ({
   /** success: the parent shows the confirmation at the top of the statement and closes the form */
   onDone?: (msg: string, txid?: string) => void;
 }) => {
-  const [amt, setAmt] = useState("");
+  const [amt, setAmt] = useState(initialAmount ?? "");
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [pending, setPending] = useState(false);
   const T = st.token;

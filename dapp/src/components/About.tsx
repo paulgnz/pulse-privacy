@@ -109,7 +109,7 @@ export const About = ({ signedIn, onConnect }: { signedIn: boolean; onConnect?: 
         <li>Connect your WebAuth wallet. Nothing is sent to the chain.</li>
         <li>Sign one message. Your wallet's signature becomes the key that opens your boxes. There is nothing to write down or back up.</li>
         <li>Register once. This publishes your encryption key so anyone can pay you inside the contract, in any token it holds. It uses about a kilobyte of your account's RAM.</li>
-        <li>Deposit XPR or XMD from your public balance. From here on, send to any registered account, fold incoming payments into your balance, or withdraw.</li>
+        <li>Deposit XPR or XMD from your public balance. From here on, send to any registered account, add incoming payments to your balance, or withdraw.</li>
       </ol>
       <p>
         Sending asks your wallet for one signature per payment, and the proof is made on your device before it. If your browser
@@ -118,12 +118,13 @@ export const About = ({ signedIn, onConnect }: { signedIn: boolean; onConnect?: 
     </section>
 
     <section>
-      <h2>Pending payments and folding</h2>
+      <h2>Incoming payments</h2>
       <p>
-        A payment to you lands in a pending box, not straight in your balance. Your balance changes only when you act, so a
-        proof you are building can never be spoiled by someone paying you at the same moment, and nobody can interfere with
-        your balance by sending you dust. Folding moves the pending box into your balance: one quick signature, nothing
-        leaves the contract. Fold when you like, or let the app fold for you as part of your next send.
+        A payment to you lands in a separate incoming box, not straight in your balance. Your balance changes only when you
+        act, so a proof you are building can never be spoiled by someone paying you at the same moment, and nobody can
+        interfere with your balance by sending you dust. "Add to balance" moves the incoming box into your balance: one quick
+        signature, nothing leaves the contract. Do it when you like, or the app does it for you when you next send more
+        than your balance holds.
       </p>
     </section>
 

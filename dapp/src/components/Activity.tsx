@@ -14,7 +14,7 @@ const what = (a: ActivityItem): string => {
     case "receive":
       return `Received from ${a.counterparty ?? ""}`;
     case "fold":
-      return "Folded pending into balance";
+      return "Added incoming payments to balance";
     case "withdraw":
       return "Withdrawal";
   }

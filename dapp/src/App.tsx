@@ -247,7 +247,7 @@ export default function App() {
       prevPending.current[x.token.code] = cur;
       if (!prev || cur.count <= prev.count) continue;
       const delta = cur.amount - prev.amount;
-      const msg = delta > 0n ? `You received ${fmtUnits(delta, x.token)} ${x.token.code} inside the contract. It is in your pending box.` : `You received a confidential ${x.token.code} transfer. It is in your pending box.`;
+      const msg = delta > 0n ? `You received ${fmtUnits(delta, x.token)} ${x.token.code} inside the contract. Add it to your balance when you like.` : `You received a confidential ${x.token.code} payment. Add it to your balance when you like.`;
       setReceived({ msg, token: x.token.code });
       try {
         if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("Confidential XPR", { body: msg });
@@ -521,7 +521,7 @@ export default function App() {
                 disabled={busy}
                 onClick={() => { const code = received.token; setReceived(null); wrap(async () => { const c = clientFor(code); const tx = await c.applyPending(); trackTx(String(tx), { kind: "fold", token: c.token, onChain: { ciphertext: "●●●●" } }); event("folded", { token: code }); }); }}
               >
-                {busy ? "Folding" : "Fold in now"}
+                {busy ? "Adding" : "Add to balance"}
               </button>
               {typeof Notification !== "undefined" && Notification.permission === "default" ? (
                 <button className="textbtn quiet" onClick={askNotify}>Notify me on this device</button>
