@@ -194,6 +194,7 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--private); o
 .section { margin-top: 36px; }
 .section h2 { margin-bottom: 6px; }
 .section > p.lede { color: var(--graphite); margin-bottom: 18px; }
+.payme { font-size: 14px; padding: 8px 12px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 4px; user-select: all; overflow-wrap: anywhere; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; font-size: 14px; margin: 14px 0; }
 .kv .k { color: var(--graphite); }
 details summary { cursor: pointer; color: var(--graphite); font-size: 14px; }

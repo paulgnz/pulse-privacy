@@ -68,6 +68,9 @@ export const Settings = ({
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const payMe = `${location.origin}/?to=${actor}`;
+  const [linkCopied, setLinkCopied] = useState(false);
+
   return (
     <>
       <section className="section">
@@ -161,6 +164,28 @@ export const Settings = ({
           </div>
         ) : null}
       </section>
+
+      {st.registered ? (
+        <section className="section">
+          <h2>Pay-me link</h2>
+          <p className="lede">Share this and the Send form opens with your name filled in. Anyone who has not set up yet is walked through it first.</p>
+          <div className="row" style={{ gap: 14, flexWrap: "wrap" }}>
+            <code className="mono payme">{payMe}</code>
+            <button
+              className="textbtn"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(payMe);
+                  setLinkCopied(true);
+                  setTimeout(() => setLinkCopied(false), 2000);
+                } catch { /* clipboard blocked: the link is selectable */ }
+              }}
+            >
+              {linkCopied ? "Copied" : "Copy link"}
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       {isMock ? (
         <section className="section">
