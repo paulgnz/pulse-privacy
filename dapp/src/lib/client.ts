@@ -22,6 +22,8 @@ export interface ActivityItem {
   counterparty?: string;
   /** what the chain shows */
   onChain: { public: boolean; ciphertext?: string; proof?: string; txid?: string; block?: number };
+  /** shown before the indexer has it (optimistic, from the action we just sent) */
+  confirming?: boolean;
 }
 
 export interface ConfState {

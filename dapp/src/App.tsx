@@ -3,7 +3,7 @@ import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_NETWORK } from ".
 import { fmtUnits } from "./lib/format";
 import * as chain from "./lib/chain";
 import type { Session } from "./lib/chain";
-import { ConfidentialClient, type ConfState } from "./lib/client";
+import { ConfidentialClient, type ActivityItem, type ConfState } from "./lib/client";
 import { selectBackend } from "./lib/crypto";
 import type { EncryptionKeypair, Hex } from "./lib/crypto/types";
 import { createKeypair, forgetKeypair, importSecret, loadKeypair } from "./lib/keys";
@@ -137,9 +137,9 @@ export default function App() {
   useEffect(() => {
     refresh();
     const t = setInterval(() => { if (document.visibilityState === "visible") refresh({ history: false }); }, 15000);
-    const h = setInterval(() => { if (document.visibilityState === "visible") refresh({ history: true }); }, 60000);
+    const h = setInterval(() => { if (document.visibilityState === "visible") refresh({ history: true }); }, tab === "activity" ? 20000 : 60000);
     return () => { clearInterval(t); clearInterval(h); };
-  }, [refresh]);
+  }, [refresh, tab]);
 
   // Notify on incoming confidential transfers: compare pending between refreshes.
   const [received, setReceived] = useState<string | null>(null);
@@ -186,13 +186,28 @@ export default function App() {
     if (demo) history.replaceState(null, "", location.pathname);
   };
 
+  // Optimistic ledger rows for actions we just sent, until the indexer has them.
+  const [optimistic, setOptimistic] = useState<ActivityItem[]>([]);
+  const pollTimers = useRef<number[]>([]);
+  const trackTx = (txid: string, item: Omit<ActivityItem, "id" | "ts" | "onChain"> & { onChain?: Partial<ActivityItem["onChain"]> }) => {
+    if (!txid) return;
+    setOptimistic((o) => [{ id: `opt/${txid}`, ts: Date.now(), ...item, onChain: { public: false, ...(item.onChain ?? {}), txid }, confirming: true }, ...o]);
+    // poll the ledger until the indexer has the transaction (2, 5, 10, 20, 40 s)
+    for (const d of [2000, 5000, 10000, 20000, 40000]) pollTimers.current.push(window.setTimeout(() => refresh({ history: true }), d));
+  };
+  useEffect(() => {
+    if (!st?.activity) return;
+    const seen = new Set(st.activity.map((a) => a.onChain.txid).filter(Boolean));
+    setOptimistic((o) => o.filter((x) => !seen.has(x.onChain.txid)));
+  }, [st]);
+
   const wrap = async <T,>(f: () => Promise<T>): Promise<T> => {
     setBusy(true);
     try {
       return await f();
     } finally {
       setBusy(false);
-      await refresh();
+      await refresh({ history: false });
     }
   };
 
@@ -361,14 +376,14 @@ export default function App() {
           st={st}
           publicBalance={pub}
           onGo={(t) => setTab(t as Tab)}
-          onFold={() => wrap(() => client.applyPending())}
-          onSend={(to, amount, p) => wrap(() => client.send(to, amount, p))}
-          onDeposit={(a) => wrap(() => client.deposit(a))}
-          onWithdraw={(a, p) => wrap(() => client.withdraw(a, p))}
+          onFold={() => wrap(async () => { const tx = await client.applyPending(); trackTx(String(tx), { kind: "fold", onChain: { ciphertext: "●●●●" } }); return tx; })}
+          onSend={(to, amount, p) => wrap(async () => { const tx = await client.send(to, amount, p); trackTx(tx, { kind: "send", amount, counterparty: to }); return tx; })}
+          onDeposit={(a) => wrap(async () => { const tx = await client.deposit(a); trackTx(tx, { kind: "deposit", amount: a, onChain: { public: true } }); return tx; })}
+          onWithdraw={(a, p) => wrap(async () => { const tx = await client.withdraw(a, p); trackTx(tx, { kind: "withdraw", amount: a, onChain: { public: true } }); return tx; })}
           busy={busy} refreshing={refreshing}
         />
       ) : tab === "activity" ? (
-        <Activity st={st} isMock={backend.isMock} />
+        <Activity st={optimistic.length ? { ...st, activity: [...optimistic, ...st.activity] } : st} isMock={backend.isMock} />
       ) : tab === "settings" ? (
         <Settings
           actor={actor}
