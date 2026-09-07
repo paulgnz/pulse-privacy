@@ -16,7 +16,7 @@ export const Withdraw = ({
   onWithdrawAll,
 }: {
   st: ConfState;
-  onWithdraw: (amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
+  onWithdraw: (amount: bigint, onProgress: (f: number, s: string) => void, close?: boolean) => Promise<string>;
   busy: boolean;
   onClose: () => void;
   tokens?: { code: string }[];
@@ -25,7 +25,7 @@ export const Withdraw = ({
   onDone?: (msg: string, txid?: string) => void;
   /** every token's figures, for "withdraw everything" */
   allTokens?: { st: ConfState; publicBalance: bigint | null }[];
-  onWithdrawAll?: (code: string, amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
+  onWithdrawAll?: (code: string, amount: bigint, onProgress: (f: number, s: string) => void, close?: boolean) => Promise<string>;
 }) => {
   const [amt, setAmt] = useState("");
   const [prog, setProg] = useState<{ f: number; s: string } | null>(null);
@@ -50,6 +50,23 @@ export const Withdraw = ({
   const can = !!parsed && parsed > 0n && !over && !chainRejects && !busy && (!needsAck || ack);
   const maxAmount = roundDown(spendable, g, T.units);
   const setMax = () => setAmt(fmtUnits(maxAmount, T, { trim: true }).replace(/,/g, ""));
+  // the exact balance, leaving the box empty: the whole-unit rule is waived because the contract
+  // can see the box is empty afterwards; it reveals your final balance, which you are leaving anyway
+  const closeBox = async () => {
+    if (spendable <= 0n) return;
+    setResult(null);
+    setProg({ f: 0, s: "Starting" });
+    try {
+      const tx = await onWithdraw(spendable, (f, s) => setProg({ f, s }), true);
+      const done = `Withdrew ${fmtUnits(spendable, T)} ${T.code}, the whole balance, to your public balance.`;
+      if (onDone) onDone(done, tx); else setResult({ ok: true, msg: done });
+      setAmt("");
+    } catch (e) {
+      setResult({ ok: false, msg: `Not withdrawn. ${(e as Error).message}` });
+    } finally {
+      setProg(null);
+    }
+  };
   // other tokens with something to withdraw
   const othersWithBalance = (allTokens ?? []).filter((f) => f.st.token.code !== T.code && f.st.balance + f.st.pending > 0n);
   const withdrawAll = async () => {
@@ -58,13 +75,13 @@ export const Withdraw = ({
     const list = [{ st, publicBalance: null as bigint | null }, ...othersWithBalance].filter((f) => f.st.balance + f.st.pending > 0n);
     try {
       for (const f of list) {
-        const a = roundDown(f.st.balance + f.st.pending, f.st.config.withdrawGranularity, f.st.token.units);
+        const a = f.st.balance + f.st.pending; // exact: each box is closed, so no dust is left behind
         if (a <= 0n) continue;
         setAllBusy(f.st.token.code);
         setProg({ f: 0, s: `Withdrawing ${fmtUnits(a, f.st.token)} ${f.st.token.code}` });
-        await onWithdrawAll(f.st.token.code, a, (fr, s) => setProg({ f: fr, s: `${f.st.token.code}: ${s}` }));
+        await onWithdrawAll(f.st.token.code, a, (fr, s) => setProg({ f: fr, s: `${f.st.token.code}: ${s}` }), true);
       }
-      const done = `Withdrew everything to your public balance: ${list.map((f) => `${fmtUnits(roundDown(f.st.balance + f.st.pending, f.st.config.withdrawGranularity, f.st.token.units), f.st.token)} ${f.st.token.code}`).join(", ")}.`;
+      const done = `Withdrew everything to your public balance: ${list.map((f) => `${fmtUnits(f.st.balance + f.st.pending, f.st.token)} ${f.st.token.code}`).join(", ")}.`;
       if (onDone) onDone(done); else setResult({ ok: true, msg: done });
     } catch (e) {
       setResult({ ok: false, msg: `Stopped. ${(e as Error).message}` });
@@ -103,6 +120,7 @@ export const Withdraw = ({
         <div className="row" style={{ gap: 12, alignItems: "center" }}>
           <AmountInput value={amt} onChange={setAmt} autoFocus token={T} tokens={tokens} onSelectToken={onSelectToken} />
           <button type="button" className="textbtn" onClick={setMax} disabled={maxAmount <= 0n}>Max</button>
+          <button type="button" className="textbtn quiet" onClick={closeBox} disabled={spendable <= 0n || busy || !!prog} title="The exact balance, leaving the box empty. Reveals your final balance.">All, exact</button>
         </div>
       </Field>
       {!chainRejects && check ? <EdgeNote check={check} token={T} onSuggest={(a) => setAmt(fmtUnits(a, T, { trim: true }).replace(/,/g, ""))} /> : null}

@@ -60,6 +60,8 @@ export interface WithdrawProofInput {
   keypair: EncryptionKeypair;
   /** the pool's auditor key (the withdraw statement still carries an auditor handle) */
   auditorPubkey: Hex;
+  /** withdraw the whole balance and leave an empty box (zero with zero randomness): the contract then waives the whole-unit rule */
+  close?: boolean;
 }
 
 export interface WithdrawProofOutput {

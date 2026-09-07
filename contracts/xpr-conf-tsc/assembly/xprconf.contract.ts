@@ -123,6 +123,13 @@ function infBytes(): u8[] {
 function zeroCt(): u8[] {
   return infBytes().concat(infBytes()).concat(infBytes()).concat(infBytes());
 }
+/** all four points of a 256-byte ciphertext pair set are the identity: the box holds zero with zero randomness */
+function isZeroCt(ct: u8[]): bool {
+  if (ct.length != CT_LEN) return false;
+  const inf = Pt.inf();
+  for (let i = 0; i < 4; i++) if (!Pt.fromBytes(ct, i * 64).eq(inf)) return false;
+  return true;
+}
 function slice(a: u8[], off: i32, len: i32): u8[] {
   return a.slice(off, off + len);
 }
@@ -454,8 +461,10 @@ class XprConf extends Contract {
     check(!c.paused, "paused");
     check(quantity.amount > 0, "amount must be positive");
     const v = <u64>quantity.amount;
-    if (c.withdraw_granularity > 0) check(v % c.withdraw_granularity == 0, "withdrawal must be a multiple of the granularity");
     check(b_new.length == CT_LEN, "b_new must be 256 bytes");
+    // an exact final withdrawal is allowed when the new box is provably empty: the identity
+    // ciphertext means value 0 with randomness 0 (G and H are independent), so v equals the old balance
+    if (c.withdraw_granularity > 0 && !isZeroCt(b_new)) check(v % c.withdraw_granularity == 0, "withdrawal must be a multiple of the granularity");
     check(proof.length == PROOF_LEN, "proof must be 256 bytes");
     check(allOnCurve(b_new), "b_new contains a point that is not on the curve");
     const accounts = this.accountsOf(quantity.symbol.raw());

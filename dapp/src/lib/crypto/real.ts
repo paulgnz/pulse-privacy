@@ -192,7 +192,9 @@ export const realBackend: CryptoBackend = {
     const Pa = pt(input.auditorPubkey);
     const vC = split64(input.amount);
     const nC = split64(vOld - input.amount);
-    const rN = [randScalar(), randScalar()];
+    if (input.close && input.amount !== vOld) throw new Error("closing the box means withdrawing the whole balance");
+    // closing: the empty box is encrypted with zero randomness, so it is the identity everywhere and provably empty
+    const rN = input.close ? [0n, 0n] : [randScalar(), randScalar()];
     // r_T = 0: TC_k = v_k·G, every handle = identity; the contract recomputes and checks
     const T = [0, 1].map((k) => encryptChunk(vC[k], 0n, [Ps, Ps, Pa]));
     const B = [0, 1].map((k) => encryptChunk(nC[k], rN[k], [Ps]));

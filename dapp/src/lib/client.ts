@@ -495,7 +495,8 @@ export class ConfidentialClient {
     return { row, cfg, folded: row.avail, oldBalance, actions };
   }
 
-  async withdraw(amount: bigint, onProgress?: ProgressFn): Promise<string> {
+  /** `close`: withdraw the exact whole balance and leave the box empty; the whole-unit rule does not apply */
+  async withdraw(amount: bigint, onProgress?: ProgressFn, close = false): Promise<string> {
     const kp = this.need();
     if (amount <= 0n) throw new Error("amount must be positive");
     if (this.isMock) {
@@ -505,7 +506,7 @@ export class ConfidentialClient {
       const a = pool.accounts[this.actor];
       if (!a) throw new Error("register first");
       const g = BigInt(pool.config.withdrawGranularity);
-      if (g > 0n && amount % g !== 0n) throw new Error("contract: amount must be a multiple of the withdraw granularity");
+      if (!close && g > 0n && amount % g !== 0n) throw new Error("contract: amount must be a multiple of the withdraw granularity");
       const oldBalance = BigInt(a.balance);
       const out = await this.backend.proveWithdraw(
         { owner: this.actor, nonce: BigInt(a.nonce), amount, oldBalance, oldBalanceCiphertext: a.balanceCt ?? (await this.backend.encryptAmount(oldBalance, a.pubkey)), keypair: kp, auditorPubkey: pool.auditorPubkey },
@@ -522,11 +523,12 @@ export class ConfidentialClient {
       return t;
     }
     const { row, cfg, folded, oldBalance, actions } = await this.prepareSpend(kp, amount, onProgress);
-    if (cfg.withdrawGranularity > 0n && amount % cfg.withdrawGranularity !== 0n) {
+    if (close) amount = oldBalance; // the exact balance after any fold
+    if (!close && cfg.withdrawGranularity > 0n && amount % cfg.withdrawGranularity !== 0n) {
       throw new Error(`the contract only accepts withdrawals in multiples of ${cfg.withdrawGranularity / this.token.units} ${this.token.code}`);
     }
     const out = await this.backend.proveWithdraw(
-      { owner: this.actor, nonce: BigInt(row.nonce), amount, oldBalance, oldBalanceCiphertext: folded, keypair: kp, auditorPubkey: cfg.auditorPubkey },
+      { owner: this.actor, nonce: BigInt(row.nonce), amount, oldBalance, oldBalanceCiphertext: folded, keypair: kp, auditorPubkey: cfg.auditorPubkey, close },
       onProgress
     );
     actions.push(chain.withdrawAction(this.session, this.token, amount, out.newBalance, out.proof, this.need().pubkey, cfg.auditorPubkey));

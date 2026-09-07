@@ -206,5 +206,34 @@ await expectToThrow(conf.actions.setbackup(["bob", "00"]).send("bob@active"), "e
 await conf.actions.delbackup(["bob"]).send("bob@active");
 if (conf.tables.backups(nameToBigInt("xprconf")).getTableRow(nameToBigInt("bob"))) throw new Error("backup not deleted");
 lap("passphrase backup stored and deleted");
+// --- closing withdrawal: exact, non-round amount allowed only when the box is provably emptied ---
+{
+  const brow = conf.tables.accounts(symScope()).getTableRow(nameToBigInt("bob"));
+  await conf.actions.applypending(["bob", "4,XPR"]).send("bob@active").catch(() => {});
+  const b3 = eg.ctFromHex(conf.tables.accounts(symScope()).getTableRow(nameToBigInt("bob")).avail);
+  const v3 = [eg.bsgs32(eg.decryptPoint(b3[0].C, b3[0].D, bob.s)), eg.bsgs32(eg.decryptPoint(b3[1].C, b3[1].D, bob.s))];
+  const total = eg.join64(v3[0], v3[1]);
+  if (total === 0n) {
+    // give bob a non-round balance first
+    await token.actions.transfer(["alice", "xprconf", "12.3456 XPR", "conf:bob"]).send("alice@active");
+    await conf.actions.applypending(["bob", "4,XPR"]).send("bob@active");
+  }
+  const b4 = eg.ctFromHex(conf.tables.accounts(symScope()).getTableRow(nameToBigInt("bob")).avail);
+  const v4 = [eg.bsgs32(eg.decryptPoint(b4[0].C, b4[0].D, bob.s)), eg.bsgs32(eg.decryptPoint(b4[1].C, b4[1].D, bob.s))];
+  const bal = eg.join64(v4[0], v4[1]);
+  const nonce4 = BigInt(conf.tables.accounts(symScope()).getTableRow(nameToBigInt("bob")).nonce);
+  if (bal % 10000n === 0n) throw new Error("test needs a non-round balance");
+  // partial non-round: rejected by the whole-unit rule
+  const pw = eg.buildWithdrawWitness({ owner: bob, auditorP: auditor.P, bold: b4, voldChunks: v4, v: bal - 10000n, nonce: nonce4, ownerName: nameToBigInt("bob") });
+  const pp = await snarkjs.groth16.fullProve(pw.input, WASM, ZKEY);
+  await expectToThrow(conf.actions.withdraw(["bob", XPR(bal - 10000n), eg.ptHex(bob.P), eg.ptHex(auditor.P), eg.ctHex(pw.Bnew), encodeProof(pp.proof)]).send("bob@active"), "eosio_assert: withdrawal must be a multiple of the granularity");
+  // closing: exact balance, zero-randomness new box, accepted
+  const cw = eg.buildWithdrawWitness({ owner: bob, auditorP: auditor.P, bold: b4, voldChunks: v4, v: bal, nonce: nonce4, ownerName: nameToBigInt("bob"), close: true });
+  const cp = await snarkjs.groth16.fullProve(cw.input, WASM, ZKEY);
+  await conf.actions.withdraw(["bob", XPR(bal), eg.ptHex(bob.P), eg.ptHex(auditor.P), eg.ctHex(cw.Bnew), encodeProof(cp.proof)]).send("bob@active");
+  const after = eg.ctFromHex(conf.tables.accounts(symScope()).getTableRow(nameToBigInt("bob")).avail);
+  if (eg.decrypt64(after, bob.s) !== 0n) throw new Error("box not empty after closing withdrawal");
+  lap(`closing withdrawal of ${XPR(bal)} accepted; partial non-round still rejected`);
+}
 console.log("T3 end-to-end passed");
 process.exit(0);

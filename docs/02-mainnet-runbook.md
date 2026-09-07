@@ -81,7 +81,7 @@ API nodes reject transactions over their `max-transaction-time` (30 ms by defaul
 30,171 µs on a loaded node. Mitigation in the dapp: sign once, broadcast through a list of nodes,
 retry on "executing for too long". Longer term: fewer public inputs / native point adds.
 
-## 4c. Recovery and restore (code `dc7ab97d…`, 2026-09-07)
+## 4c. Recovery and restore (code `dc7ab97d…`, 2026-09-07; current code `8c1d2986…` adds the passphrase `backups` table and the exact closing withdrawal)
 
 Two paths exist for a user who cannot open their boxes.
 

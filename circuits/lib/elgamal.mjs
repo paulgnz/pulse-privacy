@@ -153,13 +153,16 @@ export function buildTransferWitness({ sender, receiverP, auditorP, bold, voldCh
  * Withdraw = the transfer circuit with r_T = 0 and receiver = self: TC_k = v_k·G, all handles
  * are the identity. The contract recomputes TC from the public amount and checks it.
  */
-export function buildWithdrawWitness({ owner, auditorP, bold, voldChunks, v, nonce, ownerName }) {
+export function buildWithdrawWitness({ owner, auditorP, bold, voldChunks, v, nonce, ownerName, close = false }) {
   const vOld = join64(voldChunks[0], voldChunks[1]);
   if (BigInt(v) > vOld) throw new Error("insufficient balance");
   const vNew = vOld - BigInt(v);
   const vC = split64(v);
   const nC = split64(vNew);
-  const rN = [randScalar(), randScalar()];
+  // closing the box: the new balance is zero and encrypted with zero randomness, so the new
+  // ciphertext is the identity everywhere and the contract can see the box is empty
+  if (close && vNew !== 0n) throw new Error("close requires withdrawing the whole balance");
+  const rN = close ? [0n, 0n] : [randScalar(), randScalar()];
   const T = [0, 1].map((k) => encrypt(vC[k], 0n, { s: owner.P, r: owner.P, a: auditorP }));
   const Bnew = [0, 1].map((k) => encrypt(nC[k], rN[k], { s: owner.P }));
   const P2 = (p) => toObj(p).map(String);

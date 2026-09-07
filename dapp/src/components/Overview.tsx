@@ -44,7 +44,7 @@ export const Overview = ({
   onFold: (code: string) => Promise<unknown>;
   onSend: (to: string, amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
   onDeposit: (amount: bigint) => Promise<string>;
-  onWithdraw: (amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
+  onWithdraw: (amount: bigint, onProgress: (f: number, s: string) => void, close?: boolean) => Promise<string>;
   busy: boolean;
   /** a background refresh is running: animate the figures, do not disable anything */
   refreshing?: boolean;
@@ -54,7 +54,7 @@ export const Overview = ({
   /** a saved key with no recovery copy on chain and no export yet: losing this browser loses the funds */
   backupNeeded?: boolean;
   onStoreRecovery?: () => Promise<unknown>;
-  onWithdrawToken?: (code: string, amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
+  onWithdrawToken?: (code: string, amount: bigint, onProgress: (f: number, s: string) => void, close?: boolean) => Promise<string>;
   tokens?: { code: string }[];
   onSelectToken?: (code: string) => void;
 }) => {

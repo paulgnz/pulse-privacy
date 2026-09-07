@@ -159,7 +159,8 @@ export const About = ({ signedIn, onConnect }: { signedIn: boolean; onConnect?: 
       </p>
       <p>
         Inside, amounts are hidden by cryptography. At the edges they are hidden by round numbers, time and volume. Withdrawals are
-        limited to whole units, 1 XPR or 1 XMD, and the app warns you before a withdrawal that matches something you received.
+        limited to whole units, 1 XPR or 1 XMD, with one exception: taking the exact remaining balance and leaving the box empty is allowed,
+        since the contract can see the box is empty afterwards. The app also warns you before a withdrawal that matches something you received.
         The private path is to keep your balance inside and pay other confidential accounts directly.
       </p>
     </section>

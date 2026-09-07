@@ -550,8 +550,8 @@ export default function App() {
           onFold={(code) => wrap(async () => { const c = clientFor(code); const tx = await c.applyPending(); trackTx(String(tx), { kind: "fold", token: c.token, onChain: { ciphertext: "●●●●" } }); event("folded", { token: c.token.code }); return tx; })}
           onSend={(to, amount, p) => wrap(async () => { const tx = await client.send(to, amount, p); trackTx(tx, { kind: "send", amount, counterparty: to, token: client.token }); event("sent", { token: client.token.code }); return tx; })}
           onDeposit={(a) => wrap(async () => { const tx = await client.deposit(a); trackTx(tx, { kind: "deposit", amount: a, token: client.token, onChain: { public: true } }); event("deposited", { token: client.token.code }); return tx; })}
-          onWithdraw={(a, p) => wrap(async () => { const tx = await client.withdraw(a, p); trackTx(tx, { kind: "withdraw", amount: a, token: client.token, onChain: { public: true } }); event("withdrew", { token: client.token.code }); return tx; })}
-          onWithdrawToken={(code, a, p) => wrap(async () => { const c = clientFor(code); const tx = await c.withdraw(a, p); trackTx(tx, { kind: "withdraw", amount: a, token: c.token, onChain: { public: true } }); event("withdrew", { token: code }); return tx; })}
+          onWithdraw={(a, p, close) => wrap(async () => { const tx = await client.withdraw(a, p, close); trackTx(tx, { kind: "withdraw", amount: a, token: client.token, onChain: { public: true } }); event("withdrew", { token: client.token.code }); return tx; })}
+          onWithdrawToken={(code, a, p, close) => wrap(async () => { const c = clientFor(code); const tx = await c.withdraw(a, p, close); trackTx(tx, { kind: "withdraw", amount: a, token: c.token, onChain: { public: true } }); event("withdrew", { token: code }); return tx; })}
           busy={busy} refreshing={refreshing || st.token.code !== token.code}
           tokens={tokens} onSelectToken={chooseToken}
         />
