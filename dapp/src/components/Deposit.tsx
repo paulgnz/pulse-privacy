@@ -10,12 +10,15 @@ export const Deposit = ({
   onDeposit,
   busy,
   onClose,
+  onDone,
 }: {
   st: ConfState;
   publicBalance: bigint | null;
   onDeposit: (amount: bigint) => Promise<string>;
   busy: boolean;
   onClose: () => void;
+  /** success: the parent shows the confirmation at the top of the statement and closes the form */
+  onDone?: (msg: string) => void;
 }) => {
   const [amt, setAmt] = useState("");
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -36,7 +39,8 @@ export const Deposit = ({
     try {
       setPending(true);
       const tx = await onDeposit(parsed);
-      setResult({ ok: true, msg: `Deposited ${fmtUnits(parsed)} XPR. It lands in your pending box. Transaction ${tx.slice(0, 12)}.` });
+      const done = `Deposited ${fmtUnits(parsed)} XPR. It lands in your pending box. Transaction ${tx.slice(0, 12)}.`;
+      if (onDone) onDone(done); else setResult({ ok: true, msg: done });
       setAmt("");
     } catch (e) {
       setResult({ ok: false, msg: `Not deposited. ${(e as Error).message}` });

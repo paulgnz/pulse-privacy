@@ -3,7 +3,7 @@ import type { ConfState } from "../lib/client";
 import { Amount } from "./Amount";
 import { Deposit } from "./Deposit";
 import { Send } from "./Send";
-import { Line } from "./ui";
+import { Line, Note } from "./ui";
 import { Withdraw } from "./Withdraw";
 
 type Form = "send" | "deposit" | "withdraw" | null;
@@ -38,6 +38,12 @@ export const Overview = ({
       return false;
     }
   });
+  const [notice, setNotice] = useState<string | null>(null);
+  const done = (msg: string) => {
+    setNotice(msg);
+    setForm(null);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const [form, setForm] = useState<Form>(() => {
     const q = new URLSearchParams(location.search).get("form");
     return q === "send" || q === "deposit" || q === "withdraw" ? q : null;
@@ -77,6 +83,14 @@ export const Overview = ({
   return (
     <section className="statement">
       <h2>Statement</h2>
+      {notice ? (
+        <Note level="ok">
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 16 }}>
+            <span>{notice}</span>
+            <button className="textbtn quiet" onClick={() => setNotice(null)}>Dismiss</button>
+          </div>
+        </Note>
+      ) : null}
       <Line label="Confidential balance" sub={revealed ? "decrypted on this device; the chain holds only the box" : "what everyone else sees"} hero>
         <Amount value={st.balance} hidden revealed={revealed} size="big" busy={busy || refreshing} />
         <button className="textbtn" onClick={() => setRevealed(!revealed)} aria-pressed={revealed}>
@@ -110,9 +124,9 @@ export const Overview = ({
         </button>
       </div>
 
-      {form === "send" ? <Send st={st} onSend={onSend} busy={busy} onClose={() => setForm(null)} /> : null}
-      {form === "deposit" ? <Deposit st={st} publicBalance={publicBalance} onDeposit={onDeposit} busy={busy} onClose={() => setForm(null)} /> : null}
-      {form === "withdraw" ? <Withdraw st={st} onWithdraw={onWithdraw} busy={busy} onClose={() => setForm(null)} /> : null}
+      {form === "send" ? <Send st={st} onSend={onSend} busy={busy} onClose={() => setForm(null)} onDone={done} /> : null}
+      {form === "deposit" ? <Deposit st={st} publicBalance={publicBalance} onDeposit={onDeposit} busy={busy} onClose={() => setForm(null)} onDone={done} /> : null}
+      {form === "withdraw" ? <Withdraw st={st} onWithdraw={onWithdraw} busy={busy} onClose={() => setForm(null)} onDone={done} /> : null}
     </section>
   );
 };

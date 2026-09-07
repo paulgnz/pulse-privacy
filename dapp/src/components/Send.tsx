@@ -8,11 +8,14 @@ export const Send = ({
   onSend,
   busy,
   onClose,
+  onDone,
 }: {
   st: ConfState;
   onSend: (to: string, amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
   busy: boolean;
   onClose: () => void;
+  /** success: the parent shows the confirmation at the top of the statement and closes the form */
+  onDone?: (msg: string) => void;
 }) => {
   const [to, setTo] = useState("");
   const [amt, setAmt] = useState("");
@@ -38,7 +41,8 @@ export const Send = ({
     setProg({ f: 0, s: "Starting" });
     try {
       const tx = await onSend(name, parsed, (f, s) => setProg({ f, s }));
-      setResult({ ok: true, msg: `Sent ${fmtUnits(parsed)} XPR to ${name}. Transaction ${tx.slice(0, 12)}.` });
+      const done = `Sent ${fmtUnits(parsed)} XPR to ${name}. Transaction ${tx.slice(0, 12)}.`;
+      if (onDone) onDone(done); else setResult({ ok: true, msg: done });
       setAmt("");
     } catch (e) {
       setResult({ ok: false, msg: `Not sent. ${(e as Error).message}` });
