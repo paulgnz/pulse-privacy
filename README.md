@@ -8,9 +8,10 @@ Start with [docs/01-design.md](docs/01-design.md) — the ELI5 walk-through, the
 the scoping page. [docs/00-scoping.md](docs/00-scoping.md) is the original scoping record, mirrored
 from migration wiki page 64. Numbers come from [bench/README.md](bench/README.md).
 
-**Live testnet dapp:** <https://private.protonnz.com> (real proofs in the browser, WebAuth
-signing, contract `xprconf` on XPR testnet; Vercel project `pulse-privacy`, `cd dapp && vercel --prod`).
-Custom domain `private.protonnz.com` pending DNS (see dapp/README.md).
+**Live:** mainnet (early access, capped) at <https://private.protonnz.com>, testnet at
+<https://testnet.private.protonnz.com>. Contract account `xprconf` on both networks. Mainnet runs
+on the rehearsal proving key until the ceremony (`ceremony/`) replaces it with `setvk`; caps:
+pool 20,000 XPR, per deposit 1,000 XPR. Unaudited. Deploys from `main` via two Vercel projects.
 
 Explainer film (ELI5 + engineer layer, 140 s, Brian VO): Remotion module
 `~/dev/remotion-videos/src/ConfidentialTransfers/` → `out/ConfidentialTransfers.mp4`.

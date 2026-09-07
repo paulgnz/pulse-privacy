@@ -1,8 +1,11 @@
 # 02 — Mainnet runbook (XPR Network)
 
-Status: **preparation**. Nothing here is executed until the two gates in §12 of the design doc
-are passed: the multi-party ceremony (`ceremony/`) and an external audit. Everything else on
-this list can be done before them.
+Status: **early access live (2026-09-07)** with caps, on the rehearsal proving key. The two
+gates in §12 of the design doc still stand before the caps are raised: the multi-party ceremony
+(`ceremony/`, then `setvk`) and an external audit. Deployed: account `xprconf` (created by
+`paul123`, 350 KB RAM), code `8e4fa44f…`, `init` with the committee's auditor key
+(secret held off-chain by Paul for the committee), `setlimits` pool 20,000 / deposit 1,000 XPR,
+whole-XPR withdrawals. Governance transfer to `admin.proton@committee` pending decision.
 
 ## 1. What ships
 
