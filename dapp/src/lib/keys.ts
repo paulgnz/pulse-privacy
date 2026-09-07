@@ -33,11 +33,12 @@ export async function createKeypair(actor: string, backend: CryptoBackend): Prom
   return kp;
 }
 
-export async function importSecret(actor: string, backend: CryptoBackend, secretInput: string): Promise<EncryptionKeypair> {
+export async function importSecret(actor: string, backend: CryptoBackend, secretInput: string, expectedPubkey?: Hex): Promise<EncryptionKeypair> {
   const s = secretInput.trim().toLowerCase();
   const secret = (s.startsWith("0x") ? s : `0x${s}`) as Hex;
   if (!/^0x[0-9a-f]{64}$/.test(secret)) throw new Error("a secret is 32 bytes of hex");
   const kp = { secret, pubkey: await backend.pubkeyOf(secret) };
+  if (expectedPubkey && kp.pubkey.toLowerCase() !== expectedPubkey.toLowerCase()) throw new Error("that secret does not produce the key registered for this account, so it was not saved");
   saveKeypair(actor, kp);
   return kp;
 }

@@ -259,6 +259,8 @@ export default function App() {
     setSession(null);
     setSt(null);
     setKeypair(null);
+    setKeyDerived(false);
+    setOthers({});
     setDemo(false);
     if (demo) history.replaceState(null, "", location.pathname);
   };
@@ -522,7 +524,7 @@ export default function App() {
             setKeyDerived(false);
           }}
           onImportKey={async (s) => {
-            setKeypair(await importSecret(actor, backend, s));
+            setKeypair(await importSecret(actor, backend, s, st?.registered ? st.pubkey : undefined));
             setKeyDerived(false);
           }}
           onForgetKey={() => {

@@ -310,7 +310,7 @@ interface HyperionAction {
 /** Every action that touched the pool, newest first (deduplicated by tx+seq). */
 const sendCache = new Map<string, Record<string, unknown> | null>();
 /** decoded `send` data straight from the block (current ABI), or null if not found */
-async function sendDataFromChain(blockNum: number, trxId: string): Promise<Record<string, unknown> | null> {
+export async function sendDataFromChain(blockNum: number, trxId: string): Promise<Record<string, unknown> | null> {
   if (sendCache.has(trxId)) return sendCache.get(trxId) ?? null;
   try {
     const b = await rpc<{ transactions: { trx: { id?: string; transaction?: { actions: { account: string; name: string; data: Record<string, unknown> }[] } } | string }[] }>("get_block", { block_num_or_id: blockNum });
@@ -325,6 +325,22 @@ async function sendDataFromChain(blockNum: number, trxId: string): Promise<Recor
   } catch {
     return null;
   }
+}
+
+const confirmed = new Map<string, boolean>();
+/**
+ * Is this incoming `send` really in that block? Indexer data is trusted for display only; a
+ * spoofed indexer could otherwise show a payment that never happened. Checked once per
+ * transaction against the chain's own block, with a short timeout that keeps the row on RPC trouble.
+ */
+export async function confirmSend(blockNum: number, trxId: string, from: string, to: string): Promise<boolean> {
+  const hit = confirmed.get(trxId);
+  if (hit !== undefined) return hit;
+  const data = await Promise.race([sendDataFromChain(blockNum, trxId), new Promise<null | undefined>((r) => setTimeout(() => r(undefined), 6000))]);
+  if (data === undefined) return true; // no answer in time: keep the row, try again next refresh
+  const ok = !!data && String(data.from) === from && String(data.to) === to;
+  confirmed.set(trxId, ok);
+  return ok;
 }
 
 export async function poolHistory(limit = 200, token: Token = XPR): Promise<PoolAction[]> {

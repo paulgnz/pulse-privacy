@@ -138,7 +138,7 @@ export const realBackend: CryptoBackend = {
     buildBabyTable();
     const vold = oldChunks(input.oldBalanceCiphertext, s);
     const vOld = join64(vold[0], vold[1]);
-    if (input.amount > vOld) throw new Error(`insufficient confidential balance (${vOld} units available)`);
+    if (input.amount > vOld) throw new Error("insufficient confidential balance");
     const Ps = pubkeyFromSecret(s);
     const Pr = pt(input.receiverPubkey);
     const Pa = pt(input.auditorPubkey);
@@ -187,7 +187,7 @@ export const realBackend: CryptoBackend = {
     buildBabyTable();
     const vold = oldChunks(input.oldBalanceCiphertext, s);
     const vOld = join64(vold[0], vold[1]);
-    if (input.amount > vOld) throw new Error(`insufficient confidential balance (${vOld} units available)`);
+    if (input.amount > vOld) throw new Error("insufficient confidential balance");
     const Ps = pubkeyFromSecret(s);
     const Pa = pt(input.auditorPubkey);
     const vC = split64(input.amount);

@@ -223,12 +223,18 @@ export class ConfidentialClient {
     const activity: ActivityItem[] = [];
     const incoming: IncomingEvent[] = [];
     let lastIncomingBlock = 0;
+    // the newest few incoming payments are confirmed against the chain, not only the indexer
+    let toConfirm = 5;
     for (const h of history) {
       const mine = h.from === this.actor || h.to === this.actor;
       if (h.kind === "send" && h.t) {
         const ctShort = shortHex(h.t.lo.c, 8);
         const pf = h.proof ? shortHex(h.proof, 6) : undefined;
         if (h.to === this.actor) {
+          if (toConfirm > 0) {
+            toConfirm -= 1;
+            if (!(await chain.confirmSend(h.block, h.txid, h.from, h.to))) continue;
+          }
           let amount: bigint | undefined;
           try {
             amount = await this.backend.decryptAmount(chain.receiverView(h.t), secret);
@@ -548,8 +554,12 @@ export class ConfidentialClient {
     const rows: AuditorRow[] = [];
     for (const h of history) {
       if (h.kind !== "send" || !h.t) continue;
-      const amount = await this.backend.decryptAmount(chain.auditorView(h.t), viewingSecret);
-      rows.push({ ts: h.ts, from: h.from, to: h.to, amount, ciphertext: shortHex(h.t.lo.c, 8), block: h.block });
+      try {
+        const amount = await this.backend.decryptAmount(chain.auditorView(h.t), viewingSecret);
+        rows.push({ ts: h.ts, from: h.from, to: h.to, amount, ciphertext: shortHex(h.t.lo.c, 8), block: h.block });
+      } catch {
+        // a row this key cannot open (an older auditor key, or a malformed row) is skipped, not fatal
+      }
     }
     return rows.sort((a, b) => b.ts - a.ts);
   }
