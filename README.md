@@ -8,6 +8,9 @@ Start with [docs/01-design.md](docs/01-design.md) — the ELI5 walk-through, the
 the scoping page. [docs/00-scoping.md](docs/00-scoping.md) is the original scoping record, mirrored
 from migration wiki page 64. Numbers come from [bench/README.md](bench/README.md).
 
+Explainer film (ELI5 + engineer layer, 140 s, Brian VO): Remotion module
+`~/dev/remotion-videos/src/ConfidentialTransfers/` → `out/ConfidentialTransfers.mp4`.
+
 Order of operations: design doc ✓ → benchmark ✓ (Mac; `.95` box pending) → Glenn message
 (draft in design doc §10) → intrinsic PR on `paulgnz/pulsevm` (`feat/crypto-primitives`) → contract.
 
