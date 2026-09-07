@@ -94,22 +94,22 @@ export const Overview = ({
         </Note>
       ) : null}
 
+      <div className="group private">
+        <h3>
+          Inside the contract
+          <span className="sub">{revealed ? "decrypted on this device; the chain holds only the boxes" : "encrypted; this is what everyone else sees"}</span>
+        </h3>
+        <button className="textbtn" onClick={() => setRevealed(!revealed)} aria-pressed={revealed}>
+          {revealed ? "Hide" : "Reveal"}
+        </button>
+      </div>
       {registered.map((f, i) => {
         const T = f.st.token;
         const sweeping = busy || refreshing || !!f.loading;
         return (
           <div key={T.code}>
-            <Line
-              label={<span className="tok"><TokenIcon code={T.code} />Confidential {T.code}</span>}
-              sub={i === 0 ? (revealed ? "decrypted on this device; the chain holds only the box" : "what everyone else sees") : undefined}
-              hero={i === 0}
-            >
+            <Line label={<span className="tok"><TokenIcon code={T.code} />{T.code}</span>} hero={i === 0}>
               <Amount value={f.st.balance} hidden revealed={revealed} size={i === 0 ? "big" : "mid"} busy={sweeping} token={T} />
-              {i === 0 ? (
-                <button className="textbtn" onClick={() => setRevealed(!revealed)} aria-pressed={revealed}>
-                  {revealed ? "Hide" : "Reveal"}
-                </button>
-              ) : null}
             </Line>
             {f.st.pendingCount > 0 ? (
               <Line
@@ -129,7 +129,7 @@ export const Overview = ({
       {unregistered.map((f) => {
         const T = f.st.token;
         return (
-          <Line key={T.code} label={<span className="tok"><TokenIcon code={T.code} />Confidential {T.code}</span>} sub={f.loading ? "checking" : `not registered for ${T.code} yet`} hero={!anyRegistered}>
+          <Line key={T.code} label={<span className="tok"><TokenIcon code={T.code} />{T.code}</span>} sub={f.loading ? "checking" : `not registered for ${T.code} yet`} hero={!anyRegistered}>
             <Amount hidden digits={9} size={anyRegistered ? "mid" : "big"} busy={!!f.loading} token={T} />
             {f.loading ? null : hasKey && onRegister ? (
               <button className="textbtn" onClick={() => onRegister(T.code)} disabled={busy}>
@@ -144,10 +144,16 @@ export const Overview = ({
         );
       })}
 
+      <div className="group public">
+        <h3>
+          In your wallet
+          <span className="sub">public; readable by anyone</span>
+        </h3>
+      </div>
       {figures.map((f) => {
         const T = f.st.token;
         return (
-          <Line key={T.code} label={<span className="tok"><TokenIcon code={T.code} />Public {T.code}</span>} sub="readable by anyone">
+          <Line key={T.code} label={<span className="tok"><TokenIcon code={T.code} />{T.code}</span>}>
             {f.publicBalance === null ? <span className="muted">Loading</span> : <Amount value={f.publicBalance} size="mid" token={T} />}
           </Line>
         );
