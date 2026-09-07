@@ -495,6 +495,7 @@ export function friendlyError(e: unknown): Error {
   const m = raw.toLowerCase();
   if (m.includes("insufficient ram")) return new Error("Your account needs a little more RAM (about 1 KB per token you register). Buy RAM at resources.xprnetwork.org, then try again.");
   if (m.includes("executing for too long") || m.includes("tx_cpu_usage_exceeded") || m.includes("deadline exceeded")) return new Error("The network node was slow and gave up on the transaction. Nothing was sent. Try again.");
+  if (raw === POPUP_BLOCKED) return new Error(POPUP_BLOCKED);
   if (m.includes("closed") || m.includes("cancel") || m.includes("rejected")) return new Error("Signing was cancelled in the wallet.");
   if (m.includes("unable to reach") || m.includes("failed to fetch") || m.includes("networkerror")) return new Error("Could not reach the network. Check your connection and try again.");
   const assertion = raw.match(/assertion failure with message: ([^"\n]+)/i);
@@ -505,9 +506,34 @@ export function friendlyError(e: unknown): Error {
 /** the last raw wallet or chain error, for diagnostics */
 export let lastRawError: unknown = null;
 
+export const POPUP_BLOCKED = "Your browser blocked the wallet window. Allow pop-ups for this site (the icon at the right of the address bar), then try again.";
+
+/**
+ * The WebAuth browser wallet opens a window from inside `transact`. If the browser blocks it,
+ * the SDK waits forever, so watch `window.open` while the request starts and fail fast.
+ */
+async function transactWatched(s: Session, actions: unknown[]): Promise<unknown> {
+  const w = window as Window & { open: typeof window.open };
+  const original = w.open;
+  let blocked = false;
+  w.open = function (this: Window, ...args: Parameters<typeof window.open>) {
+    const win = original.apply(this, args);
+    if (!win) blocked = true;
+    return win;
+  } as typeof window.open;
+  try {
+    const pending = s.transact({ actions }, { broadcast: true });
+    await new Promise((r) => setTimeout(r, 50)); // the SDK opens the window synchronously inside transact
+    if (blocked) throw new Error(POPUP_BLOCKED);
+    return await pending;
+  } finally {
+    if (w.open !== original) w.open = original;
+  }
+}
+
 export async function broadcast(s: Session, actions: unknown[]): Promise<string> {
   try {
-    const r = (await s.transact({ actions }, { broadcast: true })) as { processed?: { id?: string }; transaction_id?: string };
+    const r = (await transactWatched(s, actions)) as { processed?: { id?: string }; transaction_id?: string };
     return r.transaction_id ?? r.processed?.id ?? "";
   } catch (e) {
     lastRawError = e;

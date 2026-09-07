@@ -34,7 +34,9 @@ async function rows<T extends Record<string, unknown>>(table: string, key: strin
     const r = await rpc<{ rows: T[]; more: boolean }>("get_table_rows", { code: SHIELD.contract, scope: SHIELD.contract, table, json: true, limit: 1000, lower_bound: lower });
     out.push(...r.rows);
     if (!r.more || r.rows.length === 0) return out;
-    lower = (BigInt(String(r.rows[r.rows.length - 1][key])) + 1n).toString();
+    const last = r.rows[r.rows.length - 1][key];
+    if (typeof last === "string" && !/^\d+$/.test(last)) { lower = last; if (out.length > 5000) return out; } // name keys: the API resumes after the bound
+    else lower = (BigInt(String(last)) + 1n).toString();
   }
 }
 
@@ -54,6 +56,15 @@ export async function getConfig(knownTokens: Token[]): Promise<ShieldConfig | nu
     return [{ token, id: BigInt(row.token_id), contract: row.token_contract, maxPool: BigInt(row.max_pool), maxDeposit: BigInt(row.max_deposit), pool: BigInt(row.pool) }];
   });
   return { auditorPk: [a[0], a[1]], paused: !!c.rows[0].paused, tokens };
+}
+
+/** every account with a shielded key, for the recipient suggestions (cached briefly) */
+let namesCache: { at: number; names: string[] } | null = null;
+export async function registeredNames(): Promise<string[]> {
+  if (namesCache && Date.now() - namesCache.at < 60000) return namesCache.names;
+  const r = await rows<{ owner: string }>("keys", "owner").catch(() => [] as { owner: string }[]);
+  namesCache = { at: Date.now(), names: r.map((k) => k.owner).sort() };
+  return namesCache.names;
 }
 
 export async function registeredKey(actor: string): Promise<Pt | null> {
@@ -129,6 +140,18 @@ const g2 = (p: (string | bigint)[][]) => w32(BigInt(p[0][1])) + w32(BigInt(p[0][
 
 export interface Prepared { action: Record<string, unknown>; outputs: { cm: bigint; v: bigint }[]; nf: bigint[] }
 
+/**
+ * Notes and tree read ahead of the click, so that after the click only the proof stands
+ * between the user and the wallet window (browsers only allow that window within a few
+ * seconds of a click). Valid for a short while; a root a few seconds old is still in the ring.
+ */
+export interface Prefetched { notes: OwnedNote[]; tree: Tree; rootSeq: bigint; at: number }
+export async function prefetch(keys: ShieldKeys): Promise<Prefetched> {
+  const [{ notes }, { tree, rootSeq }] = await Promise.all([scan(keys), chainTree()]);
+  return { notes, tree, rootSeq, at: Date.now() };
+}
+const fresh = (p?: Prefetched | null) => (p && Date.now() - p.at < 45000 ? p : null);
+
 /** prove on this device and return the `transfer` action for the sender's wallet to sign */
 export async function prove(s: Session, built: ReturnType<typeof buildJoinSplit>, rootSeq: bigint, tokenId: bigint, onProgress?: (f: number, s: string) => void): Promise<Prepared> {
   onProgress?.(0.1, "Building the proof on this device");
@@ -145,28 +168,28 @@ export async function prove(s: Session, built: ReturnType<typeof buildJoinSplit>
 }
 
 /** shielded payment to a registered account; returns the action for the wallet */
-export async function prepareSend(s: Session, keys: ShieldKeys, cfg: ShieldConfig, token: Token, to: string, amount: bigint, onProgress?: (f: number, s: string) => void): Promise<Prepared> {
+export async function prepareSend(s: Session, keys: ShieldKeys, cfg: ShieldConfig, token: Token, to: string, amount: bigint, onProgress?: (f: number, s: string) => void, pre?: Prefetched | null): Promise<Prepared> {
   const entry = cfg.tokens.find((t) => t.token.code === token.code);
   if (!entry) throw new Error(`${token.code} is not enabled in the shielded contract.`);
   onProgress?.(0.02, "Reading your notes");
   const toPk = await registeredKey(to);
   if (!toPk) throw new Error(`${to} has not set up shielded payments yet.`);
-  const { notes } = await scan(keys);
-  const inputs = pick(notes, entry.id, amount);
-  const { tree, rootSeq } = await chainTree();
+  const p = fresh(pre) ?? (await prefetch(keys));
+  const inputs = pick(p.notes, entry.id, amount);
+  const { tree, rootSeq } = p;
   const change = inputs.reduce((sum, n) => sum + n.v, 0n) - amount;
   const built = buildJoinSplit({ keys, inputs, outputs: [{ pk: toPk, v: amount }, { pk: keys.pk, v: change }], tree, auditorPk: cfg.auditorPk, sender: nameToU64(s.auth.actor) });
   return prove(s, built, rootSeq, entry.id, onProgress);
 }
 
 /** withdrawal to the sender's own account; returns the action for the wallet */
-export async function prepareWithdraw(s: Session, keys: ShieldKeys, cfg: ShieldConfig, token: Token, amount: bigint, onProgress?: (f: number, s: string) => void): Promise<Prepared> {
+export async function prepareWithdraw(s: Session, keys: ShieldKeys, cfg: ShieldConfig, token: Token, amount: bigint, onProgress?: (f: number, s: string) => void, pre?: Prefetched | null): Promise<Prepared> {
   const entry = cfg.tokens.find((t) => t.token.code === token.code);
   if (!entry) throw new Error(`${token.code} is not enabled in the shielded contract.`);
   onProgress?.(0.02, "Reading your notes");
-  const { notes } = await scan(keys);
-  const inputs = pick(notes, entry.id, amount);
-  const { tree, rootSeq } = await chainTree();
+  const p = fresh(pre) ?? (await prefetch(keys));
+  const inputs = pick(p.notes, entry.id, amount);
+  const { tree, rootSeq } = p;
   const change = inputs.reduce((sum, n) => sum + n.v, 0n) - amount;
   const me = nameToU64(s.auth.actor);
   const built = buildJoinSplit({ keys, inputs, outputs: [{ pk: keys.pk, v: 0n }, { pk: keys.pk, v: change }], tree, auditorPk: cfg.auditorPk, sender: me, vPub: amount, tokenPub: entry.id, to: me });

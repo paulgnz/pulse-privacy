@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SHIELD } from "../config";
 import { broadcast, describeLastError, deterministicSigner, getPublicBalance } from "../lib/chain";
 import type { Session } from "../lib/chain";
@@ -8,7 +8,7 @@ import { amountProblem, fmtUnits, parseUnits } from "../lib/format";
 import { keygen, randScalar } from "../lib/shield/notes";
 import type { OwnedNote, ShieldKeys } from "../lib/shield/notes";
 import * as sh from "../lib/shield/chain";
-import type { ShieldConfig } from "../lib/shield/chain";
+import type { Prefetched, ShieldConfig } from "../lib/shield/chain";
 import { unlockShield } from "../lib/unlock";
 import type { Token } from "../lib/token";
 import { Amount } from "./Amount";
@@ -39,6 +39,9 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const [notice, setNotice] = useState<{ ok: boolean; text: string; txid?: string } | null>(null);
   const [revealed, setRevealed] = useState(() => { try { return localStorage.getItem(REVEAL) === "1"; } catch { return false; } });
   const [showSpent, setShowSpent] = useState(false);
+  // read ahead when a form opens, so the click leads straight to the proof and the wallet
+  const pre = useRef<Prefetched | null>(null);
+  const [peers, setPeers] = useState<string[]>([]);
 
   const shieldTokens = useMemo(() => (cfg?.tokens ?? []).map((t) => t.token).sort((a, b) => (a.code === "XPR" ? -1 : b.code === "XPR" ? 1 : a.code.localeCompare(b.code))), [cfg]);
   const token = useMemo(() => shieldTokens.find((t) => t.code === tokenCode) ?? shieldTokens[0] ?? tokens[0], [shieldTokens, tokenCode, tokens]);
@@ -122,8 +125,9 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       await refresh();
     } catch (e) {
       const detail = describeLastError();
-      setNotice({ ok: false, text: `Not done. ${(e as Error).message}${detail ? ` Details: ${detail}` : ""}` });
-    } finally { setBusy(false); setStage(null); }
+      const msg = (e as Error).message;
+      setNotice({ ok: false, text: `Not done. ${msg}${detail && !msg.startsWith("Your browser blocked") ? ` Details: ${detail}` : ""}` });
+    } finally { setBusy(false); setStage(null); pre.current = null; }
   };
 
   const toggleReveal = () => { setRevealed((r) => { try { localStorage.setItem(REVEAL, r ? "0" : "1"); } catch { /* ignore */ } return !r; }); };
@@ -182,7 +186,13 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   // ---------------------------------------------------------------- statement
 
   const tokenOf = (id: bigint) => cfg.tokens.find((t) => t.id === id)?.token ?? token;
-  const toggle = (f: Form) => setForm((cur) => (cur === f ? null : f));
+  const toggle = (f: Form) => {
+    setForm((cur) => (cur === f ? null : f));
+    if (f !== "deposit") {
+      sh.prefetch(keys).then((p) => { pre.current = p; }).catch(() => undefined);
+      sh.registeredNames().then((n) => setPeers(n.filter((x) => x !== actor))).catch(() => undefined);
+    }
+  };
   const parsedAmount = (s: string): bigint | null => { try { return s ? parseUnits(s, token) : null; } catch { return null; } };
 
   return (
@@ -221,7 +231,8 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
 
       {form === "send" ? (
         <SendForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} spendable={balance(token.code)} busy={busy} stage={stage} parsed={parsedAmount} onClose={() => setForm(null)}
-          onSend={(to, amount) => run(`Sent ${fmtUnits(amount, token)} ${token.code} to ${to}. The chain shows that you paid, not whom or how much.`, async (p) => { const prep = await sh.prepareSend(session, keys, cfg, token, to, amount, p); const txid = await broadcast(session, [prep.action]); p(1, "Done"); return { txid }; })} />
+          peers={peers}
+          onSend={(to, amount) => run(`Sent ${fmtUnits(amount, token)} ${token.code} to ${to}. The chain shows that you paid, not whom or how much.`, async (p) => { const prep = await sh.prepareSend(session, keys, cfg, token, to, amount, p, pre.current); const txid = await broadcast(session, [prep.action]); p(1, "Done"); return { txid }; })} />
       ) : null}
       {form === "deposit" ? (
         <DepositForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} publicBalance={pub[token.code] ?? null} busy={busy} parsed={parsedAmount} onClose={() => setForm(null)}
@@ -229,7 +240,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       ) : null}
       {form === "withdraw" ? (
         <WithdrawForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} spendable={balance(token.code)} busy={busy} stage={stage} parsed={parsedAmount} onClose={() => setForm(null)} actor={actor}
-          onWithdraw={(amount) => run(`Withdrew ${fmtUnits(amount, token)} ${token.code} to ${actor}.`, async (p) => { const prep = await sh.prepareWithdraw(session, keys, cfg, token, amount, p); const txid = await broadcast(session, [prep.action]); p(1, "Done"); return { txid }; })} />
+          onWithdraw={(amount) => run(`Withdrew ${fmtUnits(amount, token)} ${token.code} to ${actor}.`, async (p) => { const prep = await sh.prepareWithdraw(session, keys, cfg, token, amount, p, pre.current); const txid = await broadcast(session, [prep.action]); p(1, "Done"); return { txid }; })} />
       ) : null}
 
       <div className="group public">
@@ -263,22 +274,35 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
 
 // ---------------------------------------------------------------- forms
 
-const SendForm = ({ token, tokens, onSelectToken, spendable, busy, stage, parsed, onClose, onSend }: {
+const SendForm = ({ token, tokens, onSelectToken, spendable, busy, stage, parsed, onClose, onSend, peers }: {
   token: Token; tokens: Token[]; onSelectToken: (c: string) => void; spendable: bigint; busy: boolean; stage: { f: number; s: string } | null;
-  parsed: (s: string) => bigint | null; onClose: () => void; onSend: (to: string, amount: bigint) => void;
+  parsed: (s: string) => bigint | null; onClose: () => void; onSend: (to: string, amount: bigint) => void; peers: string[];
 }) => {
   const [to, setTo] = useState(() => { const q = (new URLSearchParams(location.search).get("to") ?? "").trim().toLowerCase(); return /^[a-z1-5.]{1,12}$/.test(q) ? q : ""; });
   const [amt, setAmt] = useState("");
   const amount = parsed(amt);
   const problem = amt ? amountProblem(amt, token) : null;
   const over = amount !== null && amount > spendable;
-  const can = !!amount && amount > 0n && !over && !problem && /^[a-z1-5.]{4,12}$/.test(to) && !busy;
+  // is the recipient set up? known from the list, or looked up as they type
+  const [known, setKnown] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const name = to.trim();
+    if (!/^[a-z1-5.]{4,12}$/.test(name) || peers.includes(name) || name in known) return;
+    const h = setTimeout(() => { sh.registeredKey(name).then((k) => setKnown((m) => ({ ...m, [name]: !!k }))).catch(() => undefined); }, 400);
+    return () => clearTimeout(h);
+  }, [to, peers, known]);
+  const ready = peers.includes(to) || known[to] === true;
+  const missing = /^[a-z1-5.]{4,12}$/.test(to) && known[to] === false && !peers.includes(to);
+  const can = !!amount && amount > 0n && !over && !problem && ready && !busy;
   return (
     <div className="form" aria-label="Send shielded">
       <h3>Send</h3>
       <p className="muted">The chain will record that you spent notes and created two sealed ones. Not the receiver, not the amount. Your wallet signs it after the proof is built.</p>
-      <Field label="To" hint="An XPR account name that has set up shielded payments.">
-        <input value={to} onChange={(e) => setTo(e.target.value.trim().toLowerCase())} placeholder="account" autoComplete="off" />
+      <Field label="To" hint={ready ? `${to} has set up shielded payments.` : peers.length ? `${peers.length} account${peers.length === 1 ? " has" : "s have"} set up shielded payments; start typing to pick one.` : "An XPR account name that has set up shielded payments."} error={missing ? `${to} has not set up shielded payments yet.` : undefined}>
+        <input value={to} onChange={(e) => setTo(e.target.value.trim().toLowerCase())} placeholder="account" autoComplete="off" list="shield-peers" autoFocus />
+        <datalist id="shield-peers">
+          {peers.map((p) => <option key={p} value={p} />)}
+        </datalist>
       </Field>
       <Field label="Amount" hint={`${fmtUnits(spendable, token)} ${token.code} is in your shielded notes.`} error={problem ?? (over ? "More than your shielded balance." : undefined)}>
         <AmountInput value={amt} onChange={setAmt} token={token} tokens={tokens} onSelectToken={onSelectToken} />
