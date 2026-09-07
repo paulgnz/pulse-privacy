@@ -2,7 +2,8 @@
 // transaction with note = "ceremony/<phase>/<index>/<output sha256>". We recover the signing
 // key from the signature over the transaction's signing digest and require it to be one of
 // the account's active or owner keys on XPR mainnet.
-import { PublicKey, Signature, Transaction } from "@greymass/eosio";
+import { ABIDecoder, Bytes, Checksum256, KeyType, PublicKey, Signature, Transaction } from "@wharfkit/antelope";
+import { recoverPublic } from "@wharfkit/webauthn";
 
 export const CHAIN_ID = "384da888112027f0321850a169f737c33e53b388aad48b5adace4bab97f437e0";
 export const RPCS = ["https://api.protonnz.com", "https://proton.eosusa.io", "https://proton.cryptolions.io"];
@@ -50,6 +51,30 @@ async function rpc<T>(path: string, body: unknown): Promise<T> {
   throw last instanceof Error ? last : new Error("no RPC");
 }
 
+const b64url = (u8: Uint8Array) => Buffer.from(u8).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+/**
+ * A passkey (WebAuthn) signature signs `authenticatorData || sha256(clientDataJSON)`, and the
+ * client data carries the transaction digest as its challenge. Check the challenge is our
+ * digest, then recover the p256 key exactly as the chain does.
+ */
+export function recoverWebAuthn(sig: Signature, digest: Checksum256): PublicKey {
+  const data = sig.data.array;
+  const dec = new ABIDecoder(data.subarray(65));
+  const authData = Bytes.fromABI(dec);
+  const clientJSON = Bytes.fromABI(dec);
+  const client = JSON.parse(new TextDecoder().decode(clientJSON.array)) as { type?: string; challenge?: string };
+  if (client.type !== "webauthn.get") throw new Error("passkey signature is not an assertion");
+  if (client.challenge !== b64url(digest.array)) throw new Error("passkey signature is not over this transaction");
+  const message = new Bytes();
+  message.append(authData);
+  message.append(Checksum256.hash(clientJSON));
+  return recoverPublic(sig, message);
+}
+
+/** compressed point bytes as hex: a WA key on chain carries origin and flags too, so compare the point only */
+const pointHex = (k: PublicKey) => Buffer.from(k.getCompressedKeyBytes()).toString("hex");
+
 export async function accountKeys(actor: string): Promise<string[]> {
   const a = await rpc<{ permissions: { perm_name: string; required_auth: { keys: { key: string }[] } }[] }>("get_account", { account_name: actor });
   const keys: string[] = [];
@@ -70,11 +95,12 @@ export async function accountKeys(actor: string): Promise<string[]> {
 
 /** returns the recovered key if the signature is by one of the account's keys, else throws */
 export async function verifyAttestation(actor: string, permission: string, note: string, signature: string): Promise<string> {
-  if (/^SIG_WA_/.test(signature)) throw new Error("your wallet signed with a passkey (WebAuthn). The ceremony can only verify signatures made with your account's standard key: sign in with WebAuth on a device that holds your account's private key and try again");
   const tx = Transaction.from(attestationTransaction(actor, permission, note), [{ contract: CONTRACT, abi: VIEWKEY_ABI }]);
   const digest = tx.signingDigest(CHAIN_ID);
-  const recovered = Signature.from(signature).recoverDigest(digest).toString();
+  const sig = Signature.from(signature);
+  const recovered = sig.type === KeyType.WA ? recoverWebAuthn(sig, digest) : sig.recoverDigest(digest);
   const keys = await accountKeys(actor);
-  if (!keys.includes(recovered)) throw new Error(`signature is not by ${actor}'s active or owner key`);
-  return recovered;
+  const match = keys.find((k) => pointHex(PublicKey.from(k)) === pointHex(recovered));
+  if (!match) throw new Error(`signature is not by ${actor}'s active or owner key`);
+  return match;
 }

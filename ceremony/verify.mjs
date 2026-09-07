@@ -42,7 +42,7 @@ const keyCache = new Map();
 /** the account's active and owner keys, from at least two RPCs that agree */
 async function accountKeys(actor) {
   if (keyCache.has(actor)) return keyCache.get(actor);
-  const { PublicKey } = await import("@greymass/eosio");
+  const { PublicKey } = await import("@wharfkit/antelope");
   const answers = [];
   for (const rpc of RPCS) {
     try {
@@ -59,18 +59,37 @@ async function accountKeys(actor) {
   return keys;
 }
 /** the attestation's signature is by the named account over the exact expected transaction */
+const b64url = (u8) => Buffer.from(u8).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+async function recoverWebAuthn(sig, digest) {
+  const { ABIDecoder, Bytes, Checksum256 } = await import("@wharfkit/antelope");
+  const { recoverPublic } = await import("@wharfkit/webauthn");
+  const dec = new ABIDecoder(sig.data.array.subarray(65));
+  const authData = Bytes.fromABI(dec);
+  const clientJSON = Bytes.fromABI(dec);
+  const client = JSON.parse(new TextDecoder().decode(clientJSON.array));
+  if (client.type !== "webauthn.get") throw new Error("passkey signature is not an assertion");
+  if (client.challenge !== b64url(digest.array)) throw new Error("passkey signature is not over this transaction");
+  const message = new Bytes();
+  message.append(authData);
+  message.append(Checksum256.hash(clientJSON));
+  return recoverPublic(sig, message);
+}
+const pointHex = (k) => Buffer.from(k.getCompressedKeyBytes()).toString("hex");
 async function checkIdentity(a) {
-  const { Signature, Transaction } = await import("@greymass/eosio");
+  const { KeyType, PublicKey, Signature, Transaction } = await import("@wharfkit/antelope");
   const actor = a.actor;
   const permission = a.transaction?.actions?.[0]?.authorization?.[0]?.permission ?? "active";
   const note = `ceremony/${a.phase}/${a.index}/${a.output.sha256}`;
   const expected = expectedTransaction(actor, permission, note);
   if (JSON.stringify(a.transaction) !== JSON.stringify(expected)) throw new Error("recorded transaction is not the expected attestation for this actor, phase, index and file");
   const tx = Transaction.from(expected, [{ contract: CONTRACT, abi: ABI }]);
-  const recovered = Signature.from(a.signature).recoverDigest(tx.signingDigest(CHAIN_ID)).toString();
+  const digest = tx.signingDigest(CHAIN_ID);
+  const sig = Signature.from(a.signature);
+  const recovered = sig.type === KeyType.WA ? await recoverWebAuthn(sig, digest) : sig.recoverDigest(digest);
   const keys = await accountKeys(actor);
-  if (!keys.includes(recovered)) throw new Error(`signature recovers to ${recovered}, which ${actor} does not hold on chain`);
-  return recovered;
+  const match = keys.find((k) => pointHex(PublicKey.from(k)) === pointHex(recovered));
+  if (!match) throw new Error(`signature recovers to a key ${actor} does not hold on chain`);
+  return match;
 }
 
 // ------------------------------------------------------------------ the chain of files
