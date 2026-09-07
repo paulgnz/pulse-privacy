@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { TokenIcon } from "./ui";
 
 const SCENES = [
   { label: "Deposit", title: "Public money goes in.", text: "Alice deposits 5,000 XPR. The deposit and the total held by the contract are public." },
@@ -122,12 +123,12 @@ export function Walkthrough() {
             <div className={`wt-wallet${depositing ? " wt-active" : ""}`}>
               <span className="wt-person"><span className="wt-avatar">A</span>Alice</span>
               <span className="wt-wallet-label">Public wallet</span>
-              <strong>{deposited ? "0" : "5,000"}<small> XPR</small></strong>
+              <strong><TokenIcon code="XPR" size={16} />{deposited ? "0" : "5,000"}<small> XPR</small></strong>
             </div>
             <div className={`wt-wallet${withdrawing ? " wt-active" : ""}`}>
               <span className="wt-person"><span className="wt-avatar">B</span>Bob</span>
               <span className="wt-wallet-label">Public wallet</span>
-              <strong>{withdrawn ? "1,000" : "0"}<small> XPR</small></strong>
+              <strong><TokenIcon code="XPR" size={16} />{withdrawn ? "1,000" : "0"}<small> XPR</small></strong>
             </div>
           </div>
 
@@ -146,7 +147,7 @@ export function Walkthrough() {
 
           <div className="wt-pool">
             <div className="wt-pool-heading"><span>Inside the contract</span><span className="wt-view"><Lock />Encrypted balances</span></div>
-            <div className="wt-total"><span>Total held · public</span><strong>{format(total)} <small>XPR</small></strong></div>
+            <div className="wt-total"><span>Total held · public</span><strong><TokenIcon code="XPR" size={16} />{format(total)} <small>XPR</small></strong></div>
             <div className="wt-boxes">
               <div className={`wt-box${deposited ? " wt-box-funded" : ""}`}><span>Alice’s balance</span><span className="wt-hidden" /><small>{deposited ? "Encrypted" : "No deposit yet"}</small></div>
               <div className={`wt-box${sent ? " wt-box-funded" : ""}`}><span>{sent && !folded ? "Bob’s incoming" : "Bob’s balance"}</span><span className="wt-hidden" /><small>{sent ? folded ? "Encrypted" : "Ready to add" : "No payment yet"}</small></div>

@@ -411,6 +411,8 @@ details[open] summary { margin-bottom: 12px; }
 .wt-avatar { display: inline-grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--rule); background: var(--sheet); border-radius: 50%; font-size: 11px; color: var(--graphite); }
 .wt-wallet-label { font-size: 11px; color: var(--graphite); margin-top: 8px; }
 .wt-wallet strong { font-size: 23px; font-weight: 500; letter-spacing: -0.025em; }
+.wt-wallet strong, .wt-total strong { display: inline-flex; align-items: center; gap: 6px; }
+.wt-wallet strong .tokicon, .wt-total strong .tokicon { flex: none; }
 .wt-wallet small, .wt-total small { font-size: 12px; font-weight: 400; letter-spacing: 0; color: var(--graphite); }
 .wt-route { position: relative; height: 68px; display: grid; place-items: center; opacity: 0.22; }
 .wt-route-active { opacity: 1; }
@@ -447,9 +449,10 @@ details[open] summary { margin-bottom: 12px; }
 .wt-ledger-revealed strong { color: var(--auditor); animation: wt-reveal 350ms ease-out both; }
 @keyframes wt-reveal { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 .wt-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 10px 24px; border-top: 1px solid var(--rule); background: var(--paper); }
-.wt-example { font-size: 11px; color: var(--graphite); }
-.wt-controls { display: flex; gap: 16px; }
-.wt-controls button { font-size: 12px; min-height: 32px; }
+.wt-example { font-size: 11px; color: var(--graphite); flex: 1 1 120px; min-width: 0; }
+.wt-controls { display: flex; gap: 16px; flex: none; }
+.wt-controls button, .landing .wt-controls .quiet { font-size: 12px; min-height: 32px; margin: 0; white-space: nowrap; }
+.wt-controls { align-items: center; }
 @media (max-width: 480px) {
   .wt-step-button { flex-direction: column; gap: 4px; font-size: 11px; min-height: 64px; }
   .walkthrough .wt-story { padding: 18px 14px 0; min-height: 136px; }
