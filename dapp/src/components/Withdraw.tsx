@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ConfState } from "../lib/client";
 import { amountProblem, fmtUnits, parseUnits } from "../lib/format";
-import { roundDown, checkWithdrawal, isRound } from "../lib/privacy";
+import { checkWithdrawal, isRound } from "../lib/privacy";
 import { AmountInput, EdgeNote, Field, Note, Progress } from "./ui";
 
 export const Withdraw = ({
@@ -45,28 +45,14 @@ export const Withdraw = ({
   const over = parsed !== null && parsed > spendable;
   const g = st.config.withdrawGranularity;
   const check = parsed ? checkWithdrawal(parsed, st.incoming, st.edgesSinceLastIncoming, st.config) : null;
-  const chainRejects = parsed !== null && g > 0n && !isRound(parsed, g, T.units);
+  // the whole balance is always allowed: the contract waives the whole-unit rule when the box
+  // ends up empty (it can see that), so "Max" is the exact balance and closes the box
+  const closing = parsed !== null && parsed === spendable && spendable > 0n;
+  const chainRejects = parsed !== null && g > 0n && !closing && !isRound(parsed, g, T.units);
   const needsAck = check?.level === "warn" && !chainRejects;
   const can = !!parsed && parsed > 0n && !over && !chainRejects && !busy && (!needsAck || ack);
-  const maxAmount = roundDown(spendable, g, T.units);
+  const maxAmount = spendable;
   const setMax = () => setAmt(fmtUnits(maxAmount, T, { trim: true }).replace(/,/g, ""));
-  // the exact balance, leaving the box empty: the whole-unit rule is waived because the contract
-  // can see the box is empty afterwards; it reveals your final balance, which you are leaving anyway
-  const closeBox = async () => {
-    if (spendable <= 0n) return;
-    setResult(null);
-    setProg({ f: 0, s: "Starting" });
-    try {
-      const tx = await onWithdraw(spendable, (f, s) => setProg({ f, s }), true);
-      const done = `Withdrew ${fmtUnits(spendable, T)} ${T.code}, the whole balance, to your public balance.`;
-      if (onDone) onDone(done, tx); else setResult({ ok: true, msg: done });
-      setAmt("");
-    } catch (e) {
-      setResult({ ok: false, msg: `Not withdrawn. ${(e as Error).message}` });
-    } finally {
-      setProg(null);
-    }
-  };
   // other tokens with something to withdraw
   const othersWithBalance = (allTokens ?? []).filter((f) => f.st.token.code !== T.code && f.st.balance + f.st.pending > 0n);
   const withdrawAll = async () => {
@@ -96,8 +82,8 @@ export const Withdraw = ({
     setResult(null);
     setProg({ f: 0, s: "Starting" });
     try {
-      const tx = await onWithdraw(parsed, (f, s) => setProg({ f, s }));
-      const done = `Withdrew ${fmtUnits(parsed, T)} ${T.code} to your public balance.`;
+      const tx = await onWithdraw(parsed, (f, s) => setProg({ f, s }), closing);
+      const done = closing ? `Withdrew ${fmtUnits(parsed, T)} ${T.code}, the whole balance, to your public balance.` : `Withdrew ${fmtUnits(parsed, T)} ${T.code} to your public balance.`;
       if (onDone) onDone(done, tx); else setResult({ ok: true, msg: done });
       setAmt("");
       setAck(false);
@@ -114,13 +100,12 @@ export const Withdraw = ({
       <p>Withdrawing moves {T.code} back out as a public transfer. Keep it for when you need public {T.code}; paying inside the contract is the private path.</p>
       <Field
         label="Amount"
-        error={over ? `More than you can spend. You have ${fmtUnits(spendable, T)} ${T.code}.` : chainRejects ? `The contract accepts whole multiples of ${fmtUnits(g, T, { trim: true })} ${T.code}.` : amountProblem(amt, T) ?? undefined}
-        hint={`You can withdraw up to ${fmtUnits(spendable, T)} ${T.code}${g > 0n ? `, in multiples of ${fmtUnits(g, T, { trim: true })}` : ""}.`}
+        error={over ? `More than you can spend. You have ${fmtUnits(spendable, T)} ${T.code}.` : chainRejects ? `The contract accepts whole multiples of ${fmtUnits(g, T, { trim: true })} ${T.code}, or the whole balance exactly.` : amountProblem(amt, T) ?? undefined}
+        hint={closing ? "The whole balance: the box is left empty, which reveals this final amount on chain." : `You can withdraw up to ${fmtUnits(spendable, T)} ${T.code}${g > 0n ? `, in multiples of ${fmtUnits(g, T, { trim: true })} or all of it exactly` : ""}.`}
       >
         <div className="row" style={{ gap: 12, alignItems: "center" }}>
           <AmountInput value={amt} onChange={setAmt} autoFocus token={T} tokens={tokens} onSelectToken={onSelectToken} />
-          <button type="button" className="textbtn" onClick={setMax} disabled={maxAmount <= 0n}>Max</button>
-          <button type="button" className="textbtn quiet" onClick={closeBox} disabled={spendable <= 0n || busy || !!prog} title="The exact balance, leaving the box empty. Reveals your final balance.">All, exact</button>
+          <button type="button" className="textbtn" onClick={setMax} disabled={maxAmount <= 0n} title="The whole balance, exactly; the box is left empty.">Max</button>
         </div>
       </Field>
       {!chainRejects && check ? <EdgeNote check={check} token={T} onSuggest={(a) => setAmt(fmtUnits(a, T, { trim: true }).replace(/,/g, ""))} /> : null}
