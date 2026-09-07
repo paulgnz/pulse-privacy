@@ -44,6 +44,7 @@ export function xFromY(y: bigint, parity: bigint): bigint {
   const x2 = fmul(fsub(1n, y2), finv(fsub(CURVE_A, fmul(CURVE_D, y2))));
   const root = fsqrt(x2);
   if (root === null) throw new Error("not a curve point");
+  if (root === 0n) return 0n;
   return (root & 1n) === parity ? root : P - root;
 }
 export function decompressPoint(w: bigint): Pt {
@@ -131,7 +132,10 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
   if (outputs.length !== 2) throw new Error("exactly 2 outputs");
   const token = inputs[0].token;
   const ins: (OwnedNote | null)[] = [inputs[0], inputs[1] ?? null];
-  const outNotes = outputs.map((o) => newNote(o.pk, o.v, token));
+  // the two outputs go on chain in random order, so position does not say which is the change
+  const flip = crypto.getRandomValues(new Uint8Array(1))[0] & 1;
+  const ordered = flip ? [outputs[1], outputs[0]] : outputs;
+  const outNotes = ordered.map((o) => newNote(o.pk, o.v, token));
   const esk = outputs.map(() => randScalar());
   const total = ins.reduce((s, i) => s + (i ? i.v : 0n), 0n);
   if (total !== outNotes[0].v + outNotes[1].v + vPub) throw new Error("values do not balance");

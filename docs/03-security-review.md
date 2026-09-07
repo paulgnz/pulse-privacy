@@ -109,3 +109,38 @@ any commit. Three follow-ups, all applied:
 
 External audit of the contract, the circuit and the client library; the circuit change above;
 in-wallet key derivation; the real ceremony followed by `setvk`.
+
+## Shielded mode: internal review (2026-09-08)
+
+Four reviewers worked Brief 5 in [04-review-briefs.md](04-review-briefs.md) against commit
+`5faf19c` and later, one per area. Every finding below was reproduced against the code before
+it was changed. The cryptography, the contract's accounting and the client's faithfulness to
+the reference library held; the work was in one circuit bound, denial-of-service resistance,
+custody on one wallet type, RPC trust and precise privacy wording.
+
+| # | area | finding | fix |
+|---|---|---|---|
+| 1 | circuit, **critical** | The spending scalar `ask` was only bounded to 253 bits, not below the subgroup order L. Since `pk = ask·G` is a group multiplication, `ask + k·L` gives the same registered key and passes the contract's check, but `nk = Poseidon(ask, 0)` differs, so one note had up to five distinct nullifiers: its owner could spend it five times and drain the escrow. | `ask` is decomposed alias-free and compared against L − 1 in the circuit; a test spends with `ask + L` and is refused. Revision 4, new rehearsal key. |
+| 2 | circuit, medium | The parity bit of the receiver key in the auditor ciphertext came from a `Num2Bits(254)` decomposition, which is not alias-free below 2^254 − p, so a prover could flip it and hand the auditor a note it cannot attribute. | Alias-free decomposition (`Num2Bits_strict`). |
+| 3 | circuit, low | The same leaf could be spent twice in one proof (blocked by the contract's nullifier check only). | In-circuit: the second input's index must differ from the first. |
+| 4 | circuit, low | Output keys only had to be on the curve; identity and low-order points were accepted (a burned note, an unattributable receiver). `register` accepted them too. | In-circuit: 8·outPk must not be the identity. Contract: `register` rejects the identity and low-order keys. |
+| 5 | circuit, low | A zero ephemeral scalar would publish the sender's own plaintext. | In-circuit: esk ≠ 0. |
+| 6 | contract, high | A full tree freezes every spend including withdrawals; every insertion takes a pair of slots and there was no minimum deposit. | Per-token minimum deposit (1 XPR, 1 XMD on testnet). The committee `restore` is added before mainnet; a withdraw-only path that inserts nothing is a possible later change. |
+| 7 | contract, high | Deposits bill the contract's RAM (a notification cannot bill the sender), and the root ring stored before it evicted, so a full account froze spends too. | Ring evicts before it stores; minimum deposit bounds the cost; the bundled owner-signed deposit that moves the RAM to the depositor is designed for the mainnet step. |
+| 8 | contract, medium | 128 insertions between proving and inclusion evicted a proof's root; dust deposits could grief in-flight spends. | Ring of 1,024 roots; minimum deposit. |
+| 9 | contract, low | The pool counter saturated on an over-withdrawal; unlisted tokens were absorbed silently; two messages said 33 inputs; a token id above 255 would be unspendable. | Over-withdrawal refused; unlisted tokens refused; messages fixed; token id bounded at `addtoken`. |
+| 10 | client, high | The WebAuth popup session carries no public key, so the app treated it like a passkey wallet and, without any signature, kept a random key in browser storage with no way to recover it. | Every setup starts with a signature; a wallet that cannot promise determinism signs a second time and only if the two differ is a generated key kept, with its secret shown and copying required before registration; a saved key that matches the registration is still accepted. |
+| 11 | client, medium | The recipient's key was taken from one node the app picked by that node's own claimed head, with no owner check; a lying node could redirect a payment. | The row's owner is checked, the key must agree between two nodes or the node and the cached key table, and a fingerprint of the key is shown beside the recipient. |
+| 12 | client, medium | One malformed outputs row from a node blanked the whole balance. | Per-row guard; malformed rows are skipped and counted. |
+| 13 | client, low | Sign-out left shielded state and a running refresh loop behind for the next account; the key-derivation signature bypassed the blocked-window detection; a pagination boundary repeat; a non-canonical zero from the JS square root. | All fixed. |
+| 14 | privacy, high | The change note always went second, so position told an observer which new note was the sender's. | The app writes the two outputs in random order; the circuit and contract never cared. |
+| 15 | privacy, high | The token id travelled on plain transfers, revealing XPR versus XMD for every payment. | Zero on a transfer, and the contract refuses a token id without a withdrawal. |
+| 16 | privacy, medium | The recipient's name was sent to a node at send time and on each keystroke. | Names resolve locally from the whole key table. |
+| 17 | privacy, medium | The threat model understated what initiators, input counts and leaf indices reveal, and section 5 of the design still described the relay model. | Sections 5 and 8.2 of the design rewritten. |
+
+Accepted, with the reason: the `viewkey` action stays a no-op rather than an always-failing
+action, because some wallets simulate before signing and would refuse to sign a failing
+transaction, which would break key derivation for everyone; no wallet has been seen to
+broadcast a request marked not to be broadcast. The nullifier table stays keyed by the low 64
+bits: a targeted collision needs the victim's nullifier key, and an accidental one over a full
+tree is about 2⁻²⁵.

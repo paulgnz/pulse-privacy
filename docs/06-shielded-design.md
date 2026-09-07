@@ -216,16 +216,26 @@ summation, and reconciles escrow against deposits and withdrawals, as today.
 
 ## 5. What it does and does not hide
 
-- Hidden: the sender, the receiver and the amount of every payment inside the pool; which
-  notes were spent; how many notes anyone holds.
-- Visible: who deposited how much and when; who withdrew how much and when; that a transfer
-  happened, with its two nullifiers and two commitments; the size of the pool.
+Restated after the review of 2026-09-08 (§8.7), for the signed-sender model of §8.
+
+- Hidden: the receiver and the amount of every payment inside the pool; which notes were
+  spent; whether a given new note is the payment or the change (the app writes the two in
+  random order).
+- Visible: who initiated each spend, and when; whether it spent one note or two; whether it
+  was a withdrawal, and then the amount, token and destination; who deposited how much and
+  when; the size of the pool; the set of accounts that have registered a key. The token of a
+  plain transfer is not visible.
 - Inference: with few users, "someone in the pool paid someone in the pool" narrows quickly.
-  Deposit-then-withdraw of matching amounts at close times is linkable, as in every shielded
-  pool. Both are documented for users, not solved.
+  Because initiators are visible, an observer can list, for any spender who never deposited,
+  the earlier initiators whose payments could have funded them; at low volume that list is
+  short. A receiver who spends right after being paid links the two by timing. Deposit-then-
+  withdraw of matching amounts at close times is linkable, as in every shielded pool. An
+  observer who knows an account's only notes are its public deposits learns the sum of a
+  one-input spend's outputs. None of this is solved; it is stated.
 - The auditor sees everything, by design.
-- Network level: the RPC node sees the IP that submitted a transfer. A public RPC or a relay
-  spreads that; not addressed in v1.
+- Network level: the node that serves the app sees the IP that submitted a spend. The app
+  resolves recipient names locally from the whole key table, so a recipient's name is not
+  sent to a node on its own.
 
 ## 6. Relation to `xprconf`
 
@@ -278,6 +288,12 @@ committee's compliance model; mobile and passkey wallets behave as they do on th
 | the auditor | sender key, receiver key, amount and token of every note; names through the registration table |
 | a thief with the browser's key but not the wallet | can read the account's notes; cannot spend them |
 | a thief with the wallet but not the key | can sign but cannot build a proof; cannot spend, and cannot read |
+
+What "anyone" sees per spend, precisely: the owner and permission, a 256-byte proof, 16 public
+words, the amount (zero for a transfer), the token id (zero for a transfer), the root sequence
+the proof named, the block time. The action is a constant 785 bytes. Whether one or two notes
+were spent is visible (the second nullifier is zero for one). The root sequence bounds how
+old the sender's view of the tree was.
 
 ### 8.3 Changes
 
@@ -354,7 +370,16 @@ shielded mode absorbs nearly all traffic, the retirement path for `xprconf` is: 
 indefinitely so nobody is ever locked in, and remove it from the app's first screen. Revisit
 after a few months of both running.
 
-### 8.6 Milestones, revised
+### 8.6 Review of the shielded mode (2026-09-08)
+
+Four internal reviewers (circuit, contract and field arithmetic, client, privacy claims)
+worked Brief 5 in parallel; Codex's report follows separately. Findings and fixes are in
+[03-security-review.md](03-security-review.md) under "Shielded mode". The one critical item,
+the spending scalar not bounded below the subgroup order (up to five nullifiers per note),
+was fixed in the circuit the same day (revision 4, 29,826 constraints, same public signals),
+with a new rehearsal key and a testnet redeploy.
+
+### 8.7 Milestones, revised
 
 | # | milestone | done when |
 |---|---|---|

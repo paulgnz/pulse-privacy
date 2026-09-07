@@ -125,7 +125,7 @@ async function submit(js, who, pub, label) {
   console.log("proving…");
   const { proof } = await snarkjs.groth16.fullProve(js.input, CB("joinsplit_js/joinsplit.wasm"), CB("joinsplit_final.zkey"));
   console.log(`proof in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-  const out = action(CONTRACT, "spend", { owner: ACCOUNTS[who], proof: encodeProof(proof), publics: encodeInputs(N.actionPublics(js.expected)), amount: (pub.vPub ?? 0n).toString(), token_id: Number(pub.tokenPub ?? 0n), root_seq: pub.seq }, `${ACCOUNTS[who]}@active`);
+  const out = action(CONTRACT, "spend", { owner: ACCOUNTS[who], proof: encodeProof(proof), publics: encodeInputs(N.actionPublics(js.expected)), amount: (pub.vPub ?? 0n).toString(), token_id: pub.vPub ? Number(pub.tokenPub) : 0, root_seq: pub.seq }, `${ACCOUNTS[who]}@active`);
   console.log(`${label}: tx ${txId(out)} cpu ${cpuOf(out)} µs\n${explorer(txId(out))}`);
 }
 
@@ -137,8 +137,8 @@ if (cmd === "reset") {
   const vk = JSON.parse(readFileSync(CB("joinsplit_vk.json"), "utf8"));
   const cfg = await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "config", json: true, limit: 1 });
   if (cfg.rows.length === 0) action(CONTRACT, "init", { auditor_pubkey: ptHex(K.auditor.pk), vk: encodeVk(vk) }, `${CONTRACT}@active`);
-  action(CONTRACT, "addtoken", { sym: "4,XPR", token_contract: "eosio.token", token_id: 1, max_pool: 1_000_000_0000, max_deposit: 10_000_0000 }, `${CONTRACT}@active`);
-  action(CONTRACT, "addtoken", { sym: "6,XMD", token_contract: "xmd.token", token_id: 2, max_pool: 100_000_000000, max_deposit: 100_000000 }, `${CONTRACT}@active`);
+  action(CONTRACT, "addtoken", { sym: "4,XPR", token_contract: "eosio.token", token_id: 1, max_pool: 1_000_000_0000, max_deposit: 10_000_0000, min_deposit: 1_0000 }, `${CONTRACT}@active`);
+  action(CONTRACT, "addtoken", { sym: "6,XMD", token_contract: "xmd.token", token_id: 2, max_pool: 100_000_000000, max_deposit: 100_000000, min_deposit: 1_000000 }, `${CONTRACT}@active`);
   const registered = new Set((await rows("keys")).map((r) => r.owner));
   for (const who of ["alice", "bob"]) if (!registered.has(ACCOUNTS[who])) action(CONTRACT, "register", { owner: ACCOUNTS[who], pubkey: ptHex(K[who].pk) }, `${ACCOUNTS[who]}@active`);
   console.log("setup done");

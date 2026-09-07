@@ -10,8 +10,8 @@ import type { Token } from "../token";
 import { Tree, buildJoinSplit, commitment, decompressPoint, hex32, nameToU64, newNote, nullifier, tryDecryptReceiver, unpack, words } from "./notes";
 import type { OwnedNote, ShieldKeys } from "./notes";
 
-const WASM = "/circuit/joinsplit-r3.wasm";
-const ZKEY = "/circuit/joinsplit-r3_final.zkey";
+const WASM = "/circuit/joinsplit-r4.wasm";
+const ZKEY = "/circuit/joinsplit-r4_final.zkey";
 
 // Testnet nodes fall behind each other by minutes at times: order the endpoints by head block,
 // probed once per few minutes, so table reads come from the freshest node.
@@ -48,12 +48,14 @@ async function rows<T extends Record<string, unknown>>(table: string, key: strin
   const out: T[] = [];
   let lower: string | undefined;
   for (;;) {
-    const r = await rpc<{ rows: T[]; more: boolean }>("get_table_rows", { code: SHIELD.contract, scope: SHIELD.contract, table, json: true, limit: 1000, lower_bound: lower });
+    const r = await rpc<{ rows: T[]; more: boolean; next_key?: string }>("get_table_rows", { code: SHIELD.contract, scope: SHIELD.contract, table, json: true, limit: 1000, lower_bound: lower });
     out.push(...r.rows);
     if (!r.more || r.rows.length === 0) return out;
+    const next = (r as { next_key?: string }).next_key;
+    if (next) { lower = next; if (out.length > 20000) return out; continue; }
     const last = r.rows[r.rows.length - 1][key];
-    if (typeof last === "string" && !/^\d+$/.test(last)) { lower = last; if (out.length > 5000) return out; } // name keys: the API resumes after the bound
-    else lower = (BigInt(String(last)) + 1n).toString();
+    if (typeof last === "string" && !/^\d+$/.test(last)) return out;
+    lower = (BigInt(String(last)) + 1n).toString();
   }
 }
 
@@ -75,21 +77,51 @@ export async function getConfig(knownTokens: Token[]): Promise<ShieldConfig | nu
   return { auditorPk: [a[0], a[1]], paused: !!c.rows[0].paused, tokens };
 }
 
-/** every account with a shielded key, for the recipient suggestions (cached briefly) */
-let namesCache: { at: number; names: string[] } | null = null;
+/**
+ * Every account with a shielded key, with the keys, fetched as one table read (cached briefly).
+ * Recipients are resolved from this locally, so a name is never sent to a node on its own.
+ */
+let keysCache: { at: number; map: Map<string, Pt> } | null = null;
+export async function registeredKeys(): Promise<Map<string, Pt>> {
+  if (keysCache && Date.now() - keysCache.at < 60000) return keysCache.map;
+  const r = await rows<{ owner: string; pubkey: string }>("keys", "owner");
+  const map = new Map<string, Pt>();
+  for (const k of r) { const w = words(k.pubkey); if (w.length === 2) map.set(k.owner, [w[0], w[1]]); }
+  keysCache = { at: Date.now(), map };
+  return map;
+}
 export async function registeredNames(): Promise<string[]> {
-  if (namesCache && Date.now() - namesCache.at < 60000) return namesCache.names;
-  const r = await rows<{ owner: string }>("keys", "owner").catch(() => [] as { owner: string }[]);
-  namesCache = { at: Date.now(), names: r.map((k) => k.owner).sort() };
-  return namesCache.names;
+  return [...(await registeredKeys()).keys()].sort();
 }
 
-export async function registeredKey(actor: string): Promise<Pt | null> {
-  const r = await rpc<{ rows: { owner: string; pubkey: string }[] }>("get_table_rows", { code: SHIELD.contract, scope: SHIELD.contract, table: "keys", lower_bound: actor, upper_bound: actor, limit: 1, json: true });
-  if (!r.rows.length) return null;
-  const w = words(r.rows[0].pubkey);
+/** one account's key, read from a single node with the owner checked */
+async function keyFrom(ep: string, actor: string): Promise<Pt | null> {
+  const res = await fetch(`${ep}/v1/chain/get_table_rows`, { method: "POST", body: JSON.stringify({ code: SHIELD.contract, scope: SHIELD.contract, table: "keys", lower_bound: actor, upper_bound: actor, limit: 1, json: true }), signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const r = (await res.json()) as { rows: { owner: string; pubkey: string }[] };
+  const row = r.rows.find((x) => x.owner === actor);
+  if (!row) return null;
+  const w = words(row.pubkey);
   return [w[0], w[1]];
 }
+
+/**
+ * The recipient's key decides where a payment goes and the chain cannot check it, so it must
+ * agree between two independent nodes (or the node and the cached table) before it is used.
+ */
+export async function registeredKey(actor: string): Promise<Pt | null> {
+  const eps = await endpoints();
+  const [a, b] = await Promise.all([keyFrom(eps[0], actor), eps[1] ? keyFrom(eps[1], actor).catch(() => undefined) : Promise.resolve(undefined)]);
+  const cached = keysCache?.map.get(actor);
+  const same = (x: Pt | null, y: Pt | null | undefined) => !!x && !!y && x[0] === y[0] && x[1] === y[1];
+  if (a === null) return null;
+  if (same(a, b) || same(a, cached)) return a;
+  if (b === undefined && !cached) return a; // only one node reachable and nothing cached: accept, the fingerprint is shown
+  throw new Error(`Two sources disagree about ${actor}'s shielded key. Nothing was sent; try again in a moment.`);
+}
+
+/** a short fingerprint of a key, shown next to the recipient so a wrong key is visible */
+export const keyFingerprint = (pk: Pt) => hex32(pk[1]).slice(0, 4) + "·" + hex32(pk[1]).slice(-4);
 
 /** the tree rebuilt from the leaves table; throws if it disagrees with the contract's root */
 export async function chainTree(): Promise<{ tree: Tree; nextLeaf: number; rootSeq: bigint }> {
@@ -116,11 +148,13 @@ export async function scan(keys: ShieldKeys): Promise<ScanResult> {
   const spentSet = new Set(nfs.map((n) => n.nf));
   const notes: OwnedNote[] = [];
   const spent: OwnedNote[] = [];
+  let skipped = 0;
   for (const o of outs) {
     const index = Number(o.index);
     const cm = cmOf.get(index);
     if (cm === undefined) continue;
     let note = null;
+    try {
     if (!o.epk) {
       const [packed, r] = words(o.cr);
       const [v, token] = unpack(packed);
@@ -130,11 +164,13 @@ export async function scan(keys: ShieldKeys): Promise<ScanResult> {
     } else {
       note = tryDecryptReceiver(keys, decompressPoint(words(o.epk)[0]), words(o.cr), cm);
     }
+    } catch { skipped++; continue; } // one malformed row from a node must not blank the balance
     if (!note || note.v === 0n) continue;
     const owned = { ...note, index };
     if (spentSet.has(hex32(nullifier(keys.nk, index)))) spent.push(owned);
     else notes.push(owned);
   }
+  if (skipped) console.warn(`shield scan: ${skipped} malformed output row(s) skipped`);
   return { notes, spent };
 }
 
@@ -178,7 +214,7 @@ export async function prove(s: Session, built: ReturnType<typeof buildJoinSplit>
   const publics = built.actionPublics.map(w32).join("");
   onProgress?.(0.85, "Waiting for your wallet");
   return {
-    action: { account: SHIELD.contract, name: "spend", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { owner: s.auth.actor, proof: proofHex, publics, amount: built.vPub.toString(), token_id: Number(tokenId), root_seq: rootSeq.toString() } },
+    action: { account: SHIELD.contract, name: "spend", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { owner: s.auth.actor, proof: proofHex, publics, amount: built.vPub.toString(), token_id: built.vPub > 0n ? Number(tokenId) : 0, root_seq: rootSeq.toString() } },
     outputs: built.outNotes.map((n) => ({ cm: n.cm, v: n.v })),
     nf: built.nf,
   };

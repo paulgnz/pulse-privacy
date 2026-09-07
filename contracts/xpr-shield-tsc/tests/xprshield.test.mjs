@@ -50,11 +50,13 @@ const balance = (acct) => { const r = token.tables.accounts(nameToBigInt(acct)).
 
 // --- init / addtoken / register ---
 await sh.actions.init([ptHex(auditor.pk), encodeVk(VK)]).send("xprshield@active");
-await sh.actions.addtoken(["4,XPR", "eosio.token", "1", "0", "0"]).send("xprshield@active");
+await sh.actions.addtoken(["4,XPR", "eosio.token", "1", "0", "0", "10000"]).send("xprshield@active");
 await sh.actions.register(["alice", ptHex(alice.pk)]).send("alice@active");
 await sh.actions.register(["bob", ptHex(bob.pk)]).send("bob@active");
 await expectToThrow(sh.actions.register(["bob", ptHex(bob.pk)]).send("bob@active"), "eosio_assert: already registered");
 await expectToThrow(sh.actions.register(["carol", hex(alice.pk[0]) + hex(alice.pk[1] + 1n)]).send("carol@active"), "eosio_assert: pubkey not on curve");
+await expectToThrow(sh.actions.register(["carol", hex(0n) + hex(1n)]).send("carol@active"), "eosio_assert: pubkey is the identity or has low order");
+await expectToThrow(sh.actions.register(["carol", hex(0n) + hex(N.F.p - 1n)]).send("carol@active"), "eosio_assert: pubkey is the identity or has low order");
 const local = new N.Tree();
 assert.equal(treeRow().root, hex(local.root), "empty root matches");
 lap("init + register; empty root matches the library");
@@ -73,6 +75,8 @@ assert.deepEqual(leaves().map((l) => [Number(l.index), l.cm]), [[0, hex(a1.cm)],
 assert.equal(treeRow().root, hex(local.root), "root after two deposits matches");
 await expectToThrow(token.actions.transfer(["alice", "xprshield", "1.0000 XPR", "shield:zz"]).send("alice@active"), "eosio_assert: memo must carry one 32-byte hex value");
 await expectToThrow(token.actions.transfer(["carol", "xprshield", "1.0000 XPR", `shield:${hex(2n)}`]).send("carol@active"), "eosio_assert: depositor has not registered a key");
+await expectToThrow(token.actions.transfer(["alice", "xprshield", "0.5000 XPR", `shield:${hex(3n)}`]).send("alice@active"), "eosio_assert: deposit below the minimum");
+await expectToThrow(token.actions.transfer(["alice", "xprshield", "1.0000 XPR", "not a deposit"]).send("alice@active"), "eosio_assert: memo must be shield:<r>");
 lap("two deposits: commitments and root match the library; bad memos refused");
 
 // --- alice → bob 1,234 XPR, signed by alice ---
@@ -91,6 +95,8 @@ assert.equal(p1.publics.length / 64, 16, "the action carries 16 words");
 await expectToThrow(spend("alice", p1).send("bob@active"), "missing required authority alice");
 // someone else naming themselves as sender on alice's proof
 await expectToThrow(spend("bob", p1).send("bob@active"), "eosio_assert: invalid proof");
+// a token id on a plain transfer
+await expectToThrow(spend("alice", p1, { token: 1 }).send("alice@active"), "eosio_assert: token_id only with a withdrawal");
 // a root sequence the proof was not built against
 await expectToThrow(spend("alice", p1, { seq: 1 }).send("alice@active"), "eosio_assert: invalid proof");
 await expectToThrow(spend("alice", p1, { seq: 999 }).send("alice@active"), "eosio_assert: unknown or stale root");
@@ -164,5 +170,5 @@ assert.equal(leaves().length, 0); assert.equal(nullifiers().length, 0); assert.e
 await sh.actions.init([ptHex(auditor.pk), encodeVk(VK)]).send("xprshield@active");
 assert.equal(treeRow().root, hex(new N.Tree().root), "fresh tree after reset");
 lap("reset: tables wiped, re-initialised");
-console.log("S8 xprshield (revision 3) passed");
+console.log("xprshield (revision 4) passed");
 process.exit(0);

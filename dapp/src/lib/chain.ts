@@ -512,7 +512,7 @@ export const POPUP_BLOCKED = "Your browser blocked the wallet window. Allow pop-
  * The WebAuth browser wallet opens a window from inside `transact`. If the browser blocks it,
  * the SDK waits forever, so watch `window.open` while the request starts and fail fast.
  */
-async function transactWatched(s: Session, actions: unknown[]): Promise<unknown> {
+export async function watchPopup<T>(start: () => Promise<T>): Promise<T> {
   const w = window as Window & { open: typeof window.open };
   const original = w.open;
   let blocked = false;
@@ -522,13 +522,17 @@ async function transactWatched(s: Session, actions: unknown[]): Promise<unknown>
     return win;
   } as typeof window.open;
   try {
-    const pending = s.transact({ actions }, { broadcast: true });
+    const pending = start();
     await new Promise((r) => setTimeout(r, 50)); // the SDK opens the window synchronously inside transact
     if (blocked) throw new Error(POPUP_BLOCKED);
     return await pending;
   } finally {
     if (w.open !== original) w.open = original;
   }
+}
+
+async function transactWatched(s: Session, actions: unknown[]): Promise<unknown> {
+  return watchPopup(() => s.transact({ actions }, { broadcast: true }));
 }
 
 export async function broadcast(s: Session, actions: unknown[]): Promise<string> {

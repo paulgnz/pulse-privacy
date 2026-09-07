@@ -53,16 +53,19 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   // A saved key exists only for wallets that cannot re-derive one (passkeys). Wallets with a
   // K1 key derive the spending key again each session with one signature, and it stays in memory:
   // the browser holding this key can spend shielded funds without any further prompt.
+  const seq = useRef(0);
   useEffect(() => {
-    setKeys(null); setRegistered(undefined); setNotes(null); setNotice(null); setForm(null);
+    seq.current += 1;
+    const mine = seq.current;
+    setKeys(null); setRegistered(undefined); setNotes(null); setSpent([]); setPub({}); setPeers([]); setShowSpent(false); setNotice(null); setForm(null); setStage(null);
+    pre.current = null;
     if (!actor) return;
-    if (session && !deterministicSigner(session)) {
-      try {
-        const saved = localStorage.getItem(SAVED(actor));
-        if (saved) setKeys(keygen(BigInt(saved)));
-      } catch { /* ignore */ }
-    }
-    sh.registeredKey(actor).then(setRegistered).catch(() => setRegistered(null));
+    // a saved key from an earlier visit (passkey wallets, or a wallet that signs differently each time)
+    try {
+      const saved = localStorage.getItem(SAVED(actor));
+      if (saved) setKeys(keygen(BigInt(saved)));
+    } catch { /* ignore */ }
+    sh.registeredKey(actor).then((k) => { if (seq.current === mine) setRegistered(k); }).catch(() => { if (seq.current === mine) setRegistered(null); });
   }, [actor, session]);
 
   const refresh = useCallback(async () => {
@@ -82,23 +85,40 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     return () => clearInterval(h);
   }, [keys, registered, refresh]);
 
+  // Key derivation always starts with a wallet signature. Wallets with a K1 key sign the same
+  // message the same way every time, so one signature is enough. Other wallets sign a second
+  // time from a second click; if the two agree the key is derived, if they differ (passkeys) a
+  // generated key is kept in this browser instead, with its secret shown for saving.
+  const [firstAsk, setFirstAsk] = useState<bigint | null>(null);
+  const [savedSecret, setSavedSecret] = useState<string | null>(null);
+  const [secretCopied, setSecretCopied] = useState(false);
+  const adopt = (ask: bigint, save: boolean) => {
+    const k = keygen(ask);
+    if (registered && !eq(registered, k.pk)) {
+      // a key saved in this browser from the registration is still valid
+      try { const s = localStorage.getItem(SAVED(actor)); if (s && eq(keygen(BigInt(s)).pk, registered)) { setKeys(keygen(BigInt(s))); return; } } catch { /* ignore */ }
+      throw new Error("This wallet derives a different key from the one registered for this account. If you registered from another device with a saved key, restore that key here, or contact the operator.");
+    }
+    if (save) { try { localStorage.setItem(SAVED(actor), ask.toString()); } catch { /* ignore */ } }
+    setKeys(k);
+  };
   const unlock = async () => {
     if (!session) return;
     setBusy(true); setNotice(null);
     try {
-      let ask: bigint;
-      const derivable = deterministicSigner(session);
-      if (derivable) {
-        ask = await unlockShield(session, SHIELD.contract);
+      const ask = await unlockShield(session, SHIELD.contract);
+      if (deterministicSigner(session) || registered) {
+        adopt(ask, false); // a registered account: the chain says whether the key is right
+      } else if (firstAsk === null) {
+        setFirstAsk(ask); // ask for a second signature from a second click
+      } else if (firstAsk === ask) {
+        adopt(ask, false);
       } else {
-        // passkey wallets sign differently each time: keep a generated key in this browser
-        const saved = localStorage.getItem(SAVED(actor));
-        ask = saved ? BigInt(saved) : randScalar();
+        // signatures differ: this wallet cannot re-derive; keep a generated key in the browser
+        const gen = randScalar();
+        setSavedSecret(gen.toString(16).padStart(64, "0"));
+        adopt(gen, true);
       }
-      const k = keygen(ask);
-      if (registered && !eq(registered, k.pk)) throw new Error("This wallet derives a different key from the one registered for this account. If you registered from another device with a saved key, import it there or contact the operator.");
-      if (!derivable) { try { localStorage.setItem(SAVED(actor), ask.toString()); } catch { /* ignore */ } }
-      setKeys(k);
     } catch (e) {
       setNotice({ ok: false, text: (e as Error).message });
     } finally { setBusy(false); }
@@ -118,15 +138,19 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
 
   /** re-read until the chain shows the change (the node may not have the block yet), up to ~12 s */
   const refreshUntil = async (changed: (r: sh.ScanResult) => boolean) => {
+    const mine = seq.current;
+    const k = keys!;
     for (let i = 0; i < 8; i++) {
       await new Promise((res) => setTimeout(res, i === 0 ? 1200 : 1500));
+      if (seq.current !== mine) return; // signed out or switched account meanwhile
       try {
-        const r = await sh.scan(keys!);
+        const r = await sh.scan(k);
+        if (seq.current !== mine) return;
         setNotes(r.notes); setSpent(r.spent);
         if (changed(r)) break;
       } catch { /* try again */ }
     }
-    refresh().catch(() => undefined);
+    if (seq.current === mine) refresh().catch(() => undefined);
   };
 
   const run = async (label: string, f: (onProgress: (fr: number, s: string) => void) => Promise<{ txid: string }>) => {
@@ -179,8 +203,9 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
         <p className="muted">One signature derives your shielded key from your wallet. Nothing is sent to the chain by that signature, and the same wallet derives the same key on any device. The key reads your notes and builds proofs; moving anything still needs your wallet's signature.</p>
         {notice ? <Note level={notice.ok ? "ok" : "error"}>{notice.text}</Note> : null}
         <div className="row" style={{ marginTop: 14 }}>
-          <button className="btn private" onClick={unlock} disabled={busy}>{busy ? "Waiting for your wallet" : registered ? "Sign to unlock" : "Sign to create your key"}</button>
+          <button className="btn private" onClick={unlock} disabled={busy}>{busy ? "Waiting for your wallet" : firstAsk !== null ? "Sign again to confirm" : registered ? "Sign to unlock" : "Sign to create your key"}</button>
         </div>
+        {firstAsk !== null ? <p className="small muted" style={{ marginTop: 10 }}>Once more: two matching signatures prove this wallet can re-derive the key on any device.</p> : null}
       </section>
     );
   }
@@ -190,9 +215,18 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
         {intro}
         <h3>Register your shielded key</h3>
         <p className="muted">Publishes the public half of your key under your account name, so people can pay you by name. One wallet signature; it is the only time your account and this key appear together.</p>
+        {savedSecret ? (
+          <Note level="warn">
+            <p>Your wallet signs differently each time, so this browser keeps a generated key instead. It exists nowhere else. Copy this secret and keep it where you keep important things: without it, a lost or cleared browser means these notes are gone.</p>
+            <div className="secret" aria-label="Your shielded secret"><code>{savedSecret}</code></div>
+            <div className="row" style={{ marginTop: 10 }}>
+              <button className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(savedSecret); setSecretCopied(true); } catch { /* selectable */ } }}>{secretCopied ? "Copied" : "Copy secret"}</button>
+            </div>
+          </Note>
+        ) : null}
         {notice ? <Note level={notice.ok ? "ok" : "error"}>{notice.text}</Note> : null}
         <div className="row" style={{ marginTop: 14 }}>
-          <button className="btn private" onClick={register} disabled={busy}>{busy ? "Waiting for your wallet" : "Register"}</button>
+          <button className="btn private" onClick={register} disabled={busy || (!!savedSecret && !secretCopied)} title={savedSecret && !secretCopied ? "Copy the secret first" : undefined}>{busy ? "Waiting for your wallet" : "Register"}</button>
         </div>
       </section>
     );
@@ -307,13 +341,15 @@ const SendForm = ({ token, tokens, onSelectToken, spendable, busy, stage, parsed
     return () => clearTimeout(h);
   }, [to, peers, known]);
   const ready = peers.includes(to) || known[to] === true;
+  const [fp, setFp] = useState<string>("");
+  useEffect(() => { if (!ready) { setFp(""); return; } sh.registeredKeys().then((m) => { const k = m.get(to); setFp(k ? sh.keyFingerprint(k) : ""); }).catch(() => setFp("")); }, [to, ready]);
   const missing = /^[a-z1-5.]{4,12}$/.test(to) && known[to] === false && !peers.includes(to);
   const can = !!amount && amount > 0n && !over && !problem && ready && !busy;
   return (
     <div className="form" aria-label="Send shielded">
       <h3>Send</h3>
       <p className="muted">The chain will record that you spent notes and created two sealed ones. Not the receiver, not the amount. Your wallet signs it after the proof is built.</p>
-      <Field label="To" hint={ready ? `${to} has set up shielded payments.` : peers.length ? `${peers.length} account${peers.length === 1 ? " has" : "s have"} set up shielded payments; start typing to pick one.` : "An XPR account name that has set up shielded payments."} error={missing ? `${to} has not set up shielded payments yet.` : undefined}>
+      <Field label="To" hint={ready ? `${to} has set up shielded payments${fp ? ` (key ${fp})` : ""}.` : peers.length ? `${peers.length} account${peers.length === 1 ? " has" : "s have"} set up shielded payments; start typing to pick one.` : "An XPR account name that has set up shielded payments."} error={missing ? `${to} has not set up shielded payments yet.` : undefined}>
         <input value={to} onChange={(e) => setTo(e.target.value.trim().toLowerCase())} placeholder="account" autoComplete="off" list="shield-peers" autoFocus />
         <datalist id="shield-peers">
           {peers.map((p) => <option key={p} value={p} />)}

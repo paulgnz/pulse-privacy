@@ -19,11 +19,18 @@ pragma circom 2.1.0;
 //
 // Input 0 is always a real note. Input 1 may be disabled (enabled1 = 0): then it carries no
 // value, is not checked against the tree, and its nullifier is 0 (the contract skips zeros).
+//
+// Revision 4 (after review): `ask` is bound below the subgroup order, otherwise ask + k·L gives
+// the same key with a different nullifier; the two inputs cannot be the same leaf; output keys
+// must lie in the prime-order subgroup; the ephemeral scalar cannot be zero; the parity bit of
+// the receiver key is taken from an alias-free bit decomposition.
 
 include "circomlib/circuits/poseidon.circom";
 include "circomlib/circuits/babyjub.circom";
 include "circomlib/circuits/escalarmulany.circom";
 include "circomlib/circuits/bitify.circom";
+include "circomlib/circuits/comparators.circom";
+include "circomlib/circuits/compconstant.circom";
 
 template NoteCommitment() {
     signal input pk[2];
@@ -125,7 +132,13 @@ template JoinSplit(depth) {
     signal output ca[2][3];
     signal output senderPk[2];
 
-    // 1. keys
+    // 1. keys. ask < L (the subgroup order): the nullifier key is Poseidon(ask), so ask + k·L
+    // would be a second nullifier for the same note and key
+    component askBits = Num2Bits_strict();
+    askBits.in <== ask;
+    component askLt = CompConstant(2736030358979909402780800718157159386076813972158567259200215660948447373040);
+    for (var i = 0; i < 254; i++) askLt.in[i] <== askBits.out[i];
+    askLt.out === 0;
     component pk = BabyPbk();
     pk.in <== ask;
     senderPk[0] <== pk.Ax;
@@ -141,6 +154,11 @@ template JoinSplit(depth) {
     enabled[1] <== enabled1;
     signal token <== inToken[0];
     enabled[1] * (inToken[1] - token) === 0;
+    // the two inputs are different leaves
+    component sameLeaf = IsEqual();
+    sameLeaf.in[0] <== inIndex[0];
+    sameLeaf.in[1] <== inIndex[1];
+    enabled[1] * sameLeaf.out === 0;
 
     // 2. inputs
     component inCm[2];
@@ -200,12 +218,32 @@ template JoinSplit(depth) {
     component er[2];
     component ea[2];
     component xbits[2];
+    component dbl[2][3];
+    component x8zero[2];
+    component y8one[2];
+    component eskZero[2];
     signal packed[2];
     signal packedA[2];
     for (var j = 0; j < 2; j++) {
         outCheck[j] = BabyCheck();
         outCheck[j].x <== outPk[j][0];
         outCheck[j].y <== outPk[j][1];
+        // in the prime-order subgroup: 8·outPk is not the identity (cofactor 8)
+        for (var k = 0; k < 3; k++) {
+            dbl[j][k] = BabyDbl();
+            dbl[j][k].x <== k == 0 ? outPk[j][0] : dbl[j][k - 1].xout;
+            dbl[j][k].y <== k == 0 ? outPk[j][1] : dbl[j][k - 1].yout;
+        }
+        x8zero[j] = IsZero();
+        x8zero[j].in <== dbl[j][2].xout;
+        y8one[j] = IsEqual();
+        y8one[j].in[0] <== dbl[j][2].yout;
+        y8one[j].in[1] <== 1;
+        x8zero[j].out * y8one[j].out === 0;
+        // a zero ephemeral scalar would publish the plaintext
+        eskZero[j] = IsZero();
+        eskZero[j].in <== esk[j];
+        eskZero[j].out === 0;
 
         outCm[j] = NoteCommitment();
         outCm[j].pk[0] <== outPk[j][0];
@@ -237,7 +275,7 @@ template JoinSplit(depth) {
         sa[j].p[0] <== A[0];
         sa[j].p[1] <== A[1];
         // the receiver key travels as (y, parity of x): parity bit at 2^72 of the packed word
-        xbits[j] = Num2Bits(254);
+        xbits[j] = Num2Bits_strict();
         xbits[j].in <== outPk[j][0];
         packedA[j] <== packed[j] + xbits[j].out[0] * 4722366482869645213696;
         ea[j] = Encrypt(3);

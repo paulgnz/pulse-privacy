@@ -5,6 +5,7 @@
 // reports `deterministic: false` so the UI can fall back to a saved key.
 import { CHAIN_ID, CONTRACT } from "../config";
 import type { Session } from "./chain";
+import { watchPopup } from "./chain";
 import type { Hex } from "./crypto/types";
 
 /** Baby Jubjub prime-order subgroup size (scalar field of the encryption keys). */
@@ -38,7 +39,7 @@ export function unlockTransaction(actor: string, permission: string, legacy = fa
 type TransactFn = (args: { transaction: unknown }, opts: { broadcast: boolean }) => Promise<{ signatures: { toString(): string }[] }>;
 
 async function signOnce(session: Session, legacy = false, contract = CONTRACT, note = VIEWKEY_NOTE): Promise<string> {
-  const r = await (session.transact as unknown as TransactFn)({ transaction: unlockTransaction(session.auth.actor, session.auth.permission, legacy, contract, note) }, { broadcast: false });
+  const r = await watchPopup(() => (session.transact as unknown as TransactFn)({ transaction: unlockTransaction(session.auth.actor, session.auth.permission, legacy, contract, note) }, { broadcast: false }));
   const sig = r.signatures?.[0];
   if (!sig) throw new Error("The wallet returned no signature.");
   return sig.toString();

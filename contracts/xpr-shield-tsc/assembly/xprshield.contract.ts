@@ -3,7 +3,7 @@ import { sendTransferTokens } from "proton-tsc/token";
 import { groth16Verify } from "./groth16";
 import { Limbs, fromBytesBE, fromU64, hex, isCanonicalBE, toBytesBE } from "./fr";
 import { hash2, poseidon, zeroAt } from "./poseidon";
-import { decompress, onCurve } from "./curve";
+import { decompress, inPrimeSubgroup, onCurve } from "./curve";
 
 // xprshield — shielded transfers (docs/06-shielded-design.md).
 //
@@ -25,7 +25,7 @@ const N_PUB: i32 = 27;
 const N_ACTION: i32 = 16;
 const ACTION_LEN: i32 = N_ACTION * 32;
 const PROOF_LEN: i32 = 256;
-const RING: u64 = 128;
+const RING: u64 = 1024; // roots kept, so a proof survives this many insertions between proving and inclusion
 
 @table("config")
 class Config extends Table {
@@ -51,6 +51,7 @@ class TokenRow extends Table {
     public token_id: u64 = 0, // the `token` field inside notes (1 = XPR, 2 = XMD)
     public max_pool: u64 = 0, // 0 = no cap
     public max_deposit: u64 = 0,
+    public min_deposit: u64 = 0, // dust deposits cost the contract RAM and tree slots
     public pool: u64 = 0, // deposits − withdrawals in escrow
     public deposits: u64 = 0,
     public withdrawals: u64 = 0
@@ -229,7 +230,7 @@ class XprShield extends Contract {
     requireAuth(this.receiver);
     check(this.configs.get(0) == null, "already initialised");
     check(onCurve(auditor_pubkey), "auditor pubkey not on curve");
-    check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 33 public inputs");
+    check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 27 public inputs");
     this.configs.store(new Config(0, auditor_pubkey, vk, false), this.receiver);
     const filled = new Array<u8>(DEPTH * 32);
     for (let i = 0; i < filled.length; i++) filled[i] = 0;
@@ -241,18 +242,19 @@ class XprShield extends Contract {
   }
 
   @action("addtoken")
-  addtoken(sym: Symbol, token_contract: Name, token_id: u64, max_pool: u64, max_deposit: u64): void {
+  addtoken(sym: Symbol, token_contract: Name, token_id: u64, max_pool: u64, max_deposit: u64, min_deposit: u64): void {
     requireAuth(this.receiver);
     this.config();
-    check(token_id > 0, "token id must be positive");
+    check(token_id > 0 && token_id < 256, "token id must be 1..255");
     const existing = this.tokens.get(sym.raw());
     if (existing == null) {
-      this.tokens.store(new TokenRow(sym.raw(), token_contract, token_id, max_pool, max_deposit, 0, 0, 0), this.receiver);
+      this.tokens.store(new TokenRow(sym.raw(), token_contract, token_id, max_pool, max_deposit, min_deposit, 0, 0, 0), this.receiver);
     } else {
       const e = existing!;
       check(e.token_id == token_id && e.token_contract == token_contract, "token identity cannot change");
       e.max_pool = max_pool;
       e.max_deposit = max_deposit;
+      e.min_deposit = min_deposit;
       this.tokens.update(e, this.receiver);
     }
   }
@@ -261,7 +263,7 @@ class XprShield extends Contract {
   setvk(vk: u8[]): void {
     requireAuth(this.receiver);
     const c = this.config();
-    check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 33 public inputs");
+    check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 27 public inputs");
     c.vk = vk;
     this.configs.update(c, this.receiver);
   }
@@ -317,6 +319,7 @@ class XprShield extends Contract {
     requireAuth(owner);
     check(!this.config().paused, "paused");
     check(onCurve(pubkey), "pubkey not on curve");
+    check(inPrimeSubgroup(pubkey), "pubkey is the identity or has low order");
     check(this.keys.get(owner.N) == null, "already registered");
     this.keys.store(new KeyRow(owner, pubkey), owner);
   }
@@ -326,11 +329,11 @@ class XprShield extends Contract {
   rememberRoot(t: TreeRow, root: u8[]): void {
     t.root = root;
     t.root_seq += 1;
-    this.roots.store(new RootRow(t.root_seq, root), this.receiver);
     if (t.root_seq > RING) {
       const old = this.roots.get(t.root_seq - RING);
-      if (old != null) this.roots.remove(old);
+      if (old != null) this.roots.remove(old); // free the slot first, so a full account still turns the ring
     }
+    this.roots.store(new RootRow(t.root_seq, root), this.receiver);
   }
 
   /** insert (cm1, cm2) as leaves next_leaf and next_leaf + 1 (20 hashes), record the root; `payer` pays the leaf rows */
@@ -377,7 +380,7 @@ class XprShield extends Contract {
     if (to != this.receiver) return;
     if (from == this.receiver) return;
     const tok = this.tokens.get(quantity.symbol.raw());
-    if (tok == null) return; // not a shielded token: a plain transfer into the account
+    check(tok != null, "token not accepted by this contract");
     const t = tok!;
     check(this.firstReceiver == t.token_contract, "wrong token contract");
     check(!this.config().paused, "paused");
@@ -390,6 +393,7 @@ class XprShield extends Contract {
     check(key != null, "depositor has not registered a key");
     check(quantity.amount > 0, "amount must be positive");
     const v = <u64>quantity.amount;
+    if (t.min_deposit > 0) check(v >= t.min_deposit, "deposit below the minimum");
     if (t.max_deposit > 0) check(v <= t.max_deposit, "deposit above the per-deposit limit");
     if (t.max_pool > 0) check(t.pool + v <= t.max_pool, "the pool is at its limit");
     t.pool += v;
@@ -429,6 +433,7 @@ class XprShield extends Contract {
     for (let i = 0; i < N_ACTION; i++) if (i != 4 && i != 5) check(isCanonicalBE(publics, i * 32), "public word not canonical");
     const key = this.keys.get(owner.N);
     check(key != null, "owner has not registered a shielded key");
+    check(amount > 0 || token_id == 0, "token_id only with a withdrawal");
 
     const nf1 = word(publics, 0);
     const nf2 = word(publics, 1);
@@ -466,7 +471,8 @@ class XprShield extends Contract {
 
     if (vPub > 0) {
       const t = this.tokenById(tokenPub);
-      t.pool = t.pool > vPub ? t.pool - vPub : 0;
+      check(t.pool >= vPub, "withdrawal exceeds the escrow counter");
+      t.pool -= vPub;
       t.withdrawals += vPub;
       this.tokens.update(t, this.receiver);
       const sym = Symbol.fromU64(t.sym);

@@ -78,6 +78,17 @@ await refuses(bad((x) => { x.inIndex[0] = BigInt(i2); }), "wrong leaf index");
   lap("withdrawal destination is a public input: changing it changes the statement");
 }
 await refuses(bad((x) => { x.vPub = 5n; x.tokenPub = N.TOKENS.XMD; }), "withdrawal token mismatch");
+// review findings (revision 4)
+const L = 2736030358979909402780800718157159386076813972158567259200215660948447373041n;
+await refuses(bad((x) => { x.ask = BigInt(x.ask) + L; }), "ask + L (same key, second nullifier)");
+await refuses(bad((x) => { x.inIndex[1] = x.inIndex[0]; x.inV[1] = x.inV[0]; x.inR[1] = x.inR[0]; x.inSiblings[1] = x.inSiblings[0]; x.outV[1] = BigInt(x.outV[1]) + BigInt(x.inV[0]) - BigInt(x.inV[1]); }), "the same leaf spent twice in one proof");
+await refuses(bad((x) => { x.esk[0] = 0n; }), "zero ephemeral scalar");
+{
+  const lowOrder = N.buildJoinSplit({ keys: alice, tree, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: a2, index: i2 }], outputs: [{ pk: [0n, N.F.p - 1n], v: 1n }, { pk: alice.pk, v: a2.v - 1n }] });
+  await refuses(lowOrder.input, "output to a point of order 2");
+  const identity = N.buildJoinSplit({ keys: alice, tree, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: a2, index: i2 }], outputs: [{ pk: [0n, 1n], v: 1n }, { pk: alice.pk, v: a2.v - 1n }] });
+  await refuses(identity.input, "output to the identity");
+}
 
 if (witnessOnly || !existsSync(B("joinsplit_final.zkey"))) {
   console.log(witnessOnly ? "witness-only run: done" : "no zkey yet (npm run setup:shielded): stopping before prove");
@@ -103,5 +114,5 @@ assert.equal(await snarkjs.groth16.verify(vk, resigned, pw), false, "proof bound
 const swappedKey = psw.slice(); swappedKey[18] = bob.pk[0].toString(); swappedKey[19] = bob.pk[1].toString();
 assert.equal(await snarkjs.groth16.verify(vk, swappedKey, pw), false, "sender key cannot be substituted");
 lap("redirected destination, other signer and substituted sender key all rejected");
-console.log("S7 join-split (revision 3) passed");
+console.log("join-split (revision 4) passed");
 process.exit(0);
