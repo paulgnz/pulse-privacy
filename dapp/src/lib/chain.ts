@@ -17,7 +17,7 @@ function loadSdk(): Promise<Sdk> {
   }
   return sdkReady;
 }
-import { APP_NAME, CHAIN_ID, CONTRACT, ENDPOINTS, HYPERION, SYM_RAW, TOKEN_CONTRACT } from "../config";
+import { APP_NAME, CHAIN_ID, CONTRACT, ENDPOINTS, HYPERIONS, SYM_RAW, TOKEN_CONTRACT } from "../config";
 import type { ChunkedCiphertext, Ciphertext, Hex, TransferCiphertext } from "./crypto/types";
 import { fromAsset, toAsset } from "./format";
 import { decompressHex, ptHex } from "./crypto/babyjub";
@@ -260,8 +260,19 @@ interface HyperionAction {
 
 /** Every action that touched the pool, newest first (deduplicated by tx+seq). */
 export async function poolHistory(limit = 200): Promise<PoolAction[]> {
-  const url = `${HYPERION}/v2/history/get_actions?account=${CONTRACT}&limit=${limit}&sort=desc`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  // Hyperion failover: first endpoint that answers wins
+  let res: Response | null = null;
+  let lastErr: unknown = null;
+  for (const h of HYPERIONS) {
+    try {
+      const r = await fetch(`${h}/v2/history/get_actions?account=${CONTRACT}&limit=${limit}&sort=desc`, { signal: AbortSignal.timeout(12000) });
+      if (r.ok) { res = r; break; }
+      lastErr = new Error(`${h}: HTTP ${r.status}`);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (!res) throw lastErr instanceof Error ? lastErr : new Error("no Hyperion endpoint answered");
   if (!res.ok) throw new Error(`history: HTTP ${res.status}`);
   const d = (await res.json()) as { actions: HyperionAction[] };
   const seen = new Set<string>();
