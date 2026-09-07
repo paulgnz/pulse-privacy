@@ -600,3 +600,30 @@ vk and dapp carry over unchanged.
 - 5,000 XPR sits in the testnet escrow from a transfer made while the old code was deployed
   (no confidential claim exists for it); harmless on testnet, and the reason `deposit` must
   never be a plain transfer in production (the notify handler asserts).
+
+---
+
+## 12. Mainnet readiness (what stands between the testnet build and real XPR)
+
+The testnet build proves the mechanism. Three things make it unsafe for value today, in order of
+severity:
+
+1. **The ceremony is a rehearsal with one contributor (Paul's laptop).** Whoever holds that
+   contribution's randomness can forge proofs and drain the escrow. Before any mainnet deployment:
+   the published Hermez Powers-of-Tau (2^16 is enough; 46,874 constraints) plus a phase-2 with
+   ≥ 5 independent contributors (Metallicus, ≥ 3 block producers, one external), published
+   transcripts, verified with `snarkjs zkey verify`, and the resulting vk installed via `setvk`.
+2. **No external audit** of the circuit, the contract, or the client library. The statement is
+   small and standard (twisted ElGamal + range checks), which keeps the audit scope contained.
+3. **Register has no proof of knowledge** of the encryption secret (v0). Harmless to others, but a
+   Schnorr PoK should ship with the production contract.
+
+Operational items: the contract account on mainnet must be allowed to `setcode` (XPR mainnet
+gates contract deployment); RAM ≈ 280 KB for the contract plus ≈ 4 KB per config row and ≈ 700 B
+per registered account; `withdraw_granularity` set to whole XPR (10,000 units) or coarser;
+a real auditor key held in an HSM with the rotation procedure of §2.7; the wallet-side key
+derivation moved into WebAuth (§2.7) rather than the dapp's localStorage.
+
+A **mainnet demo with capped amounts** (e.g. `deposit_granularity` and a small max supply
+enforced by a config field) is possible before the audit if Metallicus wants it, but not before
+the ceremony: item 1 is the one that turns a demo into a theft.
