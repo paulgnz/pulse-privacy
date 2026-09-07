@@ -11,7 +11,7 @@ export const TOKEN_IDS: Record<string, bigint> = { XPR: 1n, XMD: 2n };
 
 export interface ShieldKeys { ask: bigint; pk: Pt; nk: bigint }
 export interface Note { pk: Pt; v: bigint; token: bigint; r: bigint; cm: bigint }
-export interface OwnedNote extends Note { index: number }
+export interface OwnedNote extends Note { index: number; kind?: "deposit" | "note" }
 
 const randBig = (bytes: number) => {
   const b = new Uint8Array(bytes);
@@ -101,6 +101,18 @@ export function tryDecryptReceiver(keys: ShieldKeys, epk: Pt, cr: bigint[], cm: 
   const n = { pk: keys.pk, v, token, r, cm: 0n };
   n.cm = commitment(n);
   return n.cm === cm ? n : null;
+}
+
+/** auditor side: receiver key and note from (epk, ca); the sender is named by the signed action */
+export function decryptAuditor(auditorAsk: bigint, epk: Pt, ca: bigint[], cm: bigint): (Note & { valid: boolean }) | null {
+  const [pky, packed, r] = decryptWith(ecdh(auditorAsk, epk), ca);
+  const [v, token, parity] = unpack(packed);
+  let pkx: bigint;
+  try { pkx = xFromY(pky, parity); } catch { return null; }
+  const n = { pk: [pkx, pky] as Pt, v, token, r, cm: 0n, valid: false };
+  n.cm = commitment(n);
+  n.valid = n.cm === cm;
+  return n;
 }
 
 export interface JoinSplitInput {

@@ -11,11 +11,14 @@ import * as sh from "../lib/shield/chain";
 import type { Prefetched, ShieldConfig } from "../lib/shield/chain";
 import { unlockShield } from "../lib/unlock";
 import type { Token } from "../lib/token";
+import { ShieldActivity, ShieldAuditor, ShieldSettings } from "./ShieldPages";
 import { Amount } from "./Amount";
 import { AmountInput, Field, Line, Note, Progress, TokenIcon } from "./ui";
 
 const SAVED = (actor: string) => `pulse-privacy/shield/${actor}`;
 const BACKED = (actor: string) => `pulse-privacy/shield/${actor}/backedup`;
+const SHIELD_TABS = [["statement", "Statement"], ["activity", "Activity"], ["auditor", "Auditor"], ["settings", "Settings"]] as const;
+type ShieldTab = (typeof SHIELD_TABS)[number][0];
 const REVEAL = "pulse-privacy/shield/reveal";
 
 type Form = "send" | "deposit" | "withdraw" | null;
@@ -47,6 +50,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const [unfinished, setUnfinished] = useState<{ id: number; amount: bigint; sym: string; r: string }[]>([]);
   const [firstAsk, setFirstAsk] = useState<bigint | null>(null);
   const [savedSecret, setSavedSecret] = useState<string | null>(null);
+  const [tab, setTab] = useState<ShieldTab>(() => { const t = new URLSearchParams(location.search).get("tab"); return SHIELD_TABS.some(([k]) => k === t) ? (t as ShieldTab) : "statement"; });
   const [secretCopied, setSecretCopied] = useState(false);
 
   const shieldTokens = useMemo(() => (cfg?.tokens ?? []).map((t) => t.token).sort((a, b) => (a.code === "XPR" ? -1 : b.code === "XPR" ? 1 : a.code.localeCompare(b.code))), [cfg]);
@@ -254,7 +258,24 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   };
   const parsedAmount = (s: string): bigint | null => { try { return s ? parseUnits(s, token) : null; } catch { return null; } };
 
+  const nav = (
+    <nav className="nav" aria-label="Sections">
+      {SHIELD_TABS.map(([k, label]) => (
+        <a key={k} href={`?tab=${k}`} onClick={(e) => { e.preventDefault(); setTab(k); }} aria-current={k === tab ? "page" : undefined}>{label}</a>
+      ))}
+    </nav>
+  );
+  const forget = () => {
+    try { localStorage.removeItem(SAVED(actor)); localStorage.removeItem(BACKED(actor)); } catch { /* ignore */ }
+    setKeys(null); setNotes(null); setSpent([]); setSavedSecret(null); setSecretCopied(false); setFirstAsk(null); setTab("statement");
+  };
+  if (tab === "settings") return <>{nav}<section className="statement" aria-label="Shielded settings"><ShieldSettings session={session} keys={keys} registered={registered} savedSecret={savedSecret} onForget={forget} onCopiedSecret={() => { setSecretCopied(true); try { localStorage.setItem(BACKED(actor), "1"); } catch { /* ignore */ } }} /></section></>;
+  if (tab === "activity") return <>{nav}<section className="statement" aria-label="Shielded activity"><ShieldActivity cfg={cfg} notes={notes} spent={spent} token={token} revealed={revealed} onReveal={toggleReveal} /></section></>;
+  if (tab === "auditor") return <>{nav}<section className="statement" aria-label="Shielded auditor"><ShieldAuditor cfg={cfg} token={token} /></section></>;
+
   return (
+    <>
+    {nav}
     <section className="statement" aria-label="Shielded statement">
       {intro}
       {notice ? (
@@ -345,6 +366,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
         </Line>
       ))}
     </section>
+    </>
   );
 };
 

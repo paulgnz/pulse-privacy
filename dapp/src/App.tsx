@@ -11,6 +11,7 @@ import { selectBackend } from "./lib/crypto";
 import type { EncryptionKeypair, Hex } from "./lib/crypto/types";
 import { createKeypair, forgetKeypair, importSecret, loadKeypair } from "./lib/keys";
 import { About } from "./components/About";
+import { ShieldAbout } from "./components/ShieldPages";
 import { Shielded } from "./components/Shielded";
 import { Note } from "./components/ui";
 import { Activity } from "./components/Activity";
@@ -408,11 +409,12 @@ export default function App() {
     </header>
   );
 
+  const footContract = route === "shielded" || (APP === "shield" && route === "about") ? SHIELD.contract : CONTRACT;
   const foot = (
     <div className="foot">
       <span>
         {backend.isMock ? "Simulation. " : ""}
-        Running on {NETWORK_LABEL}. Contract <a href={`${EXPLORER}/account/${route === "shielded" ? SHIELD.contract : CONTRACT}`}>{route === "shielded" ? SHIELD.contract : CONTRACT}</a>. <a href={OTHER_NETWORK.url}>Switch to {OTHER_NETWORK.label.toLowerCase()}</a>.
+        Running on {NETWORK_LABEL}. Contract <a href={`${EXPLORER}/account/${footContract}`}>{footContract}</a>. <a href={OTHER_NETWORK.url}>Switch to {OTHER_NETWORK.label.toLowerCase()}</a>.
       </span>
       <a className="credit" href="https://protonnz.com" target="_blank" rel="noreferrer">Made by protonnz</a>
     </div>
@@ -422,7 +424,7 @@ export default function App() {
     return (
       <div className="page">
         {header}
-        <About signedIn={!!session} onConnect={session ? undefined : doLogin} />
+        {APP === "shield" ? <ShieldAbout signedIn={!!session} onConnect={session ? undefined : doLogin} /> : <About signedIn={!!session} onConnect={session ? undefined : doLogin} />}
         {foot}
       </div>
     );

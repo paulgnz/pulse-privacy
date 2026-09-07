@@ -2,12 +2,12 @@
 // proving, and the actions the wallet signs. Every chain write is a wallet transaction of the
 // sender; the proof hides the receiver, the amount and the notes spent (docs/06 §8).
 import * as snarkjs from "snarkjs";
-import { ENDPOINTS, EXPLORER, SHIELD } from "../../config";
+import { ENDPOINTS, EXPLORER, HYPERIONS, SHIELD } from "../../config";
 import type { Session } from "../chain";
 import type { Pt } from "../crypto/babyjub";
 import { ptHex, w32 } from "../crypto/babyjub";
 import type { Token } from "../token";
-import { Tree, buildJoinSplit, commitment, decompressPoint, hex32, nameToU64, newNote, nullifier, tryDecryptReceiver, unpack, words } from "./notes";
+import { Tree, buildJoinSplit, commitment, decompressPoint, decryptAuditor, hex32, nameToU64, newNote, nullifier, tryDecryptReceiver, unpack, words } from "./notes";
 import type { OwnedNote, ShieldKeys } from "./notes";
 
 const WASM = "/circuit/joinsplit-r4.wasm";
@@ -149,6 +149,7 @@ export async function chainTree(): Promise<{ tree: Tree; nextLeaf: number; rootS
 }
 
 export interface ScanResult { notes: OwnedNote[]; spent: OwnedNote[]; }
+export type NoteKind = "deposit" | "note";
 
 /** every note of ours, from the outputs, leaves and nullifiers tables; zero-value notes are skipped */
 export async function scan(keys: ShieldKeys): Promise<ScanResult> {
@@ -179,7 +180,7 @@ export async function scan(keys: ShieldKeys): Promise<ScanResult> {
     }
     } catch { skipped++; continue; } // one malformed row from a node must not blank the balance
     if (!note || note.v === 0n) continue;
-    const owned = { ...note, index };
+    const owned: OwnedNote = { ...note, index, kind: o.epk ? "note" : "deposit" };
     if (spentSet.has(hex32(nullifier(keys.nk, index)))) spent.push(owned);
     else notes.push(owned);
   }
@@ -297,3 +298,100 @@ export function finishDepositAction(s: Session, r: string) {
 }
 
 export const txLink = (txid: string) => `${EXPLORER}/transaction/${txid}`;
+
+// ---- the auditor's view ----
+
+export interface ShieldLedgerRow {
+  index: number;
+  kind: NoteKind;
+  to: string; // account name, or a key fingerprint if unregistered
+  from: string; // the signed action's owner, "deposit", or "unknown" without history
+  amount: bigint;
+  token: bigint;
+  spent: boolean;
+  valid: boolean;
+}
+
+/** map commitment → the account that signed the spend creating it, from action history where available */
+async function sendersByCommitment(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const h of HYPERIONS) {
+    try {
+      let skip = 0;
+      for (let page = 0; page < 20; page++) {
+        const r = await fetch(`${h}/v2/history/get_actions?account=${SHIELD.contract}&filter=${SHIELD.contract}:spend&limit=100&skip=${skip}&sort=asc`, { signal: AbortSignal.timeout(15000) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = (await r.json()) as { actions: { act: { data: { owner?: string; publics?: string } } }[] };
+        for (const a of j.actions) {
+          const p = (a.act.data.publics ?? "").toLowerCase();
+          if (a.act.data.owner && p.length >= 4 * 64) { out.set(p.slice(2 * 64, 3 * 64), a.act.data.owner); out.set(p.slice(3 * 64, 4 * 64), a.act.data.owner); }
+        }
+        if (j.actions.length < 100) break;
+        skip += 100;
+      }
+      return out;
+    } catch { /* next history node */ }
+  }
+  return out;
+}
+
+/** every note in the ledger, opened with the auditor's spending scalar (hex or decimal) */
+export async function auditorLedger(auditorSecret: string): Promise<ShieldLedgerRow[]> {
+  const ask = BigInt(auditorSecret.trim().startsWith("0x") ? auditorSecret.trim() : /^[0-9]+$/.test(auditorSecret.trim()) ? auditorSecret.trim() : "0x" + auditorSecret.trim());
+  const [outs, leaves, nfs, keys, senders] = await Promise.all([
+    rows<{ index: string | number; epk: string; cr: string; ca: string }>("outputs", "index"),
+    rows<{ index: string | number; cm: string }>("leaves", "index"),
+    rows<{ key: string | number; nf: string }>("nullifiers", "key"),
+    registeredKeys(),
+    sendersByCommitment(),
+  ]);
+  const cmOf = new Map(leaves.map((l) => [Number(l.index), BigInt("0x" + l.cm)]));
+  const byKey = new Map<string, string>();
+  for (const [name, pk] of keys) byKey.set(hex32(pk[0]) + hex32(pk[1]), name);
+  const nfSet = new Set(nfs.map((n) => n.nf));
+  const result: ShieldLedgerRow[] = [];
+  for (const o of outs) {
+    const index = Number(o.index);
+    const cm = cmOf.get(index);
+    if (cm === undefined) continue;
+    try {
+      if (!o.epk) {
+        const [packed, r] = words(o.cr);
+        const [v, token] = unpack(packed);
+        // a deposit is public: find the registered key whose note this is
+        let to = "unknown";
+        for (const [name, pk] of keys) { if (commitment({ pk, v, token, r }) === cm) { to = name; break; } }
+        result.push({ index, kind: "deposit", to, from: "deposit", amount: v, token, spent: false, valid: to !== "unknown" });
+      } else {
+        const epk = decompressPoint(words(o.epk)[0]);
+        const n = decryptAuditor(ask, epk, words(o.ca), cm);
+        if (!n) { result.push({ index, kind: "note", to: "unreadable", from: senders.get(hex32(cm)) ?? "unknown", amount: 0n, token: 0n, spent: false, valid: false }); continue; }
+        const to = byKey.get(hex32(n.pk[0]) + hex32(n.pk[1])) ?? `unregistered ${keyFingerprint(n.pk)}`;
+        result.push({ index, kind: "note", to, from: senders.get(hex32(cm)) ?? "unknown", amount: n.v, token: n.token, spent: false, valid: n.valid });
+      }
+    } catch { result.push({ index, kind: "note", to: "malformed", from: "unknown", amount: 0n, token: 0n, spent: false, valid: false }); }
+  }
+  // spent status needs each owner's nullifier key, which the auditor does not hold; nullifier count is shown instead
+  void nfSet;
+  return result;
+}
+
+export interface ShieldEdges { escrow: Record<string, bigint>; deposits: Record<string, bigint>; withdrawals: Record<string, bigint>; unfinished: Record<string, bigint>; nullifiers: number; leaves: number }
+
+/** escrow against the contract's own counters, per token */
+export async function shieldEdges(cfg: ShieldConfig): Promise<ShieldEdges> {
+  const escrow: Record<string, bigint> = {}, deposits: Record<string, bigint> = {}, withdrawals: Record<string, bigint> = {}, unfinished: Record<string, bigint> = {};
+  const t = await rows<{ sym: string | number; token_id: string | number; deposits: string | number; withdrawals: string | number }>("tokens", "sym");
+  for (const row of t) {
+    const entry = cfg.tokens.find((e) => e.id === BigInt(row.token_id));
+    if (!entry) continue;
+    deposits[entry.token.code] = BigInt(row.deposits);
+    withdrawals[entry.token.code] = BigInt(row.withdrawals);
+    const bal = await rpc<string[]>("get_currency_balance", { code: entry.contract, account: SHIELD.contract, symbol: entry.token.code }).catch(() => [] as string[]);
+    escrow[entry.token.code] = bal.length ? BigInt(Math.round(parseFloat(bal[0]) * 10 ** entry.token.precision)) : 0n;
+  }
+  const credits = await rows<{ sym: string | number; amount: string | number }>("credits", "id");
+  for (const c of credits) { const entry = cfg.tokens.find((e) => e.token.raw === String(c.sym)); const code = entry?.token.code ?? String(c.sym); unfinished[code] = (unfinished[code] ?? 0n) + BigInt(c.amount); }
+  const [nfs, lv] = await Promise.all([rows<{ key: string | number }>("nullifiers", "key"), rows<{ index: string | number }>("leaves", "index")]);
+  return { escrow, deposits, withdrawals, unfinished, nullifiers: nfs.length, leaves: lv.length };
+}
