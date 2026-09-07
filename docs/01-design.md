@@ -1,6 +1,6 @@
 # 01 — Design: confidential transfers with auditability
 
-**Date:** 2026-09-07. **Status:** Phase-0 draft, for review. Builds on [00-scoping.md](00-scoping.md);
+**Date:** 2026-09-07. **Status:** Phase-0 draft, for review. Builds on the internal scoping notes;
 numbers from [`bench/`](../bench/README.md). Where this document contradicts the scoping page,
 this document is right and the scoping page should be updated (§9 lists the corrections).
 
