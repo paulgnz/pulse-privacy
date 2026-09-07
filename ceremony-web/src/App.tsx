@@ -353,9 +353,13 @@ export function App() {
         <p>
           Every file and attestation above is public, and each one links to the file it was built from. The verification tool checks that every
           file carries all earlier contributions unchanged plus one new one, that each attestation was signed by the account named, and that the
-          final key is the last contribution plus the announced beacon block, recomputed byte for byte. The tool ships with the source code, which
-          is published before the final contribution so that anyone can run it against this transcript.
+          final key is the last contribution plus the announced beacon block, recomputed byte for byte. From a checkout of{" "}
+          <a href="https://github.com/paulgnz/pulse-privacy">github.com/paulgnz/pulse-privacy</a>:
         </p>
+        <pre className="publish">{`cd ceremony && npm install
+# download the files listed above into contributions/ (with their .json attestations) and final/
+node verify.mjs --partial     # while the ceremony is running
+node verify.mjs               # the release check, once both phases are final`}</pre>
         <p className="muted">
           Finalisation (the random beacon from an announced XPR block, and the verifying key) is done by the coordinator with the command-line tools and
           published here when complete.
