@@ -44,6 +44,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const pre = useRef<Prefetched | null>(null);
   const seq = useRef(0);
   const [peers, setPeers] = useState<string[]>([]);
+  const [unfinished, setUnfinished] = useState<{ id: number; amount: bigint; sym: string; r: string }[]>([]);
   const [firstAsk, setFirstAsk] = useState<bigint | null>(null);
   const [savedSecret, setSavedSecret] = useState<string | null>(null);
   const [secretCopied, setSecretCopied] = useState(false);
@@ -86,7 +87,8 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     setSpent(r.spent);
     const p: Record<string, bigint> = {};
     for (const t of shieldTokens) p[t.code] = await getPublicBalance(actor, t).catch(() => 0n);
-    if (seq.current === mine) setPub(p);
+    const u = await sh.unfinishedDeposits(actor).catch(() => []);
+    if (seq.current === mine) { setPub(p); setUnfinished(u); }
   }, [keys, actor, shieldTokens]);
 
   useEffect(() => { if (keys && registered) refresh().catch((e) => setNotice({ ok: false, text: (e as Error).message })); }, [keys, registered, refresh]);
@@ -267,6 +269,14 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
         </Note>
       ) : null}
 
+      {unfinished.length ? (
+        <Note level="warn">
+          <p>{unfinished.length === 1 ? "A deposit arrived but was never placed in your notes." : `${unfinished.length} deposits arrived but were never placed in your notes.`} Finishing takes one wallet signature and pays the small storage cost.</p>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="btn secondary" disabled={busy} onClick={() => run("Deposit placed in your notes.", async () => { const txid = await broadcast(session, unfinished.map((u) => sh.finishDepositAction(session, u.r))); return { txid }; })}>{busy ? "Working" : "Finish"}</button>
+          </div>
+        </Note>
+      ) : null}
       {savedSecret && !secretCopied ? (
         <Note level="warn">
           <p>This browser keeps a generated shielded key that has never been copied. Without it, a lost or cleared browser means these notes are gone.</p>
@@ -302,7 +312,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       ) : null}
       {form === "deposit" ? (
         <DepositForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} publicBalance={pub[token.code] ?? null} busy={busy} parsed={parsedAmount} onClose={() => setForm(null)}
-          onDeposit={(amount) => run(`Deposited ${fmtUnits(amount, token)} ${token.code} into a shielded note.`, async () => { const { action } = sh.depositAction(session, cfg, token, keys.pk, amount); const txid = await broadcast(session, [action]); return { txid }; })} />
+          onDeposit={(amount) => run(`Deposited ${fmtUnits(amount, token)} ${token.code} into a shielded note.`, async () => { const { actions } = sh.depositActions(session, cfg, token, keys.pk, amount); const txid = await broadcast(session, actions); return { txid }; })} />
       ) : null}
       {form === "withdraw" ? (
         <WithdrawForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} spendable={balance(token.code)} busy={busy} stage={stage} parsed={parsedAmount} onClose={() => setForm(null)} actor={actor}

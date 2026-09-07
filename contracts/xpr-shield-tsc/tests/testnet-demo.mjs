@@ -146,7 +146,15 @@ if (cmd === "reset") {
   const [who, amt] = args;
   const note = N.newNote(K[who].pk, units(amt), TOKEN_ID);
   const out = action(TOKEN_CONTRACT, "transfer", { from: ACCOUNTS[who], to: CONTRACT, quantity: asset(note.v), memo: `shield:${hex(note.r)}` }, `${ACCOUNTS[who]}@active`);
-  console.log(`deposit: tx ${txId(out)} cpu ${cpuOf(out)} µs\n${explorer(txId(out))}`);
+  console.log(`deposit arrived: tx ${txId(out)} cpu ${cpuOf(out)} µs`);
+  const out2 = action(CONTRACT, "deposit", { owner: ACCOUNTS[who], r: hex(note.r) }, `${ACCOUNTS[who]}@active`);
+  console.log(`deposit placed: tx ${txId(out2)} cpu ${cpuOf(out2)} µs\n${explorer(txId(out2))}`);
+} else if (cmd === "finish") {
+  // place any arrived deposits of `who` that were never finished
+  const who = args[0];
+  const credits = (await rows("credits", "id")).filter((c) => c.owner === ACCOUNTS[who]);
+  if (!credits.length) console.log("no unfinished deposits");
+  for (const c of credits) { const out = action(CONTRACT, "deposit", { owner: ACCOUNTS[who], r: c.r }, `${ACCOUNTS[who]}@active`); console.log(`placed ${c.amount} units: tx ${txId(out)}`); }
 } else if (cmd === "scan") {
   const notes = await scan(args[0]);
   for (const n of notes) console.log(`  leaf ${n.index}: ${n.token === N.TOKENS.XPR ? (Number(n.v) / 1e4).toFixed(4) + " XPR" : (Number(n.v) / 1e6).toFixed(6) + " XMD"}`);
@@ -187,6 +195,6 @@ if (cmd === "reset") {
     console.log(`  leaf ${index}: → ${name(n.pk)} ${n.v} of token ${n.token}${n.valid ? "" : "  (DOES NOT MATCH THE COMMITMENT)"}  (sender: named in the signed action)`);
   }
 } else {
-  console.log("commands: keys | setup | reset | deposit <who> <amt> | scan <who> | send <from> <to> <amt> | withdraw <who> <amt> | audit");
+  console.log("commands: keys | setup | reset | deposit <who> <amt> | finish <who> | scan <who> | send <from> <to> <amt> | withdraw <who> <amt> | audit");
 }
 process.exit(0); // snarkjs leaves worker threads alive

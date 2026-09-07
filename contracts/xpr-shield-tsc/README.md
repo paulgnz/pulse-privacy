@@ -26,14 +26,16 @@ launch as its own mainnet account, not merged into `xprconf` (docs/06 §8.4).
 ## Actions and tables
 
 Actions: `init(auditor_pubkey, vk)`, `addtoken(sym, contract, token_id, max_pool, max_deposit)`,
-`setvk`, `setauditor`, `pause`, `reset` (testnet only), `viewkey` (never broadcast; the wallet
-signs it to derive the key), `register(owner, pubkey)`, and `spend(owner, proof, publics, amount, token_id, root_seq)`,
+`setvk`, `setauditor`, `pause`, `restore` (paused only, committee), `reset` (testnet builds only,
+`TESTNET` flag), `viewkey` (never broadcast; the wallet signs it to derive the key),
+`register(owner, pubkey)`, `deposit(owner, r)` (places an arrived deposit; the owner pays its rows),
+and `spend(owner, proof, publics, amount, token_id, root_seq)`,
 which is both a payment and a withdrawal: `owner` signs and pays RAM, the proof is bound to
 `owner` and to the key registered for `owner`, and a withdrawal pays `owner` only. The action
 carries 16 public words (nullifiers, commitments, compressed ephemeral keys, ciphertexts) plus
 three native fields, 785 bytes in all; the contract decompresses the keys, looks the root up by
 sequence and supplies the owner's key, the owner's name and the auditor key to the verifier.
-Deposits are token transfers with memo `shield:<r>`.
+A deposit is a token transfer with memo `shield:<r>` followed by `deposit(owner, r)`, normally in one transaction.
 
 Tables: `config`, `tokens`, `keys`, `leaves` (index → commitment), `tree` (frontier and root),
 `roots` (the last 128 roots), `nullifiers`, `outputs` (what a receiver needs to find and open a
@@ -76,8 +78,9 @@ Proof generation: about 1.1 s in Node. Circuit (revision 3): 28,477 constraints,
 ## Known limits of this build
 
 - Rehearsal proving key (one contributor). A real phase-2 ceremony precedes any mainnet use.
-- The sender pays RAM for leaves, outputs and nullifiers (about 1 KB per transfer); deposits
-  are billed to the contract.
+- The sender pays RAM for leaves, outputs and nullifiers (about 1 KB per transfer) and the
+  depositor for a deposit's rows; an unfinished deposit leaves a small credit row on the
+  contract until it is finished.
 - Nullifiers and roots are keyed by their low 64 bits; a collision between two different
   values is refused rather than silently merged (probability about 2⁻⁶⁴ per pair).
 - No emergency `restore`; add before mainnet, as `xprconf` has.

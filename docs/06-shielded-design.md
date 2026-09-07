@@ -180,9 +180,11 @@ step, not now.
 
 | action | auth | what |
 |---|---|---|
-| `register(account, pk)` | account | as today |
+| `register(account, pk)` | account | as today; identity and low-order keys refused |
+| `deposit(owner, r)` | owner | places an arrived deposit as a note; owner pays the rows |
+| `restore(to, quantity, memo)` | contract, paused only | committee recovery, paid from escrow |
 | `transfer(proof, publics)` | none checked; submitted by `xprshield@relay` or anyone | verify proof; `root` must be in `roots`; each non-zero `nf` must be new, then stored; append `cm_1`, `cm_2` as a pair; update root; if `v_pub > 0` pay `to` and count the withdrawal; emit nothing else |
-| on `transfer` notification | token contract | memo `shield:rho:r`; caps; compute `cm`; append |
+| on `transfer` notification | token contract | memo `shield:r`; caps and minimum; records a credit for the owner's `deposit` |
 | `setvk`, `setauditor`, `pause`, `setcaps`, `setpool`, `restore` | contract | as today |
 
 The relay: a permission `relay` on the contract account whose private key is published in the
@@ -354,10 +356,17 @@ both contracts; the app bundles the shielded registration with the first shielde
 the extra account is invisible. Cross-references: `xprconf` and `xprshield` share the design
 of registration, the key derivation, the auditor key and the ceremony's phase 1.
 
-Before mainnet: the testnet-only `reset` action is removed and a paused-only `restore` added
-to match `xprconf`; the account is created and owned by the committee
-(`admin.proton@committee`) with deployment permitted, about 800 KB of RAM, both tokens and
-conservative caps.
+Done before mainnet (2026-09-08): a paused-only committee `restore` that pays from escrow
+with a memo (notes cannot be cancelled, so the committee must be satisfied the key is gone,
+as with `xprconf`); `reset` compiled in only when the `TESTNET` flag is true; and the
+owner-paid deposit: the token transfer's notification only records a small credit row, and
+the owner's own `deposit(owner, r)` action, normally the second action of the same
+transaction, builds the note and pays for its rows. An unfinished deposit can be finished
+any time; the app offers it. Still to do at deployment: the account created and owned by the
+committee (`admin.proton@committee`) with deployment permitted, about 800 KB of RAM, a
+resource plan for the contract account (a code upload needs more NET than the free quota;
+plans are per account and bought with `resources::buyplan`), both tokens with conservative
+caps and minimum deposits.
 
 ### 8.5 Whether `xprconf` is eventually deprecated
 

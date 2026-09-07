@@ -64,8 +64,9 @@ assert.equal(treeRow().root, hex(local.root), "empty root matches");
 lap("init + register; empty root matches the library");
 
 // --- deposits ---
-const dep = async (note) => {
-  await token.actions.transfer(["alice", "xprshield", `${(Number(note.v) / 1e4).toFixed(4)} XPR`, `shield:${hex(note.r)}`]).send("alice@active");
+const dep = async (note, who = "alice") => {
+  await token.actions.transfer([who, "xprshield", `${(Number(note.v) / 1e4).toFixed(4)} XPR`, `shield:${hex(note.r)}`]).send(`${who}@active`);
+  await sh.actions.deposit([who, hex(note.r)]).send(`${who}@active`);
   const index = local.append(note.cm); local.append(0n);
   return index;
 };
@@ -79,7 +80,18 @@ await expectToThrow(token.actions.transfer(["alice", "xprshield", "1.0000 XPR", 
 await expectToThrow(token.actions.transfer(["carol", "xprshield", "1.0000 XPR", `shield:${hex(2n)}`]).send("carol@active"), "eosio_assert: depositor has not registered a key");
 await expectToThrow(token.actions.transfer(["alice", "xprshield", "0.5000 XPR", `shield:${hex(3n)}`]).send("alice@active"), "eosio_assert: deposit below the minimum");
 await expectToThrow(token.actions.transfer(["alice", "xprshield", "1.0000 XPR", "not a deposit"]).send("alice@active"), "eosio_assert: memo must be shield:<r>");
-lap("two deposits: commitments and root match the library; bad memos refused");
+// an arrived deposit waits as a credit until the owner's own action places it (owner pays the rows)
+const a4 = N.newNote(alice.pk, units(2), N.TOKENS.XPR);
+await token.actions.transfer(["alice", "xprshield", "2.0000 XPR", `shield:${hex(a4.r)}`]).send("alice@active");
+assert.equal(sh.tables.credits(scope).getTableRows().length, 1, "credit recorded");
+await expectToThrow(sh.actions.deposit(["bob", hex(a4.r)]).send("bob@active"), "eosio_assert: no arrived deposit with this r for this owner");
+await expectToThrow(sh.actions.deposit(["alice", hex(a4.r + 1n)]).send("alice@active"), "eosio_assert: no arrived deposit with this r for this owner");
+await sh.actions.deposit(["alice", hex(a4.r)]).send("alice@active");
+assert.equal(sh.tables.credits(scope).getTableRows().length, 0, "credit consumed");
+local.append(a4.cm); local.append(0n);
+assert.equal(treeRow().root, hex(local.root), "root after the late deposit matches");
+await expectToThrow(sh.actions.deposit(["alice", hex(a4.r)]).send("alice@active"), "eosio_assert: no arrived deposit with this r for this owner");
+lap("deposits: commitments and root match the library; the owner's action places them; bad memos refused");
 
 // --- alice → bob 1,234 XPR, signed by alice ---
 const seq = () => Number(treeRow().root_seq);
@@ -90,6 +102,7 @@ const prove = async (js, pub = {}) => {
 const spend = (who, p, over = {}) => sh.actions.spend([who, p.proof, p.publics, over.amount ?? p.amount, over.token ?? p.token, over.seq ?? p.seq]);
 const AMOUNT = units(1234);
 const js = N.buildJoinSplit({ keys: alice, tree: local, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: a1, index: i1 }, { note: a2, index: i2 }], outputs: [{ pk: bob.pk, v: AMOUNT }, { pk: alice.pk, v: a1.v + a2.v - AMOUNT }] });
+const bobLeaf = local.size; // the transfer's first output lands here
 const p1 = await prove(js);
 assert.deepEqual(p1.publicSignals.map(BigInt), N.publicSignals(js.expected, { root: local.root, sender: ALICE, A: auditor.pk }));
 assert.equal(p1.publics.length / 64, 16, "the action carries 16 words");
@@ -108,7 +121,7 @@ local.append(js.outNotes[0].cm); local.append(js.outNotes[1].cm);
 assert.equal(treeRow().root, hex(local.root), "root after the transfer matches");
 assert.equal(nullifiers().length, 2, "two nullifiers recorded");
 const outs = sh.tables.outputs(scope).getTableRows();
-const row4 = outs.find((o) => Number(o.index) === 4);
+const row4 = outs.find((o) => Number(o.index) === bobLeaf);
 assert.equal(row4.epk.length, 64, "ephemeral key stored compressed");
 assert.equal(row4.cr.length, 2 * 64, "receiver ciphertext is two words");
 assert.equal(row4.ca.length, 3 * 64, "auditor ciphertext is three words");
@@ -125,11 +138,11 @@ await expectToThrow(spend("alice", p1).send("alice@active"), "eosio_assert: note
 const tampered = p1.publics.slice(0, 2 * 64) + hex(12345n) + p1.publics.slice(3 * 64);
 await expectToThrow(sh.actions.spend(["alice", p1.proof, tampered, "0", 0, p1.seq]).send("alice@active"), "eosio_assert: invalid proof");
 // a proof built with bob's key but signed and named by alice: the contract inserts alice's registered key
-const jsKey = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: bobNote, index: 4 }], outputs: [{ pk: alice.pk, v: 1n }, { pk: bob.pk, v: AMOUNT - 1n }] });
+const jsKey = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: bobNote, index: bobLeaf }], outputs: [{ pk: alice.pk, v: 1n }, { pk: bob.pk, v: AMOUNT - 1n }] });
 const pKey = await prove(jsKey);
 await expectToThrow(spend("alice", pKey).send("alice@active"), "eosio_assert: invalid proof");
 // a proof for a different auditor key than the contract's
-const jsAud = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: N.keygen().pk, sender: BOB, inputs: [{ note: bobNote, index: 4 }], outputs: [{ pk: alice.pk, v: 1n }, { pk: bob.pk, v: AMOUNT - 1n }] });
+const jsAud = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: N.keygen().pk, sender: BOB, inputs: [{ note: bobNote, index: bobLeaf }], outputs: [{ pk: alice.pk, v: 1n }, { pk: bob.pk, v: AMOUNT - 1n }] });
 const pAud = await prove(jsAud);
 await expectToThrow(spend("bob", pAud).send("bob@active"), "eosio_assert: invalid proof");
 // unregistered sender
@@ -137,7 +150,7 @@ await expectToThrow(spend("carol", p1).send("carol@active"), "eosio_assert: owne
 lap("double spend, tampered publics, another's key, foreign auditor key and an unregistered sender refused");
 
 // --- a proof built before another deposit still verifies (root ring) ---
-const jsOld = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: BOB, inputs: [{ note: bobNote, index: 4 }], outputs: [{ pk: alice.pk, v: units(34) }, { pk: bob.pk, v: AMOUNT - units(34) }] });
+const jsOld = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: BOB, inputs: [{ note: bobNote, index: bobLeaf }], outputs: [{ pk: alice.pk, v: units(34) }, { pk: bob.pk, v: AMOUNT - units(34) }] });
 const pOld = await prove(jsOld);
 await dep(N.newNote(alice.pk, units(1), N.TOKENS.XPR));
 await spend("bob", pOld).send("bob@active");
@@ -157,13 +170,21 @@ await expectToThrow(spend("bob", pw, { amount: "5000000" }).send("bob@active"), 
 await spend("bob", pw).send("bob@active");
 assert.equal(balance("bob"), "1000.0000 XPR", "bob received the withdrawal");
 const tok = sh.tables.tokens(scope).getTableRows()[0];
-assert.equal(BigInt(tok.pool), units(5000) + units(700) + units(1) - units(1000));
+assert.equal(BigInt(tok.pool), units(5000) + units(700) + units(2) + units(1) - units(1000));
 lap(`bob withdrew 1,000 XPR to himself: public balance ${balance("bob")}; pool ${tok.pool}`);
 
 // --- pause ---
 await sh.actions.pause([true]).send("xprshield@active");
 await expectToThrow(spend("bob", pw).send("bob@active"), "eosio_assert: paused");
 lap("paused: transfers refused");
+// committee restore while paused
+await expectToThrow(sh.actions.restore(["alice", "1.0000 XPR", "lost key"]).send("bob@active"), "missing required authority xprshield");
+await sh.actions.restore(["alice", "1.0000 XPR", "lost key"]).send("xprshield@active");
+assert.equal(balance("alice"), "4298.0000 XPR", "alice received the restore");
+await sh.actions.pause([false]).send("xprshield@active");
+await expectToThrow(sh.actions.restore(["alice", "1.0000 XPR", "x"]).send("xprshield@active"), "eosio_assert: restore is only possible while paused");
+await sh.actions.pause([true]).send("xprshield@active");
+lap("restore: paused only, contract authority, paid from escrow");
 
 // --- testnet reset wipes everything and allows a fresh init ---
 await expectToThrow(sh.actions.reset([]).send("bob@active"), "missing required authority xprshield");

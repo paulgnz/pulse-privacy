@@ -20,6 +20,8 @@ import { decompress, inPrimeSubgroup, onCurve } from "./curve";
 // cr, ca; plus `amount`, `token_id` and `root_seq` as native fields. The contract decompresses
 // epk, looks the root up by sequence, and supplies senderPk, the name and the auditor key.
 
+/** true for testnet builds only: enables `reset`. Set to false for any mainnet build. */
+const TESTNET: bool = true;
 const DEPTH: i32 = 20;
 const N_PUB: i32 = 27;
 const N_ACTION: i32 = 16;
@@ -132,6 +134,23 @@ class OutputRow extends Table {
   }
 }
 
+/**
+ * A deposit that has arrived but not yet been placed in the tree. The token transfer's
+ * notification cannot bill the depositor, so it only records this small row; the owner's own
+ * `deposit` action then builds the note and pays for its rows. An unfinished deposit can be
+ * finished any time later.
+ */
+@table("credits")
+class Credit extends Table {
+  constructor(public id: u64 = 0, public owner: Name = new Name(), public sym: u64 = 0, public amount: u64 = 0, public r: u8[] = []) {
+    super();
+  }
+  @primary
+  get primary(): u64 {
+    return this.id;
+  }
+}
+
 @table("nullifiers")
 class NullifierRow extends Table {
   constructor(public key: u64 = 0, public nf: u8[] = []) {
@@ -202,6 +221,7 @@ class XprShield extends Contract {
   roots: TableStore<RootRow> = new TableStore<RootRow>(this.receiver);
   nullifiers: TableStore<NullifierRow> = new TableStore<NullifierRow>(this.receiver);
   outputs: TableStore<OutputRow> = new TableStore<OutputRow>(this.receiver);
+  credits: TableStore<Credit> = new TableStore<Credit>(this.receiver);
 
   config(): Config {
     const c = this.configs.get(0);
@@ -291,8 +311,10 @@ class XprShield extends Contract {
   @action("reset")
   reset(): void {
     requireAuth(this.receiver);
+    check(TESTNET, "reset is not available in this build");
     const c = this.configs.get(0);
     check(c != null && c!.paused, "pause first");
+    let cr = this.credits.first(); while (cr != null) { const n = this.credits.next(cr); this.credits.remove(cr); cr = n; }
     let l = this.leaves.first(); while (l != null) { const n = this.leaves.next(l); this.leaves.remove(l); l = n; }
     let o = this.outputs.first(); while (o != null) { const n = this.outputs.next(o); this.outputs.remove(o); o = n; }
     let f = this.nullifiers.first(); while (f != null) { const n = this.nullifiers.next(f); this.nullifiers.remove(f); f = n; }
@@ -301,6 +323,29 @@ class XprShield extends Contract {
     let t = this.tokens.first(); while (t != null) { const n = this.tokens.next(t); this.tokens.remove(t); t = n; }
     const tr = this.trees.get(0); if (tr != null) this.trees.remove(tr);
     this.configs.remove(c!);
+  }
+
+  /**
+   * Committee recovery for a lost key: while paused, pay `quantity` from escrow to `to`. The
+   * notes themselves cannot be cancelled (their nullifiers are unknown without the key), so the
+   * committee must be satisfied the key is gone, as with `xprconf`'s restore. The memo puts the
+   * reason on chain.
+   */
+  @action("restore")
+  restore(to: Name, quantity: Asset, memo: string): void {
+    requireAuth(this.receiver);
+    const c = this.config();
+    check(c.paused, "restore is only possible while paused");
+    check(quantity.amount > 0, "amount must be positive");
+    const tok = this.tokens.get(quantity.symbol.raw());
+    check(tok != null, "token not accepted by this contract");
+    const t = tok!;
+    const v = <u64>quantity.amount;
+    check(t.pool >= v, "restore exceeds the escrow counter");
+    t.pool -= v;
+    t.withdrawals += v;
+    this.tokens.update(t, this.receiver);
+    sendTransferTokens(this.receiver, to, [new ExtendedAsset(quantity, t.token_contract)], "restore: " + memo);
   }
 
   @action("pause")
@@ -405,19 +450,45 @@ class XprShield extends Contract {
     t.pool += v;
     t.deposits += v;
     this.tokens.update(t, this.receiver);
+    // the note is built by the owner's `deposit` action, which pays for its rows
+    this.credits.store(new Credit(this.credits.availablePrimaryKey, from, quantity.symbol.raw(), v, r), this.receiver);
+  }
+
+  /**
+   * Place an arrived deposit in the tree as a note to the owner's registered key. Usually the
+   * second action of the deposit transaction; can be sent later for an unfinished deposit.
+   */
+  @action("deposit")
+  deposit(owner: Name, r: u8[]): void {
+    requireAuth(owner);
+    check(!this.config().paused, "paused");
+    check(r.length == 32 && isCanonicalBE(r, 0), "r must be a field element");
+    let cr = this.credits.first();
+    while (cr != null) {
+      if (cr.owner == owner && bytesEq(cr.r, r)) break;
+      cr = this.credits.next(cr);
+    }
+    check(cr != null, "no arrived deposit with this r for this owner");
+    const credit = cr!;
+    const tok = this.tokens.get(credit.sym);
+    check(tok != null, "token not accepted by this contract");
+    const key = this.keys.get(owner.N);
+    check(key != null, "owner has not registered a key");
+    const v = credit.amount;
+    this.credits.remove(credit);
 
     const pk = key!.pubkey;
     const inp = new StaticArray<Limbs>(5);
     unchecked((inp[0] = fromBytesBE(pk, 0)));
     unchecked((inp[1] = fromBytesBE(pk, 32)));
     unchecked((inp[2] = fromU64(v)));
-    unchecked((inp[3] = fromU64(t.token_id)));
+    unchecked((inp[3] = fromU64(tok!.token_id)));
     unchecked((inp[4] = fromBytesBE(r, 0)));
     const cm = poseidon(inp);
     const cmBytes = toBytesBE(cm);
-    const index = this.insertPair(cm, null, cmBytes, [], this.receiver);
+    const index = this.insertPair(cm, null, cmBytes, [], owner);
     // the plaintext note as a receiver would read it: (v + token·2^64, r)
-    this.outputs.store(new OutputRow(index, [], packedWord(v, t.token_id).concat(r), []), this.receiver);
+    this.outputs.store(new OutputRow(index, [], packedWord(v, tok!.token_id).concat(r), []), owner);
     print("shield leaf " + index.toString() + " cm " + hex(cmBytes));
   }
 

@@ -268,16 +268,32 @@ export function registerAction(s: Session, pk: Pt) {
   return { account: SHIELD.contract, name: "register", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { owner: s.auth.actor, pubkey: ptHex(pk) } };
 }
 
-/** a deposit is a token transfer whose memo carries the note's random values */
-export function depositAction(s: Session, cfg: ShieldConfig, token: Token, pk: Pt, amount: bigint) {
+/**
+ * A deposit is two actions in one wallet transaction: the token transfer whose memo carries the
+ * note's random value, and the owner's `deposit`, which places the note and pays for its rows.
+ */
+export function depositActions(s: Session, cfg: ShieldConfig, token: Token, pk: Pt, amount: bigint) {
   const entry = cfg.tokens.find((t) => t.token.code === token.code);
   if (!entry) throw new Error(`${token.code} is not enabled in the shielded contract.`);
   const note = newNote(pk, amount, entry.id);
   const quantity = `${(Number(amount) / 10 ** token.precision).toFixed(token.precision)} ${token.code}`;
+  const auth = [{ actor: s.auth.actor, permission: s.auth.permission }];
   return {
     note,
-    action: { account: entry.contract, name: "transfer", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { from: s.auth.actor, to: SHIELD.contract, quantity, memo: `shield:${hex32(note.r)}` } },
+    actions: [
+      { account: entry.contract, name: "transfer", authorization: auth, data: { from: s.auth.actor, to: SHIELD.contract, quantity, memo: `shield:${hex32(note.r)}` } },
+      { account: SHIELD.contract, name: "deposit", authorization: auth, data: { owner: s.auth.actor, r: hex32(note.r) } },
+    ],
   };
+}
+
+/** deposits that arrived but were never placed (the second action did not run) */
+export async function unfinishedDeposits(actor: string): Promise<{ id: number; amount: bigint; sym: string; r: string }[]> {
+  const all = await rows<{ id: string | number; owner: string; sym: string | number; amount: string | number; r: string }>("credits", "id");
+  return all.filter((c) => c.owner === actor).map((c) => ({ id: Number(c.id), amount: BigInt(c.amount), sym: String(c.sym), r: c.r }));
+}
+export function finishDepositAction(s: Session, r: string) {
+  return { account: SHIELD.contract, name: "deposit", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { owner: s.auth.actor, r } };
 }
 
 export const txLink = (txid: string) => `${EXPLORER}/transaction/${txid}`;
