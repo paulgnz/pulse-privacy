@@ -332,7 +332,7 @@ export function App() {
                   <td>{c.phase}</td>
                   <td>{c.actor}</td>
                   <td>{when(c.timestamp)}</td>
-                  <td><a href={c.output.url}>{c.output.file}</a> <span className="mono">{short(c.output.sha256, 16)}</span></td>
+                  <td><a href={`/files/${c.output.file}`}>{c.output.file}</a> <span className="mono">{short(c.output.sha256, 16)}</span></td>
                   <td className="mono">{short(c.signerKey, 18)}</td>
                 </tr>
               ))}

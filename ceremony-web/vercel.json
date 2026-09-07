@@ -7,7 +7,11 @@
   },
   "rewrites": [
     {
-      "source": "/((?!api/).*)",
+      "source": "/files/(.*)",
+      "destination": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/$1"
+    },
+    {
+      "source": "/((?!api/|files/).*)",
       "destination": "/index.html"
     }
   ],
