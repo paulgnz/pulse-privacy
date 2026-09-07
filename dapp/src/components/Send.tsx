@@ -11,6 +11,8 @@ export const Send = ({
   tokens,
   onSelectToken,
   onDone,
+  publicBalance,
+  onDepositFirst,
 }: {
   st: ConfState;
   onSend: (to: string, amount: bigint, onProgress: (f: number, s: string) => void) => Promise<string>;
