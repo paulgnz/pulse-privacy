@@ -65,6 +65,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const [unfinished, setUnfinished] = useState<{ id: number; amount: bigint; sym: string; r: string }[]>([]);
   const [firstAsk, setFirstAsk] = useState<bigint | null>(null);
   const [savedSecret, setSavedSecret] = useState<string | null>(null);
+  const [restoreSecret, setRestoreSecret] = useState("");
   const [tab, setTab] = useState<ShieldTab>(() => { const t = new URLSearchParams(location.search).get("tab"); return SHIELD_TABS.some(([k]) => k === t) ? (t as ShieldTab) : "statement"; });
   const [secretCopied, setSecretCopied] = useState(false);
 
@@ -153,6 +154,22 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     } finally { setBusy(false); }
   };
 
+  /** a passkey wallet on a new device: the secret copied from Settings on the old one */
+  const restore = () => {
+    if (!session || !registered) return;
+    setNotice(null);
+    try {
+      const t = restoreSecret.trim().replace(/^0x/i, "");
+      if (!/^[0-9a-f]{64}$/i.test(t)) throw new Error("A secret is 64 hexadecimal characters.");
+      const ask = BigInt("0x" + t);
+      const k = keygen(ask);
+      if (!eq(k.pk, registered)) throw new Error("That secret does not match the key registered for this account.");
+      try { localStorage.setItem(SAVED(actor), ask.toString()); localStorage.setItem(BACKED(actor), "1"); } catch { /* ignore */ }
+      setRestoreSecret("");
+      setKeys(k);
+    } catch (e) { setNotice({ ok: false, text: (e as Error).message }); }
+  };
+
   const register = async () => {
     if (!session || !keys) return;
     setBusy(true); setNotice(null);
@@ -213,13 +230,16 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
 
   // the setup steps for this wallet and account
   const twoSignatures = !!session && !deterministicSigner(session) && !registered;
-  const setupSteps = ["Connect wallet", registered ? "Unlock your key" : "Create your key", ...(twoSignatures ? ["Confirm your key"] : []), ...(registered ? [] : ["Register"])];
+  const setupSteps = ["Connect wallet", registered ? "Unlock your key" : "Create your key", ...(twoSignatures ? ["Confirm your key"] : []), ...(registered ? [] : ["Register"]), "Ready"];
+  const hasSaved = (() => { try { return !!localStorage.getItem(SAVED(actor)); } catch { return false; } })();
+  // a passkey wallet cannot re-derive: the key lives where it was made, and moves only as a copied secret
+  const needsSecret = !!session && !!registered && !deterministicSigner(session) && !hasSaved;
 
   if (!session) {
     return (
       <section className="statement">
         {intro}
-        <SetupProgress steps={["Connect wallet", "Create your key", "Register"]} current={0} />
+        <SetupProgress steps={["Connect wallet", "Create your key", "Register", "Ready"]} current={0} />
         <div className="row">
           <button className="btn private" onClick={onConnect} disabled={connectBusy}>{connectBusy ? "Connecting" : "Connect wallet"}</button>
         </div>
@@ -235,12 +255,35 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
         {intro}
         <SetupProgress steps={setupSteps} current={firstAsk !== null ? 2 : 1} />
         <h3>{registered ? `Unlock shielded payments for ${actor}` : `Set up shielded payments for ${actor}`}</h3>
-        <p className="muted">One signature derives your shielded key from your wallet. Nothing is sent to the chain by that signature, and the same wallet derives the same key on any device. The key reads your notes and builds proofs; moving anything still needs your wallet's signature.</p>
+        {needsSecret ? (
+          <p className="muted">This account is registered, and your wallet uses passkeys, which sign differently each time. So your shielded key was not derived from a signature: it is kept in the browser where you registered. On that device, Settings shows it as a secret. Paste the secret here to use this device too.</p>
+        ) : session && deterministicSigner(session) ? (
+          <p className="muted">One signature derives your shielded key from your wallet. Nothing is sent to the chain by that signature, and the same wallet derives the same key on any device. The key reads your notes and builds proofs; moving anything still needs your wallet's signature.</p>
+        ) : hasSaved ? (
+          <p className="muted">Your shielded key is saved in this browser. One wallet signature confirms it is you and unlocks it. The key reads your notes and builds proofs; moving anything still needs your wallet's signature.</p>
+        ) : (
+          <p className="muted">Two signatures from your wallet show whether it can derive a shielded key. Wallets with a standard key sign the same way every time, and derive the same key on any device. Passkey wallets sign differently each time, so this browser keeps a generated key instead and shows you its secret once. Nothing is sent to the chain by these signatures.</p>
+        )}
         {notice ? <Note level={notice.ok ? "ok" : "error"}>{notice.text}</Note> : null}
-        <div className="row" style={{ marginTop: 14 }}>
-          <button className="btn private" onClick={unlock} disabled={busy}>{busy ? "Waiting for your wallet" : firstAsk !== null ? "Sign again to confirm" : registered ? "Sign to unlock" : "Sign to create your key"}</button>
-        </div>
-        {firstAsk !== null ? <p className="small muted" style={{ marginTop: 10 }}>Once more: two matching signatures prove this wallet can re-derive the key on any device.</p> : null}
+        {needsSecret ? (
+          <>
+            <Field label="Secret from your other device" hint="64 hexadecimal characters, from Settings on the device where you registered.">
+              <input className="mono" value={restoreSecret} onChange={(e) => setRestoreSecret(e.target.value)} placeholder="0x…" autoComplete="off" spellCheck={false} />
+            </Field>
+            <div className="row" style={{ marginTop: 6 }}>
+              <button className="btn private" onClick={restore} disabled={busy || !restoreSecret.trim()}>Restore key</button>
+              <button className="btn secondary" onClick={unlock} disabled={busy}>{busy ? "Waiting for your wallet" : "Sign to unlock instead"}</button>
+            </div>
+            <p className="small muted" style={{ marginTop: 10 }}>Signing works only in the browser that holds the key. If the secret is lost on every device, the notes under it cannot be read; the registration cannot be replaced.</p>
+          </>
+        ) : (
+          <>
+            <div className="row" style={{ marginTop: 14 }}>
+              <button className="btn private" onClick={unlock} disabled={busy}>{busy ? "Waiting for your wallet" : firstAsk !== null ? "Sign again to confirm" : registered ? "Sign to unlock" : "Sign to create your key"}</button>
+            </div>
+            {firstAsk !== null ? <p className="small muted" style={{ marginTop: 10 }}>Once more: two matching signatures prove this wallet can re-derive the key on any device.</p> : null}
+          </>
+        )}
       </section>
     );
   }
@@ -248,7 +291,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     return (
       <section className="statement">
         {intro}
-        <SetupProgress steps={setupSteps} current={setupSteps.length - 1} />
+        <SetupProgress steps={setupSteps} current={setupSteps.length - 2} />
         <h3>Register your shielded key</h3>
         <p className="muted">Publishes the public half of your key under your account name, so people can pay you by name. One wallet signature; it is the only time your account and this key appear together.</p>
         {savedSecret ? (
