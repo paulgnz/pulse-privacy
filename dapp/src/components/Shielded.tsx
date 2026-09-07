@@ -134,7 +134,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const intro = (
     <>
       <h2>Shielded</h2>
-      <p className="lede" style={{ marginBottom: 26 }}>A shielded payment shows nobody's name on chain: not the sender, not the receiver, not the amount. Only the XPR Network auditor's key opens it. Deposits and withdrawals stay public. Testnet only, early access.</p>
+      <p className="lede" style={{ marginBottom: 26 }}>A shielded payment hides who was paid and how much. The chain shows only that you paid someone. Your wallet signs every payment, as always, and only the XPR Network auditor's key opens the details. Deposits and withdrawals stay public. Testnet only, early access.</p>
     </>
   );
 
@@ -156,7 +156,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       <section className="statement">
         {intro}
         <h3>Set up shielded payments for {actor}</h3>
-        <p className="muted">One signature derives your shielded spending key from your wallet. Nothing is sent to the chain by that signature, and the same wallet derives the same key on any device. The key stays in memory for this session: while this page is open, shielded payments go out without another wallet prompt, because a wallet signature would name you.</p>
+        <p className="muted">One signature derives your shielded key from your wallet. Nothing is sent to the chain by that signature, and the same wallet derives the same key on any device. The key reads your notes and builds proofs; moving anything still needs your wallet's signature.</p>
         {notice ? <Note level={notice.ok ? "ok" : "error"}>{notice.text}</Note> : null}
         <div className="row" style={{ marginTop: 14 }}>
           <button className="btn private" onClick={unlock} disabled={busy}>{busy ? "Waiting for your wallet" : registered ? "Sign to unlock" : "Sign to create your key"}</button>
@@ -220,7 +220,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
 
       {form === "send" ? (
         <SendForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} spendable={balance(token.code)} busy={busy} stage={stage} parsed={parsedAmount} onClose={() => setForm(null)}
-          onSend={(to, amount) => run(`Sent ${fmtUnits(amount, token)} ${token.code} to ${to}, with no names on chain.`, (p) => sh.send(keys, cfg, token, to, amount, p))} />
+          onSend={(to, amount) => run(`Sent ${fmtUnits(amount, token)} ${token.code} to ${to}. The chain shows that you paid, not whom or how much.`, async (p) => { const prep = await sh.prepareSend(session, keys, cfg, token, to, amount, p); const txid = await broadcast(session, [prep.action]); p(1, "Done"); return { txid }; })} />
       ) : null}
       {form === "deposit" ? (
         <DepositForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} publicBalance={pub[token.code] ?? null} busy={busy} parsed={parsedAmount} onClose={() => setForm(null)}
@@ -228,7 +228,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       ) : null}
       {form === "withdraw" ? (
         <WithdrawForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} spendable={balance(token.code)} busy={busy} stage={stage} parsed={parsedAmount} onClose={() => setForm(null)} actor={actor}
-          onWithdraw={(amount) => run(`Withdrew ${fmtUnits(amount, token)} ${token.code} to ${actor}.`, (p) => sh.withdraw(keys, cfg, token, actor, amount, p))} />
+          onWithdraw={(amount) => run(`Withdrew ${fmtUnits(amount, token)} ${token.code} to ${actor}.`, async (p) => { const prep = await sh.prepareWithdraw(session, keys, cfg, token, amount, p); const txid = await broadcast(session, [prep.action]); p(1, "Done"); return { txid }; })} />
       ) : null}
 
       <div className="group public">
@@ -246,7 +246,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       <div className="group private" style={{ marginTop: 36 }}>
         <h3>
           Your notes
-          <span className="sub">Each payment you received or kept as change is a sealed note. Nobody else can list these.</span>
+          <span className="sub">Each payment you received or kept as change is a sealed note. Nobody else can list these or read the amounts.</span>
         </h3>
         {spent.length ? <button className="textbtn quiet" onClick={() => setShowSpent((s) => !s)}>{showSpent ? "Hide spent" : `Show ${spent.length} spent`}</button> : null}
       </div>
@@ -275,7 +275,7 @@ const SendForm = ({ token, tokens, onSelectToken, spendable, busy, stage, parsed
   return (
     <div className="form" aria-label="Send shielded">
       <h3>Send</h3>
-      <p className="muted">The chain will record two sealed notes and two spent tags. Not your name, not theirs, not the amount. Your wallet is not asked to sign.</p>
+      <p className="muted">The chain will record that you spent notes and created two sealed ones. Not the receiver, not the amount. Your wallet signs it after the proof is built.</p>
       <Field label="To" hint="An XPR account name that has set up shielded payments.">
         <input value={to} onChange={(e) => setTo(e.target.value.trim().toLowerCase())} placeholder="account" autoComplete="off" />
       </Field>
@@ -330,7 +330,7 @@ const WithdrawForm = ({ token, tokens, onSelectToken, spendable, busy, stage, pa
   return (
     <div className="form" aria-label="Withdraw">
       <h3>Withdraw</h3>
-      <p className="muted">Pays public {token.code} to {actor} from your notes. The chain sees that someone withdrew this amount to your account; it does not see which notes. Your wallet is not asked to sign.</p>
+      <p className="muted">Pays public {token.code} to {actor} from your notes. The chain sees that you withdrew this amount to your own account; it does not see which notes. Your wallet signs it after the proof is built.</p>
       <Field label="Amount" hint={`${fmtUnits(spendable, token)} ${token.code} is in your shielded notes.`} error={problem ?? (over ? "More than your shielded balance." : undefined)}>
         <AmountInput value={amt} onChange={setAmt} token={token} tokens={tokens} onSelectToken={onSelectToken} />
       </Field>

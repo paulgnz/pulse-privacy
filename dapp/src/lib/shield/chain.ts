@@ -1,13 +1,7 @@
 // The shielded contract (xprshield) from the browser: table reads, note scanning, the tree,
-// proving, and submission through the relay permission. Deposits and registration go through
-// the wallet; a shielded send or withdrawal never opens the wallet.
+// proving, and the actions the wallet signs. Every chain write is a wallet transaction of the
+// sender; the proof hides the receiver, the amount and the notes spent (docs/06 §8).
 import * as snarkjs from "snarkjs";
-import { Buffer } from "buffer";
-import { Api, JsonRpc, JsSignatureProvider } from "@proton/js";
-
-// @proton/js signs with Node's Buffer; give the browser one
-const g = globalThis as unknown as { Buffer?: typeof Buffer };
-if (!g.Buffer) g.Buffer = Buffer;
 import { ENDPOINTS, EXPLORER, SHIELD } from "../../config";
 import type { Session } from "../chain";
 import type { Pt } from "../crypto/babyjub";
@@ -133,37 +127,25 @@ export function pick(notes: OwnedNote[], tokenId: bigint, amount: bigint): Owned
 const g1 = (p: (string | bigint)[]) => w32(BigInt(p[0])) + w32(BigInt(p[1]));
 const g2 = (p: (string | bigint)[][]) => w32(BigInt(p[0][1])) + w32(BigInt(p[0][0])) + w32(BigInt(p[1][1])) + w32(BigInt(p[1][0]));
 
-export interface Submitted { txid: string; outputs: { cm: bigint; v: bigint }[]; nf: bigint[] }
+export interface Prepared { action: Record<string, unknown>; outputs: { cm: bigint; v: bigint }[]; nf: bigint[] }
 
-/** prove and submit a join-split through the relay permission; no wallet involved */
-export async function proveAndSubmit(
-  built: ReturnType<typeof buildJoinSplit>,
-  onProgress?: (f: number, s: string) => void,
-): Promise<Submitted> {
+/** prove on this device and return the `transfer` action for the sender's wallet to sign */
+export async function prove(s: Session, built: ReturnType<typeof buildJoinSplit>, onProgress?: (f: number, s: string) => void): Promise<Prepared> {
   onProgress?.(0.1, "Building the proof on this device");
   const { proof, publicSignals } = (await snarkjs.groth16.fullProve(built.input, WASM, ZKEY)) as { proof: { pi_a: string[]; pi_b: string[][]; pi_c: string[] }; publicSignals: string[] };
-  onProgress?.(0.8, "Sending through the relay");
+  if (publicSignals.some((x, i) => BigInt(x) !== built.publicSignals[i])) throw new Error("The proof's public values do not match the payment; nothing was sent.");
   const proofHex = g1(proof.pi_a) + g2(proof.pi_b) + g1(proof.pi_c);
-  const publics = publicSignals.map((s: string) => w32(BigInt(s))).join("");
-  const api = new Api({ rpc: new JsonRpc(ENDPOINTS[0]), signatureProvider: new JsSignatureProvider([SHIELD.relayKey]) });
-  let txid = "";
-  try {
-    const r = (await api.transact(
-      { actions: [{ account: SHIELD.contract, name: "transfer", authorization: [{ actor: SHIELD.contract, permission: "relay" }], data: { proof: proofHex, publics } }] },
-      { blocksBehind: 3, expireSeconds: 120 },
-    )) as { transaction_id?: string; processed?: { id?: string } };
-    txid = r.transaction_id ?? r.processed?.id ?? "";
-  } catch (e) {
-    const raw = e instanceof Error ? e.message : String(e);
-    const m = raw.match(/assertion failure with message: ([^"\n]+)/i);
-    throw new Error(m ? m[1].trim() : raw);
-  }
-  onProgress?.(1, "Done");
-  return { txid, outputs: built.outNotes.map((n) => ({ cm: n.cm, v: n.v })), nf: built.nf };
+  const publics = built.actionPublics.map(w32).join("");
+  onProgress?.(0.85, "Waiting for your wallet");
+  return {
+    action: { account: SHIELD.contract, name: "transfer", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { sender: s.auth.actor, proof: proofHex, publics } },
+    outputs: built.outNotes.map((n) => ({ cm: n.cm, v: n.v })),
+    nf: built.nf,
+  };
 }
 
-/** shielded payment: `to` is an account name whose key is registered */
-export async function send(keys: ShieldKeys, cfg: ShieldConfig, token: Token, to: string, amount: bigint, onProgress?: (f: number, s: string) => void): Promise<Submitted> {
+/** shielded payment to a registered account; returns the action for the wallet */
+export async function prepareSend(s: Session, keys: ShieldKeys, cfg: ShieldConfig, token: Token, to: string, amount: bigint, onProgress?: (f: number, s: string) => void): Promise<Prepared> {
   const entry = cfg.tokens.find((t) => t.token.code === token.code);
   if (!entry) throw new Error(`${token.code} is not enabled in the shielded contract.`);
   onProgress?.(0.02, "Reading your notes");
@@ -172,22 +154,23 @@ export async function send(keys: ShieldKeys, cfg: ShieldConfig, token: Token, to
   const { notes } = await scan(keys);
   const inputs = pick(notes, entry.id, amount);
   const { tree } = await chainTree();
-  const change = inputs.reduce((s, n) => s + n.v, 0n) - amount;
-  const built = buildJoinSplit({ keys, inputs, outputs: [{ pk: toPk, v: amount }, { pk: keys.pk, v: change }], tree, auditorPk: cfg.auditorPk });
-  return proveAndSubmit(built, onProgress);
+  const change = inputs.reduce((sum, n) => sum + n.v, 0n) - amount;
+  const built = buildJoinSplit({ keys, inputs, outputs: [{ pk: toPk, v: amount }, { pk: keys.pk, v: change }], tree, auditorPk: cfg.auditorPk, sender: nameToU64(s.auth.actor) });
+  return prove(s, built, onProgress);
 }
 
-/** withdraw to the owner's own public account */
-export async function withdraw(keys: ShieldKeys, cfg: ShieldConfig, token: Token, actor: string, amount: bigint, onProgress?: (f: number, s: string) => void): Promise<Submitted> {
+/** withdrawal to the sender's own account; returns the action for the wallet */
+export async function prepareWithdraw(s: Session, keys: ShieldKeys, cfg: ShieldConfig, token: Token, amount: bigint, onProgress?: (f: number, s: string) => void): Promise<Prepared> {
   const entry = cfg.tokens.find((t) => t.token.code === token.code);
   if (!entry) throw new Error(`${token.code} is not enabled in the shielded contract.`);
   onProgress?.(0.02, "Reading your notes");
   const { notes } = await scan(keys);
   const inputs = pick(notes, entry.id, amount);
   const { tree } = await chainTree();
-  const change = inputs.reduce((s, n) => s + n.v, 0n) - amount;
-  const built = buildJoinSplit({ keys, inputs, outputs: [{ pk: keys.pk, v: 0n }, { pk: keys.pk, v: change }], tree, auditorPk: cfg.auditorPk, vPub: amount, tokenPub: entry.id, to: nameToU64(actor) });
-  return proveAndSubmit(built, onProgress);
+  const change = inputs.reduce((sum, n) => sum + n.v, 0n) - amount;
+  const me = nameToU64(s.auth.actor);
+  const built = buildJoinSplit({ keys, inputs, outputs: [{ pk: keys.pk, v: 0n }, { pk: keys.pk, v: change }], tree, auditorPk: cfg.auditorPk, sender: me, vPub: amount, tokenPub: entry.id, to: me });
+  return prove(s, built, onProgress);
 }
 
 // ---- wallet-signed actions ----

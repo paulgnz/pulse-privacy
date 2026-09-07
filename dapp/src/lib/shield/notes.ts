@@ -73,9 +73,14 @@ function encryptWith(shared: Pt, plain: bigint[]) { const k = padKey(shared); re
 function decryptWith(shared: Pt, c: bigint[]) { const k = padKey(shared); return c.map((x, m) => fmod(x - hash2(k, BigInt(m)))); }
 const ecdh = (scalar: bigint, point: Pt) => mul(point, scalar);
 
+const TWO64 = 1n << 64n;
+export const pack = (v: bigint, token: bigint) => v + token * TWO64;
+export const unpack = (w: bigint): [bigint, bigint] => [w % TWO64, w / TWO64];
+
 /** our note behind (epk, cr) with commitment cm, or null */
 export function tryDecryptReceiver(keys: ShieldKeys, epk: Pt, cr: bigint[], cm: bigint): Note | null {
-  const [v, token, rho, r] = decryptWith(ecdh(keys.ask, epk), cr);
+  const [packed, rho, r] = decryptWith(ecdh(keys.ask, epk), cr);
+  const [v, token] = unpack(packed);
   const n = { pk: keys.pk, v, token, rho, r, cm: 0n };
   n.cm = commitment(n);
   return n.cm === cm ? n : null;
@@ -87,6 +92,8 @@ export interface JoinSplitInput {
   outputs: { pk: Pt; v: bigint }[]; // exactly 2
   tree: Tree;
   auditorPk: Pt;
+  /** the signing account's name as u64; the proof is bound to it */
+  sender: bigint;
   vPub?: bigint;
   tokenPub?: bigint;
   to?: bigint;
@@ -95,9 +102,13 @@ export interface JoinSplitBuilt {
   input: Record<string, unknown>;
   outNotes: Note[];
   nf: bigint[];
+  /** the 28 words the action carries: nf cm epk cr ca root vPub tokenPub to */
+  actionPublics: bigint[];
+  /** the verifier's 33 words, for checking a proof locally */
+  publicSignals: bigint[];
 }
 
-export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, vPub = 0n, tokenPub = 0n, to = 0n }: JoinSplitInput): JoinSplitBuilt {
+export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender, vPub = 0n, tokenPub = 0n, to = 0n }: JoinSplitInput): JoinSplitBuilt {
   if (inputs.length < 1 || inputs.length > 2) throw new Error("1 or 2 inputs");
   if (outputs.length !== 2) throw new Error("exactly 2 outputs");
   const token = inputs[0].token;
@@ -126,11 +137,17 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, vPub = 
     vPub: S(vPub),
     tokenPub: S(tokenPub),
     to: S(to),
+    sender: S(sender),
     A: [S(auditorPk[0]), S(auditorPk[1])],
   };
-  // the ciphertexts the circuit will output, so the UI can show what it is about to publish
-  void encryptWith;
-  return { input, outNotes, nf: ins.map((i) => (i ? nullifier(keys.nk, i.index) : 0n)) };
+  const nf = ins.map((i) => (i ? nullifier(keys.nk, i.index) : 0n));
+  const epk = esk.map((e) => mul(G, e));
+  const cr = outNotes.map((n, j) => encryptWith(ecdh(esk[j], n.pk), [pack(n.v, n.token), n.rho, n.r]));
+  const ca = outNotes.map((n, j) => encryptWith(ecdh(esk[j], auditorPk), [n.pk[0], n.pk[1], pack(n.v, n.token), n.rho, n.r]));
+  const head = [...nf, ...outNotes.map((n) => n.cm), ...epk.flat(), ...cr.flat(), ...ca.flat()];
+  const actionPublics = [...head, tree.root, vPub, tokenPub, to];
+  const publicSignals = [...head, keys.pk[0], keys.pk[1], tree.root, vPub, tokenPub, to, sender, auditorPk[0], auditorPk[1]];
+  return { input, outNotes, nf, actionPublics, publicSignals };
 }
 
 /** account name → u64 (Antelope base-32 name encoding) */
