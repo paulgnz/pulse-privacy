@@ -410,9 +410,26 @@ export function withdrawAction(s: Session, token: Token, amount: bigint, newBala
   };
 }
 
+/** Chain and wallet errors, in the user's terms. */
+export function friendlyError(e: unknown): Error {
+  const raw = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
+  const m = raw.toLowerCase();
+  if (m.includes("insufficient ram")) return new Error("Your account needs a little more RAM (about 1 KB per token you register). Buy RAM at resources.xprnetwork.org, then try again.");
+  if (m.includes("executing for too long") || m.includes("tx_cpu_usage_exceeded") || m.includes("deadline exceeded")) return new Error("The network node was slow and gave up on the transaction. Nothing was sent. Try again.");
+  if (m.includes("closed") || m.includes("cancel") || m.includes("rejected")) return new Error("Signing was cancelled in the wallet.");
+  if (m.includes("unable to reach") || m.includes("failed to fetch") || m.includes("networkerror")) return new Error("Could not reach the network. Check your connection and try again.");
+  const assertion = raw.match(/assertion failure with message: ([^"\n]+)/i);
+  if (assertion) return new Error(assertion[1].trim());
+  return e instanceof Error ? e : new Error(raw);
+}
+
 export async function broadcast(s: Session, actions: unknown[]): Promise<string> {
-  const r = (await s.transact({ actions }, { broadcast: true })) as { processed?: { id?: string }; transaction_id?: string };
-  return r.transaction_id ?? r.processed?.id ?? "";
+  try {
+    const r = (await s.transact({ actions }, { broadcast: true })) as { processed?: { id?: string }; transaction_id?: string };
+    return r.transaction_id ?? r.processed?.id ?? "";
+  } catch (e) {
+    throw friendlyError(e);
+  }
 }
 
 export type { Ciphertext };
