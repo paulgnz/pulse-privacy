@@ -36,7 +36,12 @@ const asset = (u) => `${(Number(u) / 10 ** PREC).toFixed(PREC)} ${CODE}`;
 const hex = N.hex32;
 const ptHex = (p) => hex(p[0]) + hex(p[1]);
 const words = (h) => (h.match(/.{64}/g) ?? []).map((w) => BigInt("0x" + w));
-const sh = (c) => { console.log("$", c.length > 160 ? c.slice(0, 160) + "…" : c); return execSync(c, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); };
+const sh = (c) => {
+  console.log("$", c.length > 160 ? c.slice(0, 160) + "…" : c);
+  const out = execSync(c, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (/error|assert|failure/i.test(out) && !/"transaction_id"/.test(out)) throw new Error(out.replace(/\x1b\[[0-9;]*m/g, "").split("\n").filter((l) => /error|assert|failure|hint/i.test(l)).join(" | ").slice(0, 400));
+  return out;
+};
 const action = (contract, name, data, actor) => sh(`proton chain:set proton-test >/dev/null && proton action ${contract} ${name} '${JSON.stringify(data)}' ${actor}`);
 const post = async (path, body) => (await fetch(`${RPC}/v1/chain/${path}`, { method: "POST", body: JSON.stringify(body) })).json();
 const rows = async (table, extra = {}) => {
