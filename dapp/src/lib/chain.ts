@@ -174,6 +174,16 @@ const parseRow = (r: RawAccountRow): ConfAccountRow => ({
   nonce: String(r.nonce),
 });
 
+/** The account's encryption key from any configured token (register once, receive any token). */
+export async function findKeyAnywhere(actor: string): Promise<{ pubkey: Hex; token: Token } | null> {
+  const tokens = await listTokens().catch(() => [XPR]);
+  for (const t of tokens) {
+    const row = await getConfAccount(actor, t).catch(() => null);
+    if (row) return { pubkey: row.enc_pubkey, token: t };
+  }
+  return null;
+}
+
 export async function getConfAccount(actor: string, token: Token = XPR): Promise<ConfAccountRow | null> {
   const r = await rpc<{ rows: RawAccountRow[] }>("get_table_rows", {
     code: CONTRACT,

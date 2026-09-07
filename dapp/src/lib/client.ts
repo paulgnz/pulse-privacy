@@ -25,6 +25,8 @@ export interface ActivityItem {
   onChain: { public: boolean; ciphertext?: string; proof?: string; txid?: string; block?: number };
   /** shown before the indexer has it (optimistic, from the action we just sent) */
   confirming?: boolean;
+  /** which token this row belongs to (Activity shows all tokens together) */
+  token?: Token;
 }
 
 export interface ConfState {
@@ -196,7 +198,13 @@ export class ConfidentialClient {
     };
     const peers = all.filter((a) => a.owner !== this.actor).map((a) => ({ name: a.owner, pubkey: a.enc_pubkey }));
     const empty: ConfState = { token: t, registered: !!row, pubkey: row?.enc_pubkey, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], edgesSinceLastIncoming: 0, config: cfg, peers };
-    if (!row || !this.keypair) return empty;
+    if (!row) {
+      // Registered for another token? The contract creates this token's row on first deposit or receipt.
+      const elsewhere = await chain.findKeyAnywhere(this.actor);
+      if (elsewhere) return { ...empty, registered: true, pubkey: elsewhere.pubkey, historyLoaded: true };
+      return empty;
+    }
+    if (!this.keypair) return empty;
     const secret = this.keypair.secret;
     const balance = await this.backend.decryptAmount(row.avail, secret);
     const pending = row.pending_count > 0 ? await this.backend.decryptAmount(row.pending, secret) : 0n;
@@ -260,7 +268,7 @@ export class ConfidentialClient {
       pendingCount: row.pending_count,
       nonce: BigInt(row.nonce),
       balanceCiphertext: row.avail,
-      activity: activity.sort((a, b) => b.ts - a.ts),
+      activity: activity.sort((a, b) => b.ts - a.ts).map((a) => ({ ...a, token: t })),
       incoming,
       edgesSinceLastIncoming,
       historyLoaded,
@@ -387,8 +395,9 @@ export class ConfidentialClient {
 
     // real: fold pending (same transaction) and prove against the folded balance
     const { row, cfg, folded, oldBalance, actions } = await this.prepareSpend(kp, onProgress);
-    const peer = await chain.getConfAccount(to, this.token);
-    if (!peer) throw new Error(`${to} has not registered an encryption key for ${this.token.code}. They can only receive public ${this.token.code}.`);
+    const peerRow = await chain.getConfAccount(to, this.token);
+    const peer = peerRow ?? (await chain.findKeyAnywhere(to).then((k) => (k ? { enc_pubkey: k.pubkey } : null)));
+    if (!peer) throw new Error(`${to} has not set up Confidential XPR yet (no encryption key on chain for any token). They can only receive public ${this.token.code}.`);
     const out = await this.backend.proveTransfer(
       {
         sender: this.actor,

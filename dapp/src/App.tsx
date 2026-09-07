@@ -83,7 +83,14 @@ export default function App() {
 
   // Tokens come from the contract's config table (XPR first); the simulation lists XPR and XMD.
   const [tokens, setTokens] = useState<Token[]>(backend.isMock ? MOCK_TOKENS : [XPR]);
-  const [tokenCode, setTokenCode] = useState<string>(() => rememberedToken() ?? "XPR");
+  const [tokenCode, setTokenCode] = useState<string>(() => {
+    // shareable link: ?token=XMD opens the site on that token
+    try {
+      const q = new URLSearchParams(location.search).get("token");
+      if (q) { rememberToken(q.toUpperCase()); return q.toUpperCase(); }
+    } catch { /* ignore */ }
+    return rememberedToken() ?? "XPR";
+  });
   const token = useMemo(() => tokens.find((t) => t.code === tokenCode) ?? tokens[0], [tokens, tokenCode]);
   useEffect(() => {
     if (backend.isMock) return;

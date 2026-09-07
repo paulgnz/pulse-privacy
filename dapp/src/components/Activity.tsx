@@ -75,10 +75,10 @@ export const Activity = ({ st, isMock }: { st: ConfState; isMock: boolean }) => 
                     </td>
                     <td className="amount">
                       {a.kind === "fold" || a.kind === "register" ? (
-                        <span className="muted">{a.kind === "fold" && hasAmount && revealed ? <Amount value={a.amount} hidden revealed unit={false} token={st.token} /> : ""}</span>
+                        <span className="muted">{a.kind === "fold" && hasAmount && revealed ? <Amount value={a.amount} hidden revealed unit={false} token={a.token ?? st.token} /> : ""}</span>
                       ) : (
                         <>
-                          <Amount value={a.amount} hidden={hidden} revealed={revealed && hasAmount} sign={sign} digits={hasAmount ? undefined : 9} token={st.token} />
+                          <Amount value={a.amount} hidden={hidden} revealed={revealed && hasAmount} sign={sign} digits={hasAmount ? undefined : 9} token={a.token ?? st.token} />
                           {hidden && hasAmount && revealed ? <span className="onlyyou">only you can read this</span> : null}
                         </>
                       )}

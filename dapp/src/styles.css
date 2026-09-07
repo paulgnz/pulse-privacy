@@ -324,3 +324,10 @@ details[open] summary { margin-bottom: 12px; }
 .tokpick .lbl { font-size: 13px; color: var(--graphite); }
 .tokpick button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--ink); }
 .nav .tokens::before { content: "Token"; font-size: 13px; color: var(--graphite); align-self: center; margin-right: 2px; }
+
+/* header on narrow and medium screens: brand on its own row, links on the next, no dangling divider */
+@media (max-width: 900px) {
+  .topbar { flex-direction: column; align-items: flex-start; gap: 10px; padding-bottom: 14px; }
+  .topbar .right { justify-content: flex-start; row-gap: 8px; width: 100%; }
+  .topbar .right .who { padding-left: 0; border-left: 0; margin-left: auto; }
+}
