@@ -1,0 +1,5 @@
+{
+  "functions": { "api/**/*.ts": { "maxDuration": 60, "memory": 1024 } },
+  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
+  "headers": [{ "source": "/snarkjs.min.js", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] }]
+}

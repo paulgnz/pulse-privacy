@@ -24,16 +24,21 @@ const RPC = MAINNET ? "https://proton.greymass.com" : "https://tn1.protonnz.com"
 const CONTRACT = "xprconf";
 const ALICE = process.env.ALICE ?? "paul123";
 const BOB = process.env.BOB ?? (MAINNET ? "paul" : "testclient1");
-const SYM = "4,XPR";
+// TOKEN=XMD switches to Metal Dollar (6 decimals, xmd.token)
+const XMD = process.env.TOKEN === "XMD";
+const SYM = XMD ? "6,XMD" : "4,XPR";
+const PREC = XMD ? 6 : 4;
+const TOKEN_CONTRACT = XMD ? "xmd.token" : "eosio.token";
+const CODE = XMD ? "XMD" : "XPR";
 const KEYS = join(HERE, MAINNET ? ".mainnet-keys.json" : ".testnet-keys.json");
 
 const [cmd, arg] = process.argv.slice(2);
-const units = (xpr) => BigInt(Math.round(Number(xpr) * 1e4));
-const asset = (u) => `${(Number(u) / 1e4).toFixed(4)} XPR`;
+const units = (xpr) => BigInt(Math.round(Number(xpr) * 10 ** PREC));
+const asset = (u) => `${(Number(u) / 10 ** PREC).toFixed(PREC)} ${CODE}`;
 const sh = (c) => { console.log("$", c.length > 160 ? c.slice(0, 160) + "…" : c); return execSync(c, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); };
 const action = (contract, name, data, actor) => sh(`proton chain:set ${MAINNET ? "proton" : "proton-test"} >/dev/null && proton action ${contract} ${name} '${JSON.stringify(data)}' ${actor}`);
 const post = async (path, body) => (await fetch(`${RPC}/v1/chain/${path}`, { method: "POST", body: JSON.stringify(body) })).json();
-const symScope = () => { let raw = 4n; for (let i = 0; i < 3; i++) raw |= BigInt("XPR".charCodeAt(i)) << BigInt(8 * (i + 1)); return raw.toString(); };
+const symScope = () => { let raw = BigInt(PREC); for (let i = 0; i < 3; i++) raw |= BigInt(CODE.charCodeAt(i)) << BigInt(8 * (i + 1)); return raw.toString(); };
 const nameToU64 = (n) => { // Antelope name encoding
   const cm = ".12345abcdefghijklmnopqrstuvwxyz"; let v = 0n;
   for (let i = 0; i < 12; i++) { const c = i < n.length ? BigInt(cm.indexOf(n[i])) : 0n; v |= (c & 31n) << BigInt(64 - 5 * (i + 1)); }
@@ -65,10 +70,10 @@ async function balances() {
     if (!a) { console.log(`${w} (${who[w]}): not registered`); continue; }
     const avail = eg.decrypt64(eg.ctFromHex(a.avail), K[w].s);
     const pend = a.pending_count ? eg.decrypt64(eg.ctFromHex(a.pending), K[w].s) : 0n;
-    const pub = (await post("get_currency_balance", { code: "eosio.token", account: who[w], symbol: "XPR" }))[0];
+    const pub = (await post("get_currency_balance", { code: TOKEN_CONTRACT, account: who[w], symbol: CODE }))[0];
     console.log(`${w} (${who[w]}): confidential ${asset(avail)} + pending ${asset(pend)} (${a.pending_count}) · nonce ${a.nonce} · public ${pub}`);
   }
-  const escrow = (await post("get_currency_balance", { code: "eosio.token", account: CONTRACT, symbol: "XPR" }))[0];
+  const escrow = (await post("get_currency_balance", { code: TOKEN_CONTRACT, account: CONTRACT, symbol: CODE }))[0];
   console.log(`escrow (${CONTRACT}): ${escrow ?? "0"}`);
 }
 
@@ -83,7 +88,7 @@ if (cmd === "init") {
     console.log(`register ${w} tx`, txId(out));
   }
 } else if (cmd === "deposit") {
-  const out = action("eosio.token", "transfer", { from: ALICE, to: CONTRACT, quantity: asset(units(arg || 5000)), memo: `conf:${ALICE}` }, ALICE);
+  const out = action(TOKEN_CONTRACT, "transfer", { from: ALICE, to: CONTRACT, quantity: asset(units(arg || 5000)), memo: `conf:${ALICE}` }, ALICE);
   console.log("deposit tx", txId(out), "cpu", cpuOf(out), "µs");
 } else if (cmd === "fold") {
   const w = arg || "alice";
