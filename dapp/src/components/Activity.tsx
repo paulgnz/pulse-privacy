@@ -24,7 +24,22 @@ const when = (ts: number) =>
   new Date(ts).toLocaleString("en-NZ", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export const Activity = ({ st, isMock }: { st: ConfState; isMock: boolean }) => {
-  const [revealed, setRevealed] = useState(true);
+  // hidden by default, and the choice is shared with the statement and remembered in this browser
+  const [revealed, setRevealedState] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("pulse-privacy/reveal") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setRevealed = (v: boolean) => {
+    setRevealedState(v);
+    try {
+      localStorage.setItem("pulse-privacy/reveal", v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  };
   const rows = st.activity;
   return (
     <section className="section">

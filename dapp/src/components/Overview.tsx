@@ -61,7 +61,7 @@ export const Overview = ({
 }) => {
   const [revealed, setRevealed] = useState<boolean>(() => {
     try {
-      return sessionStorage.getItem(REVEAL_KEY) === "1";
+      return localStorage.getItem(REVEAL_KEY) === "1"; // hidden by default; remembered in this browser
     } catch {
       return false;
     }
@@ -79,7 +79,7 @@ export const Overview = ({
   });
   useEffect(() => {
     try {
-      sessionStorage.setItem(REVEAL_KEY, revealed ? "1" : "0");
+      localStorage.setItem(REVEAL_KEY, revealed ? "1" : "0");
     } catch {
       /* ignore */
     }
