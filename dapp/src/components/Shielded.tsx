@@ -47,16 +47,20 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
 
   useEffect(() => { sh.getConfig(tokens).then(setCfg).catch(() => setCfg(null)); }, [tokens]);
 
-  // saved or derived key for this account
+  // A saved key exists only for wallets that cannot re-derive one (passkeys). Wallets with a
+  // K1 key derive the spending key again each session with one signature, and it stays in memory:
+  // the browser holding this key can spend shielded funds without any further prompt.
   useEffect(() => {
     setKeys(null); setRegistered(undefined); setNotes(null); setNotice(null); setForm(null);
     if (!actor) return;
-    try {
-      const saved = localStorage.getItem(SAVED(actor));
-      if (saved) setKeys(keygen(BigInt(saved)));
-    } catch { /* ignore */ }
+    if (session && !deterministicSigner(session)) {
+      try {
+        const saved = localStorage.getItem(SAVED(actor));
+        if (saved) setKeys(keygen(BigInt(saved)));
+      } catch { /* ignore */ }
+    }
     sh.registeredKey(actor).then(setRegistered).catch(() => setRegistered(null));
-  }, [actor]);
+  }, [actor, session]);
 
   const refresh = useCallback(async () => {
     if (!keys) return;
@@ -80,7 +84,8 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     setBusy(true); setNotice(null);
     try {
       let ask: bigint;
-      if (deterministicSigner(session)) {
+      const derivable = deterministicSigner(session);
+      if (derivable) {
         ask = await unlockShield(session, SHIELD.contract);
       } else {
         // passkey wallets sign differently each time: keep a generated key in this browser
@@ -89,7 +94,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       }
       const k = keygen(ask);
       if (registered && !eq(registered, k.pk)) throw new Error("This wallet derives a different key from the one registered for this account. If you registered from another device with a saved key, import it there or contact the operator.");
-      try { localStorage.setItem(SAVED(actor), ask.toString()); } catch { /* ignore */ }
+      if (!derivable) { try { localStorage.setItem(SAVED(actor), ask.toString()); } catch { /* ignore */ } }
       setKeys(k);
     } catch (e) {
       setNotice({ ok: false, text: (e as Error).message });
@@ -151,7 +156,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       <section className="statement">
         {intro}
         <h3>Set up shielded payments for {actor}</h3>
-        <p className="muted">One signature derives your shielded spending key from your wallet. Nothing is sent to the chain by that signature, and the same wallet derives the same key on any device.</p>
+        <p className="muted">One signature derives your shielded spending key from your wallet. Nothing is sent to the chain by that signature, and the same wallet derives the same key on any device. The key stays in memory for this session: while this page is open, shielded payments go out without another wallet prompt, because a wallet signature would name you.</p>
         {notice ? <Note level={notice.ok ? "ok" : "error"}>{notice.text}</Note> : null}
         <div className="row" style={{ marginTop: 14 }}>
           <button className="btn private" onClick={unlock} disabled={busy}>{busy ? "Waiting for your wallet" : registered ? "Sign to unlock" : "Sign to create your key"}</button>
