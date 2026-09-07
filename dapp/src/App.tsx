@@ -107,6 +107,7 @@ export default function App() {
           </div>
         ) : null}
         <div className="shell">
+          {!backend.isMock ? <div className="foot" style={{ paddingTop: 18 }}>TESTNET · REAL PROOFS IN YOUR BROWSER · CONTRACT {CONTRACT}</div> : null}
           <Login onLogin={doLogin} busy={loginBusy} error={loginErr} />
           <div className="foot">
             XPR NETWORK TESTNET {head ? `· HEAD ${head.toLocaleString("en-US")}` : ""} · <a href={`${EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>
@@ -186,7 +187,7 @@ export default function App() {
             busy={busy}
           />
         ) : (
-          <Auditor isMock={backend.isMock} onOpen={(s) => client.auditorLedger(s)} mockSecret={mockSecret} />
+          <Auditor isMock={backend.isMock} onOpen={(s) => client.auditorLedger(s)} onEdges={() => client.poolEdges()} mockSecret={mockSecret} />
         )}
 
         <div className="foot">

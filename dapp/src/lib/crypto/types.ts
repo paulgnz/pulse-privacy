@@ -58,6 +58,8 @@ export interface WithdrawProofInput {
   oldBalance: bigint;
   oldBalanceCiphertext: ChunkedCiphertext;
   keypair: EncryptionKeypair;
+  /** the pool's auditor key (the withdraw statement still carries an auditor handle) */
+  auditorPubkey: Hex;
 }
 
 export interface WithdrawProofOutput {

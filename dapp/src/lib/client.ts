@@ -9,6 +9,8 @@ import type { Session } from "./chain";
 import type { ChunkedCiphertext, CryptoBackend, EncryptionKeypair, Hex, ProgressFn } from "./crypto/types";
 import { UNITS, shortHex } from "./format";
 import type { IncomingEvent, PoolConfig } from "./privacy";
+import { chunkedAdd, decryptChunk, join64 } from "./crypto/real";
+import { L } from "./crypto/babyjub";
 
 export type ActivityKind = "register" | "deposit" | "send" | "receive" | "fold" | "withdraw";
 
@@ -168,13 +170,64 @@ export class ConfidentialClient {
   }
 
   private async realState(): Promise<ConfState> {
-    const row = await chain.getConfAccount(this.actor);
-    const cfg: PoolConfig = { withdrawGranularity: UNITS, depositGranularity: UNITS };
-    if (!row || !this.keypair) {
-      return { registered: !!row, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], edgesSinceLastIncoming: 0, config: cfg, peers: [] };
+    const [row, cfgRow, all] = await Promise.all([chain.getConfAccount(this.actor), chain.getConfConfig(), chain.listConfAccounts()]);
+    const cfg: PoolConfig = {
+      withdrawGranularity: cfgRow?.withdrawGranularity ?? UNITS,
+      depositGranularity: cfgRow?.depositGranularity ?? 0n,
+    };
+    const peers = all.filter((a) => a.owner !== this.actor).map((a) => ({ name: a.owner, pubkey: a.enc_pubkey }));
+    const empty: ConfState = { registered: !!row, pubkey: row?.enc_pubkey, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], edgesSinceLastIncoming: 0, config: cfg, peers };
+    if (!row || !this.keypair) return empty;
+    const secret = this.keypair.secret;
+    const balance = await this.backend.decryptAmount(row.avail, secret);
+    const pending = row.pending_count > 0 ? await this.backend.decryptAmount(row.pending, secret) : 0n;
+
+    // history: what happened to me, what I received, and how busy the pool has been since
+    let history: chain.PoolAction[] = [];
+    try {
+      history = await chain.poolHistory(200);
+    } catch {
+      /* Hyperion down: balances still work, activity is empty */
     }
-    const balance = await this.backend.decryptAmount(row.avail, this.keypair.secret);
-    const pending = await this.backend.decryptAmount(row.pending, this.keypair.secret);
+    const activity: ActivityItem[] = [];
+    const incoming: IncomingEvent[] = [];
+    let lastIncomingBlock = 0;
+    for (const h of history) {
+      const mine = h.from === this.actor || h.to === this.actor;
+      if (h.kind === "send" && h.t) {
+        const ctShort = shortHex(h.t.lo.c, 8);
+        const pf = h.proof ? shortHex(h.proof, 6) : undefined;
+        if (h.to === this.actor) {
+          let amount: bigint | undefined;
+          try {
+            amount = await this.backend.decryptAmount(chain.receiverView(h.t), secret);
+          } catch {
+            amount = undefined; // sent to a previous key of ours
+          }
+          if (amount !== undefined) {
+            incoming.push({ amount, ts: h.ts, from: h.from });
+            lastIncomingBlock = Math.max(lastIncomingBlock, h.block);
+          }
+          activity.push({ id: `${h.txid}/${h.seq}`, kind: "receive", ts: h.ts, amount, counterparty: h.from, onChain: { public: false, ciphertext: ctShort, proof: pf, txid: h.txid, block: h.block } });
+        } else if (h.from === this.actor) {
+          let amount: bigint | undefined;
+          try {
+            amount = await this.backend.decryptAmount(chain.senderView(h.t), secret);
+          } catch {
+            amount = undefined;
+          }
+          activity.push({ id: `${h.txid}/${h.seq}`, kind: "send", ts: h.ts, amount, counterparty: h.to, onChain: { public: false, ciphertext: ctShort, proof: pf, txid: h.txid, block: h.block } });
+        }
+      } else if (h.kind === "deposit" && h.to === this.actor) {
+        activity.push({ id: `${h.txid}/${h.seq}`, kind: "deposit", ts: h.ts, amount: h.amount, counterparty: h.from === this.actor ? undefined : h.from, onChain: { public: true, txid: h.txid, block: h.block } });
+      } else if (h.kind === "withdraw" && h.to === this.actor) {
+        activity.push({ id: `${h.txid}/${h.seq}`, kind: "withdraw", ts: h.ts, amount: h.amount, onChain: { public: true, txid: h.txid, block: h.block } });
+      } else if ((h.kind === "fold" || h.kind === "register") && mine) {
+        activity.push({ id: `${h.txid}/${h.seq}`, kind: h.kind, ts: h.ts, onChain: { public: h.kind === "register", ciphertext: h.kind === "fold" ? "●●●●" : undefined, txid: h.txid, block: h.block } });
+      }
+    }
+    const edgesSinceLastIncoming = history.filter((h) => (h.kind === "deposit" || h.kind === "withdraw") && h.block > lastIncomingBlock && h.to !== this.actor).length;
+
     return {
       registered: true,
       pubkey: row.enc_pubkey,
@@ -183,11 +236,11 @@ export class ConfidentialClient {
       pendingCount: row.pending_count,
       nonce: BigInt(row.nonce),
       balanceCiphertext: row.avail,
-      activity: [], // T4b: rebuild from Hyperion history
-      incoming: [],
-      edgesSinceLastIncoming: 0,
+      activity: activity.sort((a, b) => b.ts - a.ts),
+      incoming,
+      edgesSinceLastIncoming,
       config: cfg,
-      peers: [],
+      peers,
     };
   }
 
@@ -216,8 +269,12 @@ export class ConfidentialClient {
       savePool(pool);
       return "mock";
     }
-    const pok = ("0x" + "00".repeat(64)) as Hex; // T2: Schnorr proof of knowledge of s
-    return chain.broadcast(this.session, [chain.registerAction(this.session, kp.pubkey, pok)]);
+    const existing = await chain.getConfAccount(this.actor);
+    if (existing) {
+      if (existing.enc_pubkey.toLowerCase() !== kp.pubkey.toLowerCase()) throw new Error("this account is registered with a different encryption key. Import that key in Settings.");
+      throw new Error("already registered");
+    }
+    return chain.broadcast(this.session, [chain.registerAction(this.session, kp.pubkey)]);
   }
 
   async deposit(amount: bigint): Promise<string> {
@@ -303,12 +360,10 @@ export class ConfidentialClient {
       return t;
     }
 
-    // real: needs receiver pubkey + auditor pubkey from the contract tables (T3)
-    const row = await chain.getConfAccount(this.actor);
+    // real: fold pending (same transaction) and prove against the folded balance
+    const { row, cfg, folded, oldBalance, actions } = await this.prepareSpend(kp, onProgress);
     const peer = await chain.getConfAccount(to);
-    if (!row) throw new Error("register first");
-    if (!peer) throw new Error(`${to} has not registered an encryption key`);
-    const oldBalance = await this.backend.decryptAmount(row.avail, kp.secret);
+    if (!peer) throw new Error(`${to} has not registered an encryption key. They can only receive public XPR.`);
     const out = await this.backend.proveTransfer(
       {
         sender: this.actor,
@@ -316,17 +371,38 @@ export class ConfidentialClient {
         nonce: BigInt(row.nonce),
         amount,
         oldBalance,
-        oldBalanceCiphertext: row.avail,
+        oldBalanceCiphertext: folded,
         senderKeypair: kp,
         receiverPubkey: peer.enc_pubkey,
-        auditorPubkey: ("0x" + "00".repeat(32)) as Hex, // T3: read from config table
+        auditorPubkey: cfg.auditorPubkey,
       },
       onProgress
     );
-    const actions: unknown[] = [];
-    if (row.pending_count > 0) actions.push(chain.applyPendingAction(this.session));
     actions.push(chain.transferAction(this.session, to, out.transfer, out.newBalance, out.proof));
+    onProgress?.(0.97, "waiting for WebAuth signature");
     return chain.broadcast(this.session, actions);
+  }
+
+  /**
+   * Common prelude for send/withdraw in real mode: read the row and config, and if there is
+   * pending credit, prepend `applypending` and compute the folded ciphertext locally
+   * (homomorphic add; identical to what the contract will store).
+   */
+  private async prepareSpend(kp: EncryptionKeypair, onProgress?: ProgressFn) {
+    const [row, cfg] = await Promise.all([chain.getConfAccount(this.actor), chain.getConfConfig()]);
+    if (!row) throw new Error("register first");
+    if (!cfg) throw new Error("the contract is not configured for XPR");
+    if (cfg.paused) throw new Error("the confidential token is paused");
+    const actions: unknown[] = [];
+    let folded = row.avail;
+    if (row.pending_count > 0) {
+      actions.push(chain.applyPendingAction(this.session));
+      folded = chunkedAdd(row.avail, row.pending);
+    }
+    onProgress?.(0.02, "reading your balance");
+    const s = BigInt(kp.secret) % L;
+    const oldBalance = join64(decryptChunk(folded.lo, s), decryptChunk(folded.hi, s));
+    return { row, cfg, folded, oldBalance, actions };
   }
 
   async withdraw(amount: bigint, onProgress?: ProgressFn): Promise<string> {
@@ -342,7 +418,7 @@ export class ConfidentialClient {
       if (g > 0n && amount % g !== 0n) throw new Error("contract: amount must be a multiple of the withdraw granularity");
       const oldBalance = BigInt(a.balance);
       const out = await this.backend.proveWithdraw(
-        { owner: this.actor, nonce: BigInt(a.nonce), amount, oldBalance, oldBalanceCiphertext: a.balanceCt ?? (await this.backend.encryptAmount(oldBalance, a.pubkey)), keypair: kp },
+        { owner: this.actor, nonce: BigInt(a.nonce), amount, oldBalance, oldBalanceCiphertext: a.balanceCt ?? (await this.backend.encryptAmount(oldBalance, a.pubkey)), keypair: kp, auditorPubkey: pool.auditorPubkey },
         onProgress
       );
       a.balance = (oldBalance - amount).toString();
@@ -355,13 +431,16 @@ export class ConfidentialClient {
       savePool(pool);
       return t;
     }
-    const row = await chain.getConfAccount(this.actor);
-    if (!row) throw new Error("register first");
-    const oldBalance = await this.backend.decryptAmount(row.avail, kp.secret);
-    const out = await this.backend.proveWithdraw({ owner: this.actor, nonce: BigInt(row.nonce), amount, oldBalance, oldBalanceCiphertext: row.avail, keypair: kp }, onProgress);
-    const actions: unknown[] = [];
-    if (row.pending_count > 0) actions.push(chain.applyPendingAction(this.session));
+    const { row, cfg, folded, oldBalance, actions } = await this.prepareSpend(kp, onProgress);
+    if (cfg.withdrawGranularity > 0n && amount % cfg.withdrawGranularity !== 0n) {
+      throw new Error(`the contract only accepts withdrawals in multiples of ${cfg.withdrawGranularity / UNITS} XPR`);
+    }
+    const out = await this.backend.proveWithdraw(
+      { owner: this.actor, nonce: BigInt(row.nonce), amount, oldBalance, oldBalanceCiphertext: folded, keypair: kp, auditorPubkey: cfg.auditorPubkey },
+      onProgress
+    );
     actions.push(chain.withdrawAction(this.session, amount, out.newBalance, out.proof));
+    onProgress?.(0.97, "waiting for WebAuth signature");
     return chain.broadcast(this.session, actions);
   }
 
@@ -414,7 +493,41 @@ export class ConfidentialClient {
       if (viewingSecret.toLowerCase() !== pool.auditorSecret) throw new Error("that viewing key does not open these boxes");
       return pool.ledger.map((l) => ({ ...l, amount: BigInt(l.amount) })).sort((a, b) => b.ts - a.ts);
     }
-    throw new Error("auditor mode against the live contract arrives with T5 (auditor CLI / Hyperion)");
+    const cfg = await chain.getConfConfig();
+    if (!cfg) throw new Error("the contract is not configured");
+    const expected = await this.backend.pubkeyOf(viewingSecret);
+    if (expected.toLowerCase() !== cfg.auditorPubkey.toLowerCase()) throw new Error("that viewing key does not match the pool's auditor key");
+    const history = await chain.poolHistory(500);
+    const rows: AuditorRow[] = [];
+    for (const h of history) {
+      if (h.kind !== "send" || !h.t) continue;
+      const amount = await this.backend.decryptAmount(chain.auditorView(h.t), viewingSecret);
+      rows.push({ ts: h.ts, from: h.from, to: h.to, amount, ciphertext: shortHex(h.t.lo.c, 8), block: h.block });
+    }
+    return rows.sort((a, b) => b.ts - a.ts);
+  }
+
+  /** Public edges of the pool (for the auditor's reconciliation): deposits, withdrawals, escrow. */
+  async poolEdges(): Promise<{ deposits: bigint; withdrawals: bigint; unclaimed: bigint; escrow: bigint; count: number }> {
+    if (this.isMock) {
+      const pool = await loadPool(this.backend);
+      return { deposits: 0n, withdrawals: 0n, unclaimed: 0n, escrow: BigInt(pool.escrow), count: pool.edges };
+    }
+    const [history, escrow] = await Promise.all([chain.poolHistory(500), chain.getPublicBalance(CONTRACT)]);
+    let deposits = 0n;
+    let withdrawals = 0n;
+    let unclaimed = 0n;
+    let count = 0;
+    for (const h of history) {
+      if (h.kind === "deposit") {
+        deposits += h.amount ?? 0n;
+        count++;
+      } else if (h.kind === "withdraw") {
+        withdrawals += h.amount ?? 0n;
+        count++;
+      } else if (h.kind === "plain-transfer") unclaimed += h.amount ?? 0n;
+    }
+    return { deposits, withdrawals, unclaimed, escrow, count };
   }
 
   async mockAuditorSecret(): Promise<Hex | null> {
