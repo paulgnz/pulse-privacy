@@ -34,6 +34,14 @@ export function App() {
   const ready = useRef<{ out: Uint8Array; outputSha: string; inputSha: string; phase: 1 | 2; index: number; contributionHash: string | null } | null>(null);
   const [slow, setSlow] = useState(false);
   const lockToken = useRef<string | null>(null);
+  const [uploadPct, setUploadPct] = useState(0);
+  const [recSeconds, setRecSeconds] = useState(0);
+  useEffect(() => {
+    if (step !== "recording") { setRecSeconds(0); return; }
+    const t0 = Date.now();
+    const t = setInterval(() => setRecSeconds(Math.round((Date.now() - t0) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [step]);
   useEffect(() => {
     if (step !== "signing") { setSlow(false); return; }
     const t = setTimeout(() => setSlow(true), 4000);
@@ -160,6 +168,7 @@ export function App() {
     try {
       // 6. upload straight to storage, then record
       setStep("uploading");
+      setUploadPct(0);
       const pathname = `p${phase}/${String(index).padStart(2, "0")}-${actor}.${phase === 1 ? "ptau" : "zkey"}`;
       await upload(pathname, new Blob([out as BlobPart], { type: "application/octet-stream" }), {
         access: "public",
@@ -167,6 +176,7 @@ export function App() {
         multipart: true,
         contentType: "application/octet-stream",
         clientPayload: JSON.stringify({ actor, token: lockToken.current }),
+        onUploadProgress: (p) => setUploadPct(p.percentage),
       });
       setStep("recording");
       const cr = await fetch("/api/contribute", {
@@ -285,8 +295,18 @@ export function App() {
                 </p>
               ) : null}
             </li>
-            <li className={step === "uploading" ? "now" : step === "recording" ? "done" : ""}>Uploading your file</li>
-            <li className={step === "recording" ? "now" : ""}>Recording your contribution</li>
+            <li className={step === "uploading" ? "now" : step === "recording" ? "done" : ""}>
+              Uploading your file{step === "uploading" ? ` (${Math.round(uploadPct)}%)` : ""}
+              {step === "uploading" ? <div className="bar"><i style={{ width: `${Math.round(uploadPct)}%` }} /></div> : null}
+            </li>
+            <li className={step === "recording" ? "now" : ""}>
+              Recording your contribution
+              {step === "recording" ? (
+                <p className="muted" style={{ marginTop: 8 }}>
+                  <span className="busy"><span className="busy-dot" aria-hidden="true" /><span>The coordinator is reading your file's contribution chain and running the full verification, about a minute ({recSeconds}s).</span></span>
+                </p>
+              ) : null}
+            </li>
           </ol>
         ) : null}
 

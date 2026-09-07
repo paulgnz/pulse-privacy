@@ -54,3 +54,7 @@ input { font: inherit; padding: 11px 12px; border: 1px solid var(--rule); border
 }
 
 .link { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
+
+.busy { display: inline-flex; align-items: center; gap: 10px; }
+.busy-dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; opacity: 0.6; animation: breathe 1.4s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { transform: scale(0.7); opacity: 0.35; } 50% { transform: scale(1); opacity: 0.9; } }
