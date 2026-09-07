@@ -33,7 +33,7 @@ contract stores. Old-balance chunks may be un-normalised after folds; decryption
 then 36 and 40 bits.
 
 Timings in headless Chrome (M4, `scripts/smoke.mjs`): BSGS table + first decrypt ≈ 270 ms
-once per session, later decrypts ≈ 20 ms, a transfer proof ≈ 1.6 s. `vercel.json` sets COOP/COEP so snarkjs can use threads, and caches
+once per session, later decrypts ≈ 20 ms, a transfer proof ≈ 1.6 s. `vercel.json` caches
 `/circuit/*` for a year (rename the files when the circuit changes).
 
 ## Mock mode
@@ -90,7 +90,7 @@ Deploy: `vercel --prod` from `dapp/` (static Vite output; `vercel.json` carries 
 
 Vercel project `pulse-privacy` (team paulgnzs-projects), production alias
 <https://private.protonnz.com>. Deploy with `vercel --prod` from `dapp/` (the directory is
-linked; `.vercel/` is gitignored). `vercel.json` sets COOP/COEP (snarkjs threads), an immutable
+linked; `.vercel/` is gitignored). `vercel.json` sets an immutable
 cache on `/circuit/*`, and the SPA rewrite.
 
 **Custom domain `private.protonnz.com`:** `protonnz.com` is not in this Vercel account
@@ -99,3 +99,7 @@ cache on `/circuit/*`, and the SPA rewrite.
    `vercel domains add private.protonnz.com pulse-privacy`; or
 2. In Cloudflare DNS: `CNAME private → cname.vercel-dns.com` (DNS only, not proxied), plus the
    `TXT _vercel` verification record Vercel prints when the domain is added to the project.
+
+Do not add `Cross-Origin-Opener-Policy: same-origin` (or COEP) to this site: the WebAuth web
+wallet opens webauth.com in a popup and answers through `window.opener.postMessage`, which that
+policy severs, so login never completes. snarkjs proves single-threaded here (≈ 1.6 s).
