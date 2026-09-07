@@ -85,3 +85,17 @@ PROVE=1 node scripts/smoke.mjs   # headless Chrome: loads the app, runs keygen/d
 ```
 
 Deploy: `vercel --prod` from `dapp/` (static Vite output; `vercel.json` carries the headers).
+
+## Hosting
+
+Vercel project `pulse-privacy` (team paulgnzs-projects), production alias
+<https://pulse-privacy-alpha.vercel.app>. Deploy with `vercel --prod` from `dapp/` (the directory is
+linked; `.vercel/` is gitignored). `vercel.json` sets COOP/COEP (snarkjs threads), an immutable
+cache on `/circuit/*`, and the SPA rewrite.
+
+**Custom domain `private.protonnz.com`:** `protonnz.com` is not in this Vercel account
+(`vercel domains add` returns 403) and its DNS is on Cloudflare. Two options:
+1. In Vercel, add `protonnz.com` to the account/team that owns it and then
+   `vercel domains add private.protonnz.com pulse-privacy`; or
+2. In Cloudflare DNS: `CNAME private → cname.vercel-dns.com` (DNS only, not proxied), plus the
+   `TXT _vercel` verification record Vercel prints when the domain is added to the project.
