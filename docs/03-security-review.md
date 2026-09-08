@@ -260,3 +260,12 @@ Two medium findings in the client, fixed the same night.
 |---|---|---|---|
 | 1 | medium | the new merge processed every node's outputs together, so one node's duplicate row or wrong commitment aborted a scan two healthy nodes could complete | each node's answer is validated on its own (unique indices inside the agreed tree, well-formed words, commitments hashing to the agreed root) and a failing answer is dropped before the payload variants are merged |
 
+## Shielded mode: independent review, seventh pass (Codex, 2026-09-08, at `0c07516`)
+
+No actionable findings. Verified: eighteen malformed-output cases across all three node
+positions; two healthy nodes keep a confirmed balance; a single valid source gives an
+unconfirmed balance and no valid source fails cleanly; the earlier payload, duplicate-counting
+and deposit-history checks; production build and the security regressions. This closes the
+review series before the ceremony's second phase: three internal rounds, seven Codex passes,
+every finding fixed and tested.
+
