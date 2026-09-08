@@ -464,6 +464,9 @@ export default function App() {
     return (
       <div className="page">
         {header}
+        {step === "connect" && CONF_DEPOSITS_CLOSED && !SHIELD_HOME ? (
+          <Note level="warn">Deposits are paused while version 2 is prepared, which also hides who you pay. Balances inside are yours: connect and withdraw to your wallet any time.</Note>
+        ) : null}
         {step === null ? (
           <div className="empty">Checking your account</div>
         ) : (

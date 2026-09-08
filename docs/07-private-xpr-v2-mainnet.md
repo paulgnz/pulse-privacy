@@ -73,5 +73,5 @@ Then move `xprshield@active` to the committee (or an msig) as with v1.
 
 | date | what | tx / hash |
 |---|---|---|
-| 2026-09-08 | v1 deposits closed on mainnet (`setlimits` 4,XPR and 6,XMD to 1 / 1); pools at closing: 10,361.2141 XPR, 1.000000 XMD | see git log / explorer |
+| 2026-09-08 | v1 deposits closed on mainnet (`setlimits` 4,XPR and 6,XMD to 1 / 1); pools at closing: 10,361.2141 XPR, 1.000000 XMD | `e12ad6f06a3c…` (XPR), `0bbf1ef1520f…` (XMD) |
 | 2026-09-08 | v1 deposits closed on testnet (4,XPR and 6,XMD) | |
