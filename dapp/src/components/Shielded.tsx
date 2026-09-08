@@ -113,7 +113,18 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     if (seq.current === mine) { setPub(p); setUnfinished(u); }
   }, [keys, actor, shieldTokens]);
 
-  useEffect(() => { if (keys && registered) refresh().catch((e) => setNotice({ ok: false, text: (e as Error).message })); }, [keys, registered, refresh]);
+  // a saved key that is not the registered one is useless for this account: set it aside and
+  // go to the restore screen rather than scanning with it and showing an empty balance
+  useEffect(() => {
+    if (!keys || !registered || keyDerived || eq(keys.pk, registered)) return;
+    try {
+      const saved = localStorage.getItem(SAVED(actor));
+      if (saved) { localStorage.setItem(`${SAVED(actor)}/mismatch-${Date.now()}`, saved); localStorage.removeItem(SAVED(actor)); }
+    } catch { /* ignore */ }
+    setKeys(null);
+    setNotice({ ok: false, text: "The key saved in this browser is not the one registered for this account, so it was set aside. Restore the registered key from your recovery phrase or key file." });
+  }, [keys, registered, keyDerived, actor]);
+  useEffect(() => { if (keys && registered && eq(keys.pk, registered)) refresh().catch((e) => setNotice({ ok: false, text: (e as Error).message })); }, [keys, registered, refresh]);
   useEffect(() => {
     if (!keys || !registered) return;
     const h = setInterval(() => { if (document.visibilityState === "visible") refresh().catch(() => undefined); }, 30000);

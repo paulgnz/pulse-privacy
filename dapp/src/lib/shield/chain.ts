@@ -152,12 +152,26 @@ export interface ScanResult { notes: OwnedNote[]; spent: OwnedNote[]; }
 export type NoteKind = "deposit" | "note";
 
 /** every note of ours, from the outputs, leaves and nullifiers tables; zero-value notes are skipped */
+/** the three tables a scan needs, all from one node so a lagging node cannot mix with a current one */
+async function scanTables() {
+  let lastErr: unknown;
+  for (const ep of await endpoints()) {
+    try {
+      const [outs, leaves, nfs] = await Promise.all([
+        rows<{ index: string | number; epk: string; cr: string; ca: string }>("outputs", "index", ep),
+        rows<{ index: string | number; cm: string }>("leaves", "index", ep),
+        rows<{ key: string | number; nf: string }>("nullifiers", "key", ep),
+      ]);
+      // every output has its leaf: a node that answers one table but not the other is not current
+      if (outs.some((o) => !leaves.some((l) => Number(l.index) === Number(o.index)))) throw new Error("outputs without leaves");
+      return { outs, leaves, nfs };
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("No node answered the scan.");
+}
+
 export async function scan(keys: ShieldKeys): Promise<ScanResult> {
-  const [outs, leaves, nfs] = await Promise.all([
-    rows<{ index: string | number; epk: string; cr: string; ca: string }>("outputs", "index"),
-    rows<{ index: string | number; cm: string }>("leaves", "index"),
-    rows<{ key: string | number; nf: string }>("nullifiers", "key"),
-  ]);
+  const { outs, leaves, nfs } = await scanTables();
   const cmOf = new Map(leaves.map((l) => [Number(l.index), BigInt("0x" + l.cm)]));
   const spentSet = new Set(nfs.map((n) => n.nf));
   const notes: OwnedNote[] = [];
