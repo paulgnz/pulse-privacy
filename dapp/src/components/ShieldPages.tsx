@@ -428,12 +428,18 @@ export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: 
       </p>
       <ShieldExcerpt />
 
-      <h3>A proof instead of an open ledger</h3>
+      <h3>A zero-knowledge proof instead of an open ledger</h3>
       <p>
-        Before a payment is accepted, your device attaches a small mathematical proof: the notes you are spending exist in the tree,
-        they are yours, they have not been spent before, and the new notes add up to the old ones. The network checks the proof in
-        about fifteen milliseconds without learning which notes were involved. Each spent note leaves a one-way tag behind so it
-        can never be spent again.
+        Before a payment is accepted, your device attaches a zero-knowledge proof: a short piece of mathematics that shows a
+        statement is true without revealing anything else about it. Here the statement is that the notes you are spending exist in
+        the tree, they are yours, they have not been spent before, and the new notes add up to the old ones. The network checks the
+        proof in a few milliseconds and learns only that it holds, not which notes were involved or what they are worth. Each spent
+        note leaves a one-way tag behind so it can never be spent again, and every payment leaves two tags, one of them a decoy when a
+        single note was spent, so the number of notes stays hidden too.
+      </p>
+      <p>
+        The proofs are Groth16 proofs, the system used by Zcash, made in your browser in about two seconds. They need a one-time
+        public setup, which is what the ceremony below is for.
       </p>
 
       <h3>Two keyholes on every note</h3>
@@ -487,7 +493,6 @@ export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: 
             <li>Who made each payment, and when</li>
             <li>Deposits into the contract, with amounts</li>
             <li>Withdrawals out of it, with amounts</li>
-            <li>Whether a payment spent one note or two</li>
             <li>Which accounts have set up shielded payments</li>
           </ul>
         </div>
@@ -550,7 +555,7 @@ export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: 
           <a href={`${EXPLORER}/account/${SHIELD.contract}`} target="_blank" rel="noreferrer">{SHIELD.contract}</a>
           {NETWORK === "mainnet" ? ", owned by the XPR Network committee." : ", a testnet account. Mainnet follows the ceremony."}
         </li>
-        <li>Proofs are generated in your browser and take about a second. The network checks one in about fifteen milliseconds.</li>
+        <li>Zero-knowledge proofs are generated in your browser and take about two seconds. The network checks one in about six milliseconds.</li>
         <li>
           The proving key comes from a one-person rehearsal until the public ceremony completes. Anyone can{" "}
           <a href={CEREMONY_URL} target="_blank" rel="noreferrer">contribute randomness</a>; as long as one contributor was honest, nobody can forge a proof.
