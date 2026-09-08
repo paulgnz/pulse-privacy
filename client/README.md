@@ -19,9 +19,10 @@ reads notes and builds proofs; it cannot spend without the account's signature) 
 `~/.private-xpr/<network>/<account>.json`, mode 600. `PRIVATEXPR_HOME` moves that directory.
 Recovery phrases are never accepted on the command line, because shells keep history and process
 listings are public on a shared machine; the client asks at a hidden prompt or reads standard input.
-Signing holds an OS lock (`flock` on `~/.privatexpr-signing.lock`, through a small python3 or perl helper)
-while it switches the proton CLI's chain, signs and switches back, because that setting is shared by every
-process of the user. Two signers never interleave, and a signer that dies releases the lock with its process.
+Signing is done by a small helper (python3, or perl as a fallback) that holds an OS lock (`flock` on
+`~/.privatexpr-signing.flock`) while it switches the proton CLI's chain, signs and switches back, because that
+setting is shared by every process of the user. The lock and the operation have one lifetime: two signers never
+interleave, and a helper that dies releases the lock with its process and starts no further step.
 
 ## A first run on testnet
 

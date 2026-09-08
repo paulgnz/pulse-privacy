@@ -1,8 +1,8 @@
 // Key files and signing for the headless client. The private-payment key lives in
 // ~/.private-xpr/<network>/<account>.json (mode 600). Chain writes are signed by the proton CLI
 // keychain: the account's XPR key never enters this process.
-import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import N from "../../circuits/lib/notes.mjs";
@@ -37,69 +37,78 @@ export function parseSecret(input) {
 }
 
 /**
- * Run one action through the proton CLI keychain on the network's chain; resolves to the
- * transaction id. The proton CLI's selected chain is one shared setting for the whole user, so
- * the select-sign-restore sequence runs under an OS-managed exclusive lock (flock on
- * ~/.privatexpr-signing.lock, held by a small helper process for the duration): two signers
- * can never interleave, and a signer that dies releases the lock with its process, so nothing
- * is ever reclaimed and no displaced process exists to touch the shared setting.
+ * Run one action through the proton CLI keychain on the network's chain; returns the transaction
+ * id. The proton CLI's selected chain is one shared setting for the whole user, so the whole
+ * select-sign-restore sequence is executed by a helper process that holds an OS lock (flock) for
+ * exactly its own lifetime and runs the proton commands itself: the lock cannot outlive the
+ * operation, nor the operation the lock, and if the helper dies no further step starts. The
+ * lock path is new (never a directory), so nothing from earlier client versions is touched.
  */
-export async function act(net, contract, name, data, actor, permission = "active") {
-  const run = (args) => {
-    const r = spawnSync("proton", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    const text = (String(r.stdout ?? "") + "\n" + String(r.stderr ?? "")).replace(/\x1b\[[0-9;]*m/g, "");
-    return { status: r.status, text };
-  };
-  const lockPath = join(homedir(), ".privatexpr-signing.lock");
-  // an earlier client version used a directory here; it cannot be flocked, and no earlier version is running after an upgrade
-  try { if (statSync(lockPath).isDirectory()) rmSync(lockPath, { recursive: true, force: true }); } catch { /* absent */ }
-  const holder = await holdLock(lockPath, 60_000);
-  let r;
-  try {
-    const sel = run(["chain:set", net.chain]);
-    if (sel.status !== 0) throw new Error(`could not select the ${net.chain} chain in the proton CLI: ${sel.text.trim().slice(0, 200)}`);
-    const cur = run(["chain:get"]);
-    if (cur.status !== 0 || !new RegExp(`"chain":\\s*"${net.chain}"`).test(cur.text)) throw new Error(`the proton CLI is not on the ${net.chain} chain; refusing to sign`);
-    r = run(["action", contract, name, JSON.stringify(data), `${actor}@${permission}`]);
-  } finally {
-    run(["chain:set", "proton"]);
-    holder.release();
-  }
-  if (process.env.PRIVATEXPR_DEBUG) console.error(r.text);
-  const id = (r.text.match(/"transaction_id":\s*"([0-9a-f]{64})"/) || r.text.match(/tx\/([0-9a-f]{64})/) || [])[1];
+export function act(net, contract, name, data, actor, permission = "active") {
+  const lockPath = join(homedir(), ".privatexpr-signing.flock");
+  const argv = [lockPath, net.chain, "proton", "60", contract, name, JSON.stringify(data), `${actor}@${permission}`];
+  const r = runLocked(argv);
+  const text = r.text.replace(/\x1b\[[0-9;]*m/g, "");
+  if (process.env.PRIVATEXPR_DEBUG) console.error(text);
+  if (r.status === 3) throw new Error("another privatexpr invocation is holding the signing lock");
+  if (r.status === 4) throw new Error(`could not select the ${net.chain} chain in the proton CLI: ${text.trim().slice(0, 200)}`);
+  if (r.status === 5) throw new Error(`the proton CLI is not on the ${net.chain} chain; refusing to sign`);
+  const id = (text.match(/"transaction_id":\s*"([0-9a-f]{64})"/) || text.match(/tx\/([0-9a-f]{64})/) || [])[1];
   if (r.status !== 0 || !id) {
-    const line = r.text.split("\n").filter((l) => /error|assert|failure|hint|missing|expired|exceeded|insufficient/i.test(l)).join(" | ").slice(0, 500);
-    throw new Error(`${contract}::${name} did not go through: ${line || r.text.trim().slice(0, 300) || "no output from the proton CLI"}`);
+    const line = text.split("\n").filter((l) => /error|assert|failure|hint|missing|expired|exceeded|insufficient/i.test(l)).join(" | ").slice(0, 500);
+    throw new Error(`${contract}::${name} did not go through: ${line || text.trim().slice(0, 300) || "no output from the proton CLI"}`);
   }
-  const cpu = (r.text.match(/"cpu_usage_us":\s*(\d+)/) || [])[1];
+  const cpu = (text.match(/"cpu_usage_us":\s*(\d+)/) || [])[1];
   return { id, cpu: cpu ? Number(cpu) : undefined };
 }
 
-/**
- * An exclusive OS lock (flock) on `path`, held by a helper process until `release()` closes its
- * stdin, or until this process dies (the pipe closes and the helper exits). Python's fcntl is
- * used when available, else perl's flock; both are standard on macOS and Linux.
- */
-function holdLock(path, timeoutMs) {
-  const py = ["python3", ["-c", `import fcntl,sys,time,os\nf=open(sys.argv[1],'a+')\nt=time.time()\nwhile True:\n try:\n  fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB);break\n except OSError:\n  if time.time()-t>float(sys.argv[2]): print('timeout',flush=True); sys.exit(2)\n  time.sleep(0.1)\nprint('locked',flush=True)\nsys.stdin.read()`, path, String(timeoutMs / 1000)]];
-  const pl = ["perl", ["-e", `use Fcntl qw(:flock); open(my $f, '>>', $ARGV[0]) or die; my $t=time; while (!flock($f, LOCK_EX|LOCK_NB)) { if (time-$t > $ARGV[1]) { print "timeout\n"; exit 2 } select(undef,undef,undef,0.1) } $|=1; print "locked\n"; <STDIN>;`, path, String(Math.ceil(timeoutMs / 1000))]];
-  return new Promise((resolve, reject) => {
-    const tryWith = (cands) => {
-      if (!cands.length) return reject(new Error("no lock helper found (python3 or perl is needed for signing)"));
-      const [cmd, args] = cands[0];
-      let child;
-      try { child = spawn(cmd, args, { stdio: ["pipe", "pipe", "ignore"] }); } catch { return tryWith(cands.slice(1)); }
-      let out = "";
-      let settled = false;
-      child.on("error", () => { if (!settled) { settled = true; tryWith(cands.slice(1)); } });
-      child.stdout.on("data", (d) => {
-        out += String(d);
-        if (settled) return;
-        if (out.includes("locked")) { settled = true; resolve({ release: () => { try { child.stdin.end(); } catch { /* gone */ } } }); }
-        else if (out.includes("timeout")) { settled = true; reject(new Error("another privatexpr invocation is holding the signing lock")); }
-      });
-      child.on("exit", (code) => { if (!settled) { settled = true; if (code === 127) tryWith(cands.slice(1)); else reject(new Error("the lock helper exited before taking the lock")); } });
-    };
-    tryWith([py, pl]);
-  });
+// The helper: take the lock (or exit 3 after the timeout), select the chain (exit 4 on failure),
+// read it back (exit 5 if it is not the one asked for), run the action, and restore the default
+// chain on every path. Its stdout is the action's output; its exit status is the action's, or
+// one of the codes above. python3 is preferred, perl is the fallback; both are standard on
+// macOS and Linux.
+const PY_HELPER = `
+import fcntl, subprocess, sys, time, re
+lock, chain, restore, timeout = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
+action = sys.argv[5:]
+f = open(lock, "a+")
+t = time.time()
+while True:
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB); break
+    except OSError:
+        if time.time() - t > timeout: sys.exit(3)
+        time.sleep(0.1)
+def run(args):
+    p = subprocess.run(["proton"] + args, capture_output=True, text=True)
+    return p.returncode, (p.stdout or "") + "\\n" + (p.stderr or "")
+try:
+    rc, out = run(["chain:set", chain])
+    if rc != 0: sys.stdout.write(out); sys.exit(4)
+    rc, out = run(["chain:get"])
+    if rc != 0 or not re.search(r'"chain":\\s*"%s"' % re.escape(chain), out): sys.stdout.write(out); sys.exit(5)
+    rc, out = run(["action"] + action)
+    sys.stdout.write(out)
+    sys.exit(rc)
+finally:
+    run(["chain:set", restore])
+`;
+const PL_HELPER = `
+use Fcntl qw(:flock); my ($lock, $chain, $restore, $timeout, @action) = @ARGV;
+open(my $f, ">>", $lock) or die; my $t = time;
+while (!flock($f, LOCK_EX|LOCK_NB)) { exit 3 if time - $t > $timeout; select(undef, undef, undef, 0.1) }
+sub run { my $out = qx(proton @_ 2>&1); return ($? >> 8, $out) }
+my ($rc, $out);
+END { qx(proton chain:set $restore 2>&1) }
+($rc, $out) = run("chain:set", $chain); if ($rc) { print $out; exit 4 }
+($rc, $out) = run("chain:get"); if ($rc || $out !~ /"chain":\\s*"\\Q$chain\\E"/) { print $out; exit 5 }
+($rc, $out) = run("action", map { "'" . $_ . "'" } @action); print $out; exit $rc;
+`;
+function runLocked(argv) {
+  for (const [cmd, script] of [["python3", PY_HELPER], ["perl", PL_HELPER]]) {
+    const r = spawnSync(cmd, [cmd === "python3" ? "-c" : "-e", script, ...argv], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 180_000 });
+    if ((r.error && r.error.code === "ENOENT") || r.status === 127) continue; // helper interpreter missing: try the next
+    return { status: r.status, text: String(r.stdout ?? "") + "\n" + String(r.stderr ?? "") };
+  }
+  throw new Error("no lock helper found (python3 or perl is needed for signing)");
 }

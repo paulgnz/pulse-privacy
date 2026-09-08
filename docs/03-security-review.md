@@ -320,3 +320,10 @@ Auditor tab and a successor-contract procedure is rehearsed before half capacity
 |---|---|---|---|
 | 1 | medium | a signer displaced by lock recovery still reset the proton CLI's chain to mainnet in its cleanup while another signer owned the lock; a testnet action reached signing with mainnet selected | the file lock and its recovery are gone. The select-sign-restore sequence now runs under an OS-managed exclusive lock (`flock` on `~/.privatexpr-signing.lock`, held by a small python3 or perl helper for the duration). Two signers cannot interleave, a signer that dies releases the lock with its process, nothing is ever reclaimed, and there is no displaced process to touch the shared setting. A directory left by the earlier format is removed once. Tested: three concurrent signers, a live holder waited for, a holder killed with -9 released by the OS |
 
+## Shielded mode: independent review, fourteenth pass (Codex, 2026-09-08, at `08fc912`)
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | medium | the one-time removal of the earlier directory-format lock could, in a race, remove another client's fresh lock file at the same path | the lock moved to a new path (`~/.privatexpr-signing.flock`) that was never a directory; nothing from earlier versions is touched |
+| 2 | medium | if the lock-holding helper died after acquisition, the parent went on signing and restoring the chain without the lock | the helper now performs the whole select-sign-restore sequence itself while holding the lock, so the lock and the operation share one lifetime: if the helper dies no further step starts, and the parent only reads its result. python3 preferred, perl fallback, both tested |
+
