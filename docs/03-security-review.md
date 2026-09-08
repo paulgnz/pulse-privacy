@@ -314,3 +314,9 @@ Auditor tab and a successor-contract procedure is rehearsed before half capacity
 | 1 | medium | two waiters could both see the same dead owner; the slower one's unconditional rename then removed the faster one's fresh lock | reclaiming renames the lock aside and checks that what was renamed is exactly the dead lock inspected (same inode); a fresh lock renamed by mistake is linked back; and, independent of recovery, every holder re-reads the lock immediately before signing and must find its own pid there, else it re-acquires and starts over. Tested with three concurrent signers |
 | 2 | medium | locks in the previous directory format were never reclaimed, even with a dead owner, so signing timed out after an upgrade | the old format (a directory with a pid file) is recognised and reclaimed by the same ownership rule; tested |
 
+## Shielded mode: independent review, thirteenth pass (Codex, 2026-09-08, at `24e64c7`)
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | medium | a signer displaced by lock recovery still reset the proton CLI's chain to mainnet in its cleanup while another signer owned the lock; a testnet action reached signing with mainnet selected | the file lock and its recovery are gone. The select-sign-restore sequence now runs under an OS-managed exclusive lock (`flock` on `~/.privatexpr-signing.lock`, held by a small python3 or perl helper for the duration). Two signers cannot interleave, a signer that dies releases the lock with its process, nothing is ever reclaimed, and there is no displaced process to touch the shared setting. A directory left by the earlier format is removed once. Tested: three concurrent signers, a live holder waited for, a holder killed with -9 released by the OS |
+

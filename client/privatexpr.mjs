@@ -111,7 +111,7 @@ try {
     const reg = (await net.registeredKeys()).get(name);
     if (reg) { checkKeyMatches(name, k, reg); say(`${name} is already registered with this key`); }
     else {
-      const r = act(net, net.contract, "register", { owner: name, pubkey: hex(k.pk[0]) + hex(k.pk[1]) }, name);
+      const r = await act(net, net.contract, "register", { owner: name, pubkey: hex(k.pk[0]) + hex(k.pk[1]) }, name);
       say(`registered ${name}: ${link(r.id)}`);
     }
   } else if (cmd === "deposit") {
@@ -124,17 +124,17 @@ try {
     const slots = await net.tableAny("credits");
     const slot = slots.find((c) => c.owner === name);
     if (slot && BigInt(slot.amount) > 0n) throw new Error("a deposit is waiting to be placed: run `finish` first");
-    if (!slot) { act(net, net.contract, "open", { owner: name }, name); say("deposit slot opened"); }
+    if (!slot) { await act(net, net.contract, "open", { owner: name }, name); say("deposit slot opened"); }
     const note = N.newNote(k.pk, v, t.id);
-    const r1 = act(net, t.contract, "transfer", { from: name, to: net.contract, quantity: fmt(v, t), memo: `shield:${hex(note.r)}` }, name);
+    const r1 = await act(net, t.contract, "transfer", { from: name, to: net.contract, quantity: fmt(v, t), memo: `shield:${hex(note.r)}` }, name);
     say(`arrived: ${link(r1.id)}`);
-    const r2 = act(net, net.contract, "deposit", { owner: name, r: hex(note.r) }, name);
+    const r2 = await act(net, net.contract, "deposit", { owner: name, r: hex(note.r) }, name);
     say(`placed as a note: ${link(r2.id)} (${r2.cpu ?? "?"} µs)`);
   } else if (cmd === "finish") {
     const name = account(args[0]);
     const slot = (await net.tableAny("credits")).find((c) => c.owner === name);
     if (!slot || BigInt(slot.amount) === 0n) { say("nothing waiting"); }
-    else { const r = act(net, net.contract, "deposit", { owner: name, r: slot.r }, name); say(`placed: ${link(r.id)}`); }
+    else { const r = await act(net, net.contract, "deposit", { owner: name, r: slot.r }, name); say(`placed: ${link(r.id)}`); }
   } else if (cmd === "balance") {
     const name = account(args[0]);
     const k = loadKey(network, name);
@@ -162,11 +162,11 @@ try {
     const inputs = pick(sc.notes, t.id, v, (u) => fmt(u, t));
     const sum = inputs.reduce((s, n) => s + n.v, 0n);
     const outputs = isSend ? [{ pk: toPk, v }, { pk: k.pk, v: sum - v }] : [{ pk: k.pk, v: 0n }, { pk: k.pk, v: sum - v }];
-    if (!isSend && !(await hasBalanceRow(name, t))) { act(net, t.contract, "open", { owner: name, symbol: `${t.precision},${t.code}`, ram_payer: name }, name); say(`opened a ${t.code} balance row for ${name}`); }
+    if (!isSend && !(await hasBalanceRow(name, t))) { await act(net, t.contract, "open", { owner: name, symbol: `${t.precision},${t.code}`, ram_payer: name }, name); say(`opened a ${t.code} balance row for ${name}`); }
     say(`proving (${inputs.length} note${inputs.length > 1 ? "s" : ""} in, change ${fmt(sum - v, t)})…`);
     const { data, ms } = await proveSpend({ keys: k, tree: sc.tree, rootSeq: sc.rootSeq, auditorPk: cfg.auditorPk, owner: name, inputs, outputs, vPub: isSend ? 0n : v, tokenPub: isSend ? 0n : t.id, to: isSend ? 0n : N.nameToU64(name) });
     say(`proof in ${(ms / 1000).toFixed(1)} s`);
-    const r = act(net, net.contract, "spend", data, name);
+    const r = await act(net, net.contract, "spend", data, name);
     say(isSend ? `paid ${to} ${fmt(v, t)} (the chain shows only that ${name} paid): ${link(r.id)} (${r.cpu ?? "?"} µs)` : `withdrew ${fmt(v, t)} to ${name}: ${link(r.id)} (${r.cpu ?? "?"} µs)`);
   } else if (cmd === "activity") {
     const name = account(args[0]);
@@ -208,13 +208,13 @@ try {
       if (generated) phrase = generatePhrase();
       else { phrase = await readPhrase("your passphrase"); const p = passphraseProblem(phrase); if (p) throw new Error(p); }
       const blob = await phraseCopy(k.ask, phrase);
-      const r = act(net, net.contract, "setbackup", { owner: name, phrase: blob, committee: "" }, name);
+      const r = await act(net, net.contract, "setbackup", { owner: name, phrase: blob, committee: "" }, name);
       say(`phrase copy stored: ${link(r.id)}`);
       if (generated) say(`\nYOUR RECOVERY PHRASE (not stored anywhere else; write it down):\n\n  ${phrase}\n`);
     } else if (sub === "committee") {
       const cfg = await net.config();
       const blob = committeeCopy(k.ask, cfg.auditorPk);
-      const r = act(net, net.contract, "setbackup", { owner: name, phrase: "", committee: blob }, name);
+      const r = await act(net, net.contract, "setbackup", { owner: name, phrase: "", committee: blob }, name);
       say(`committee copy stored: ${link(r.id)}`);
     } else throw new Error("backup phrase|committee <account>");
   } else if (cmd === "restore") {

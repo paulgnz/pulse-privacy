@@ -1,8 +1,8 @@
 // Key files and signing for the headless client. The private-payment key lives in
 // ~/.private-xpr/<network>/<account>.json (mode 600). Chain writes are signed by the proton CLI
 // keychain: the account's XPR key never enters this process.
-import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import N from "../../circuits/lib/notes.mjs";
@@ -37,75 +37,33 @@ export function parseSecret(input) {
 }
 
 /**
- * Run one action through the proton CLI keychain on the network's chain; returns the transaction
- * id. The proton CLI's selected chain is a shared setting, so: selection failure aborts, the
- * selection is read back and must name the expected chain before signing, and a lock under the
- * key directory serialises this client's own concurrent invocations.
+ * Run one action through the proton CLI keychain on the network's chain; resolves to the
+ * transaction id. The proton CLI's selected chain is one shared setting for the whole user, so
+ * the select-sign-restore sequence runs under an OS-managed exclusive lock (flock on
+ * ~/.privatexpr-signing.lock, held by a small helper process for the duration): two signers
+ * can never interleave, and a signer that dies releases the lock with its process, so nothing
+ * is ever reclaimed and no displaced process exists to touch the shared setting.
  */
-export function act(net, contract, name, data, actor, permission = "active") {
+export async function act(net, contract, name, data, actor, permission = "active") {
   const run = (args) => {
     const r = spawnSync("proton", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     const text = (String(r.stdout ?? "") + "\n" + String(r.stderr ?? "")).replace(/\x1b\[[0-9;]*m/g, "");
     return { status: r.status, text };
   };
-  // The lock guards the proton CLI's shared chain setting, so it lives with the user, not with the
-  // key directory. Acquisition is atomic (a file created O_EXCL with the holder's pid). Recovery
-  // is ownership-based, never by age: a lock whose recorded owner is not running is reclaimed by
-  // renaming it aside and checking that what was renamed is the dead lock that was inspected; if
-  // a fresh lock was renamed by mistake it is linked back (or its owner notices below). The
-  // previous directory format (a directory holding a pid file) is recognised and reclaimed the
-  // same way. Safety does not rest on recovery alone: immediately before signing, the holder
-  // re-reads the lock and must still find its own pid there, otherwise it starts over.
-  const lock = join(homedir(), ".privatexpr-signing.lock");
-  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
-  const ownerOf = (path) => {
-    try {
-      const st = statSync(path);
-      const text = st.isDirectory() ? readFileSync(join(path, "pid"), "utf8").trim() : readFileSync(path, "utf8").trim();
-      const pid = Number(text);
-      return { pid: text && Number.isInteger(pid) && pid > 0 ? pid : null, ino: st.ino, dir: st.isDirectory(), age: Date.now() - st.mtimeMs };
-    } catch { return null; }
-  };
-  const acquire = () => {
-    const deadline = Date.now() + 60_000;
-    for (;;) {
-      try { writeFileSync(lock, String(process.pid), { flag: "wx" }); return; } catch (e) { if (e.code !== "EEXIST") throw e; }
-      const seen = ownerOf(lock);
-      const stale = seen !== null && (seen.pid !== null ? seen.pid !== process.pid && !alive(seen.pid) : seen.age > 10_000);
-      if (stale) {
-        const aside = `${lock}.reclaim.${process.pid}`;
-        try {
-          renameSync(lock, aside);
-          const got = ownerOf(aside);
-          if (got && got.ino === seen.ino) rmSync(aside, { recursive: true, force: true }); // exactly the dead lock inspected
-          else { try { if (!got?.dir) linkSync(aside, lock); } catch { /* a newer lock already stands; its owner re-checks before signing */ } rmSync(aside, { recursive: true, force: true }); }
-        } catch { /* another waiter got there first */ }
-        continue;
-      }
-      if (Date.now() > deadline) throw new Error("another privatexpr invocation is holding the signing lock");
-      spawnSync("sleep", ["0.2"]);
-    }
-  };
-  const holding = () => { try { return readFileSync(lock, "utf8").trim() === String(process.pid); } catch { return false; } };
-  const release = () => { if (holding()) rmSync(lock, { force: true }); };
-  acquire();
+  const lockPath = join(homedir(), ".privatexpr-signing.lock");
+  // an earlier client version used a directory here; it cannot be flocked, and no earlier version is running after an upgrade
+  try { if (statSync(lockPath).isDirectory()) rmSync(lockPath, { recursive: true, force: true }); } catch { /* absent */ }
+  const holder = await holdLock(lockPath, 60_000);
   let r;
-  for (let attempt = 0; ; attempt++) {
-    if (attempt > 0) acquire();
-    let retry = false;
-    try {
-      const sel = run(["chain:set", net.chain]);
-      if (sel.status !== 0) throw new Error(`could not select the ${net.chain} chain in the proton CLI: ${sel.text.trim().slice(0, 200)}`);
-      const cur = run(["chain:get"]);
-      if (cur.status !== 0 || !new RegExp(`"chain":\\s*"${net.chain}"`).test(cur.text)) throw new Error(`the proton CLI is not on the ${net.chain} chain; refusing to sign`);
-      // the lock must still be ours here: a waiter that reclaimed a stale lock could have displaced this one
-      if (!holding()) { if (attempt >= 5) throw new Error("could not keep the signing lock; try again"); retry = true; continue; }
-      r = run(["action", contract, name, JSON.stringify(data), `${actor}@${permission}`]);
-      break;
-    } finally {
-      run(["chain:set", "proton"]);
-      if (!retry) release();
-    }
+  try {
+    const sel = run(["chain:set", net.chain]);
+    if (sel.status !== 0) throw new Error(`could not select the ${net.chain} chain in the proton CLI: ${sel.text.trim().slice(0, 200)}`);
+    const cur = run(["chain:get"]);
+    if (cur.status !== 0 || !new RegExp(`"chain":\\s*"${net.chain}"`).test(cur.text)) throw new Error(`the proton CLI is not on the ${net.chain} chain; refusing to sign`);
+    r = run(["action", contract, name, JSON.stringify(data), `${actor}@${permission}`]);
+  } finally {
+    run(["chain:set", "proton"]);
+    holder.release();
   }
   if (process.env.PRIVATEXPR_DEBUG) console.error(r.text);
   const id = (r.text.match(/"transaction_id":\s*"([0-9a-f]{64})"/) || r.text.match(/tx\/([0-9a-f]{64})/) || [])[1];
@@ -115,4 +73,33 @@ export function act(net, contract, name, data, actor, permission = "active") {
   }
   const cpu = (r.text.match(/"cpu_usage_us":\s*(\d+)/) || [])[1];
   return { id, cpu: cpu ? Number(cpu) : undefined };
+}
+
+/**
+ * An exclusive OS lock (flock) on `path`, held by a helper process until `release()` closes its
+ * stdin, or until this process dies (the pipe closes and the helper exits). Python's fcntl is
+ * used when available, else perl's flock; both are standard on macOS and Linux.
+ */
+function holdLock(path, timeoutMs) {
+  const py = ["python3", ["-c", `import fcntl,sys,time,os\nf=open(sys.argv[1],'a+')\nt=time.time()\nwhile True:\n try:\n  fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB);break\n except OSError:\n  if time.time()-t>float(sys.argv[2]): print('timeout',flush=True); sys.exit(2)\n  time.sleep(0.1)\nprint('locked',flush=True)\nsys.stdin.read()`, path, String(timeoutMs / 1000)]];
+  const pl = ["perl", ["-e", `use Fcntl qw(:flock); open(my $f, '>>', $ARGV[0]) or die; my $t=time; while (!flock($f, LOCK_EX|LOCK_NB)) { if (time-$t > $ARGV[1]) { print "timeout\n"; exit 2 } select(undef,undef,undef,0.1) } $|=1; print "locked\n"; <STDIN>;`, path, String(Math.ceil(timeoutMs / 1000))]];
+  return new Promise((resolve, reject) => {
+    const tryWith = (cands) => {
+      if (!cands.length) return reject(new Error("no lock helper found (python3 or perl is needed for signing)"));
+      const [cmd, args] = cands[0];
+      let child;
+      try { child = spawn(cmd, args, { stdio: ["pipe", "pipe", "ignore"] }); } catch { return tryWith(cands.slice(1)); }
+      let out = "";
+      let settled = false;
+      child.on("error", () => { if (!settled) { settled = true; tryWith(cands.slice(1)); } });
+      child.stdout.on("data", (d) => {
+        out += String(d);
+        if (settled) return;
+        if (out.includes("locked")) { settled = true; resolve({ release: () => { try { child.stdin.end(); } catch { /* gone */ } } }); }
+        else if (out.includes("timeout")) { settled = true; reject(new Error("another privatexpr invocation is holding the signing lock")); }
+      });
+      child.on("exit", (code) => { if (!settled) { settled = true; if (code === 127) tryWith(cands.slice(1)); else reject(new Error("the lock helper exited before taking the lock")); } });
+    };
+    tryWith([py, pl]);
+  });
 }
