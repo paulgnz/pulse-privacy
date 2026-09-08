@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { EXPLORER, PATHS, SHIELD } from "../config";
+import { EXPLORER, NETWORK, NETWORK_LABEL, PATHS, SHIELD } from "../config";
 import type { Pt } from "../lib/crypto/babyjub";
-import { fmtUnits } from "../lib/format";
+import { UNITS, fmtUnits } from "../lib/format";
 import * as sh from "../lib/shield/chain";
 import type { ActivityEvent, BackupRow, ShieldConfig, ShieldEdges, ShieldLedgerRow } from "../lib/shield/chain";
 import { shieldKeyFile } from "../lib/shield/backup";
@@ -10,7 +10,7 @@ import type { OwnedNote, ShieldKeys } from "../lib/shield/notes";
 import { keygen } from "../lib/shield/notes";
 import type { Token } from "../lib/token";
 import { Amount } from "./Amount";
-import { Field, Note, TokenIcon } from "./ui";
+import { Field, Line, Note, TokenIcon } from "./ui";
 
 const tokenOf = (cfg: ShieldConfig, id: bigint, fallback: Token) => cfg.tokens.find((t) => t.id === id)?.token ?? fallback;
 
@@ -337,34 +337,233 @@ export const ShieldAuditor = ({ cfg, token }: { cfg: ShieldConfig; token: Token 
 
 // ---------------------------------------------------------------- How it works
 
-export const ShieldAbout = ({ onConnect, signedIn }: { onConnect?: () => void; signedIn: boolean }) => (
-  <section className="about">
-    <h1>How shielded payments work</h1>
-    <p className="lede">Money goes in and comes out in public. Inside, it moves as sealed notes: a payment shows who paid, and nothing else.</p>
-    <h2>Deposit</h2>
-    <p>You send XPR or XMD to the contract with your wallet, as an ordinary transfer. The contract turns it into a sealed note to your key and adds the note's fingerprint to a tree. The deposit and its amount are public, like any transfer.</p>
-    <h2>Pay</h2>
-    <p>To pay someone, your device proves, without revealing which, that you hold notes worth at least the amount, and produces two new sealed notes: one to the receiver, one with your change, in random order. Your wallet signs the transaction. The chain records that you paid, the two new fingerprints, and two one-way tags that stop the old notes being spent again. It does not record the receiver, the amount, or which notes you used.</p>
-    <h2>Receive</h2>
-    <p>Your device scans the contract's notes and recognises the ones sealed to your key. Nobody else can list them or read the amounts. You can spend them the moment they land.</p>
-    <h2>Withdraw</h2>
-    <p>A withdrawal spends notes and pays public tokens to your own account. The chain sees that you withdrew this amount to yourself; it does not see which notes.</p>
-    <h2>The auditor</h2>
-    <p>Every note is also sealed to the XPR Network committee's viewing key, and the proof enforces it: a note the auditor cannot read cannot be created. The auditor sees who received what, and the signed transaction says who paid. This is compliant privacy, not anonymity.</p>
-    <h2>What stays visible</h2>
-    <ul className="plain">
-      <li>Who initiated each payment, and when.</li>
-      <li>Deposits and withdrawals, with amounts and names.</li>
-      <li>Whether a payment spent one note or two.</li>
-      <li>The set of accounts that have set up shielded payments.</li>
-    </ul>
-    <p>With few users, "someone paid someone" narrows quickly, and a receiver who spends right after being paid links the two by timing. Those limits are real and are written down in the design.</p>
-    <h2>Your key</h2>
-    <p>Your shielded key is derived from one wallet signature over a fixed message that is never sent to the chain. The same wallet gives the same key on any device. The key reads and proves; only your wallet's signature moves anything. Wallets that sign differently each time keep a saved key instead, with a secret you copy once.</p>
-    {!signedIn && onConnect ? (
-      <div className="cta row">
-        <button className="btn private" onClick={onConnect}>Connect wallet</button>
+const CEREMONY_URL = "https://ceremony.private.protonnz.com";
+
+/** the shielded contract's tokens and caps, read from the contract */
+const ShieldLimits = ({ tokens }: { tokens: Token[] }) => {
+  const [cfg, setCfg] = useState<ShieldConfig | null | undefined>(undefined);
+  useEffect(() => { sh.getConfig(tokens).then(setCfg).catch(() => setCfg(null)); }, [tokens]);
+  if (cfg === undefined) return <p className="muted">Reading the contract</p>;
+  if (!cfg || !cfg.tokens.length) return <p className="muted">The contract's limits could not be read right now.</p>;
+  const whole = (v: bigint, t: Token) => fmtUnits(v, t, { trim: true });
+  return (
+    <div className="limits">
+      <table>
+        <thead><tr><th>Token</th><th>Per deposit</th><th>In the contract</th><th>Withdrawals</th></tr></thead>
+        <tbody>
+          {cfg.tokens.map((r) => (
+            <tr key={r.token.code}>
+              <td><span className="tok"><TokenIcon code={r.token.code} />{r.token.code}</span></td>
+              <td>{r.maxDeposit ? `up to ${whole(r.maxDeposit, r.token)}` : "no cap"}</td>
+              <td>{r.maxPool ? `${whole(r.pool, r.token)} of ${whole(r.maxPool, r.token)}` : whole(r.pool, r.token)}</td>
+              <td>any amount, to your own account</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+/** a three-line shielded statement: what each party sees */
+const ShieldExcerpt = () => (
+  <div className="excerpt" aria-label="Example statement">
+    <Line label="Deposit" sub="public, like any transfer">
+      <Amount value={5000n * UNITS} />
+    </Line>
+    <Line label="Sent" sub="the chain shows that you paid, and nothing else">
+      <Amount value={1234n * UNITS} hidden />
+    </Line>
+    <Line label="Received" sub="only you, the payer and the auditor can see this exists">
+      <Amount value={250n * UNITS} hidden digits={8} />
+    </Line>
+  </div>
+);
+
+/** Alice pays Bob: what each party can read */
+const WhoSees = () => (
+  <div className="limits">
+    <table>
+      <thead><tr><th>Alice pays Bob 250 XPR</th><th>The public</th><th>Bob</th><th>The auditor</th></tr></thead>
+      <tbody>
+        <tr><td>Alice paid someone</td><td>yes, signed</td><td>yes</td><td>yes</td></tr>
+        <tr><td>The receiver is Bob</td><td>no</td><td>yes</td><td>yes</td></tr>
+        <tr><td>The amount, 250 XPR</td><td>no</td><td>yes</td><td>yes</td></tr>
+        <tr><td>Which of Alice's notes were spent</td><td>no</td><td>no</td><td>no, only their total</td></tr>
+        <tr><td>Alice's change</td><td>no</td><td>no</td><td>yes</td></tr>
+      </tbody>
+    </table>
+  </div>
+);
+
+/** How it works, shielded. Facts follow docs/06-shielded-design.md; written for a user. */
+export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: () => void; signedIn: boolean; tokens?: Token[] }) => (
+  <article className="about">
+    <section>
+      <h1>How shielded payments work</h1>
+      <p>
+        Shielded XPR is money you hold inside a contract on XPR Network, as sealed notes. It holds XPR and XMD, the Metal Dollar,
+        and more tokens can be added. You deposit ordinary tokens into it, and from then on every payment you make is a new sealed
+        note to the receiver. The chain records that you paid, and when. It shows neither whom nor how much.
+      </p>
+      <p className="coins" aria-label="Tokens held">
+        <span className="tok"><TokenIcon code="XPR" size={28} />XPR</span>
+        <span className="tok"><TokenIcon code="XMD" size={28} />XMD, the Metal Dollar</span>
+      </p>
+      <p>
+        Three parties can read a payment: the payer, the receiver, and a designated auditor. Nobody else can, including the validators
+        that run the network. Your wallet keeps working as it does today: it signs every payment, and needs no changes.
+      </p>
+    </section>
+
+    <section>
+      <h2>Three ideas make this work</h2>
+
+      <h3>Sealed notes instead of a balance</h3>
+      <p>
+        Your money inside is a set of notes, each sealed to your key with an amount inside. Paying someone spends whole notes and
+        creates two new ones: one sealed to the receiver, one back to you with the change. Only the fingerprint of each note goes
+        on chain, in a tree the contract maintains. Nobody can tell from the fingerprint whose note it is or what it holds.
+      </p>
+      <ShieldExcerpt />
+
+      <h3>A proof instead of an open ledger</h3>
+      <p>
+        Before a payment is accepted, your device attaches a small mathematical proof: the notes you are spending exist in the tree,
+        they are yours, they have not been spent before, and the new notes add up to the old ones. The network checks the proof in
+        about fifteen milliseconds without learning which notes were involved. Each spent note leaves a one-way tag behind so it
+        can never be spent again.
+      </p>
+
+      <h3>Two keyholes on every note</h3>
+      <p>
+        Each note is sealed to the receiver's key and to the auditor's key, and the proof checks both. A note the auditor cannot
+        read cannot be created. That is what makes this shielded rather than anonymous.
+      </p>
+    </section>
+
+    <section>
+      <h2>Who can read a payment</h2>
+      <p>Alice pays Bob. Compare what each party can read.</p>
+      <WhoSees />
+      <p>
+        The one thing the public always sees is the payer's signature. There is no anonymous sending: every payment is signed by the
+        account that makes it, which is what keeps the system compliant.
+      </p>
+    </section>
+
+    <section>
+      <h2>Getting started</h2>
+      <ol className="howto">
+        <li>Connect your WebAuth wallet. Nothing is sent to the chain.</li>
+        <li>Sign one message. For most wallets the signature becomes your shielded key, the same on every device, with nothing to write down. Passkey wallets sign differently each time, so they get a saved key and a seven-word recovery phrase instead.</li>
+        <li>Register once. This publishes the public half of your key under your name, so anyone can pay you by name. It is the only time your account and your key appear together on chain.</li>
+        <li>Deposit XPR or XMD from your public balance. From here on, pay any registered account, or withdraw to your own account.</li>
+      </ol>
+      <p>
+        Paying asks your wallet for one signature per payment; the proof is built on your device just before it, in about a second.
+        If your browser blocks the wallet's popup, allow popups for this site.
+      </p>
+    </section>
+
+    <section>
+      <h2>Notes and change</h2>
+      <p>
+        A payment spends whole notes, so one payment can touch several rows in your activity: the notes spent, the note the receiver
+        gets, and your change. A payment spends at most two notes at once; if your balance is spread across many small notes, the
+        app pays in more than one step. Incoming notes are yours the moment they land, with nothing to accept.
+      </p>
+    </section>
+
+    <section>
+      <h2>What is public and what is hidden</h2>
+      <div className="cols">
+        <div>
+          <h3>Public</h3>
+          <ul>
+            <li>Who made each payment, and when</li>
+            <li>Deposits into the contract, with amounts</li>
+            <li>Withdrawals out of it, with amounts</li>
+            <li>Whether a payment spent one note or two</li>
+            <li>Which accounts have set up shielded payments</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Hidden</h3>
+          <ul>
+            <li>Who was paid</li>
+            <li>Every payment amount</li>
+            <li>Every note and balance inside the contract</li>
+            <li>Readable only by the payer, the receiver and the auditor</li>
+          </ul>
+        </div>
       </div>
-    ) : null}
-  </section>
+    </section>
+
+    <section>
+      <h2>Privacy at the edges</h2>
+      <p>
+        Money enters and leaves the contract in public, because a deposit and a withdrawal move ordinary tokens. Withdrawals go
+        only to your own account, so a withdrawal is never a hidden payment to someone else.
+      </p>
+      <p>
+        Inside, payments are hidden by cryptography. At the edges they are hidden by time and volume. With few users, "someone paid
+        someone" narrows quickly, and a receiver who withdraws exactly what they were paid, right after being paid, links the two by
+        timing. The private path is to keep money inside and pay other shielded accounts directly.
+      </p>
+    </section>
+
+    <section>
+      <h2>The auditor</h2>
+      <p>
+        One viewing key, held by the XPR Network committee, opens every note: the receiver and the amount. The payer is named by the
+        signed transaction. The key cannot spend. This is the difference between shielded and anonymous: the details are hidden from
+        the public, not from oversight. The auditor page shows what that key sees.
+      </p>
+    </section>
+
+    <section>
+      <h2>If you lose your key</h2>
+      <p>
+        For most accounts the key comes back from your wallet's signature every time, so there is nothing to lose. Passkey accounts
+        keep a saved key, and three things bring it back on another device: the seven-word recovery phrase, a key file, or an encrypted
+        copy kept with the XPR Network committee, which returns the key after you prove you own the account. Set these up in Settings.
+        And if a key is ever beyond recovery, the committee can pause the contract and return an account's money from escrow, using
+        what its viewing key can read. Money in the contract is recoverable; it is never simply gone.
+      </p>
+    </section>
+
+    <section>
+      <h2>Tokens and limits</h2>
+      <p>This is an early release, so the contract caps what it holds. The caps are set on chain and will be raised in steps.</p>
+      <ShieldLimits tokens={tokens} />
+    </section>
+
+    <section>
+      <h2>Status</h2>
+      <ul className="plain">
+        <li>
+          Running on {NETWORK_LABEL}. Contract{" "}
+          <a href={`${EXPLORER}/account/${SHIELD.contract}`} target="_blank" rel="noreferrer">{SHIELD.contract}</a>
+          {NETWORK === "mainnet" ? ", owned by the XPR Network committee." : ", a testnet account. Mainnet follows the ceremony."}
+        </li>
+        <li>Proofs are generated in your browser and take about a second. The network checks one in about fifteen milliseconds.</li>
+        <li>
+          The proving key comes from a one-person rehearsal until the public ceremony completes. Anyone can{" "}
+          <a href={CEREMONY_URL} target="_blank" rel="noreferrer">contribute randomness</a>; as long as one contributor was honest, nobody can forge a proof.
+          The first phase of the ceremony is shared with the confidential contract; the second is run for this circuit.
+        </li>
+        <li>The code has been through two independent reviews and has not been audited yet. The caps above bound what is at stake until it has.</li>
+        <li>
+          The design, the circuit and the contract are public:{" "}
+          <a href="https://github.com/paulgnz/pulse-privacy" target="_blank" rel="noreferrer">github.com/paulgnz/pulse-privacy</a>.
+        </li>
+      </ul>
+      {!signedIn && onConnect ? (
+        <p className="cta">
+          <button className="btn big" onClick={onConnect}>Connect wallet</button>
+        </p>
+      ) : null}
+    </section>
+  </article>
 );

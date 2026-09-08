@@ -432,7 +432,7 @@ export default function App() {
     return (
       <div className="page">
         {header}
-        {route === "shielded-about" ? <ShieldAbout signedIn={!!session} onConnect={session ? undefined : doLogin} /> : <About signedIn={!!session} onConnect={session ? undefined : doLogin} />}
+        {route === "shielded-about" ? <ShieldAbout signedIn={!!session} onConnect={session ? undefined : doLogin} tokens={tokens} /> : <About signedIn={!!session} onConnect={session ? undefined : doLogin} />}
         {foot}
       </div>
     );
