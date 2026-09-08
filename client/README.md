@@ -17,6 +17,10 @@ Nothing in this client ever reads or prints an XPR private key. Chain writes are
 `proton` CLI, which signs from its own encrypted keychain. The Private XPR key (the one that
 reads notes and builds proofs; it cannot spend without the account's signature) is kept in
 `~/.private-xpr/<network>/<account>.json`, mode 600. `PRIVATEXPR_HOME` moves that directory.
+Recovery phrases are never accepted on the command line, because shells keep history and process
+listings are public on a shared machine; the client asks at a hidden prompt or reads standard input.
+Signing takes a lock at `~/.privatexpr-signing.lock` while it switches the proton CLI's chain, since
+that setting is shared by every process of the user; a lock left by a killed process is reclaimed.
 
 ## A first run on testnet
 
@@ -29,9 +33,9 @@ $C balance myaccount
 $C send myaccount someone 10      # someone must be registered; the chain sees only that you paid
 $C withdraw myaccount 5           # to your own public balance
 $C activity myaccount
-$C backup phrase myaccount        # prints seven words once; stores the encrypted copy on chain
+$C backup phrase myaccount        # prints seven words once; stores the encrypted copy on chain (--own: type your own at a hidden prompt)
 $C backup committee myaccount     # a copy only the committee's key opens
-$C restore myaccount word1 … word7
+$C restore myaccount               # asks for the seven words at a hidden prompt (or reads them from stdin)
 ```
 
 `--network mainnet` (or `PRIVATEXPR_NETWORK=mainnet`) targets the mainnet contract once it is

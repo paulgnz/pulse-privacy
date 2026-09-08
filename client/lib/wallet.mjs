@@ -2,7 +2,7 @@
 // ~/.private-xpr/<network>/<account>.json (mode 600). Chain writes are signed by the proton CLI
 // keychain: the account's XPR key never enters this process.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import N from "../../circuits/lib/notes.mjs";
@@ -48,11 +48,25 @@ export function act(net, contract, name, data, actor, permission = "active") {
     const text = (String(r.stdout ?? "") + "\n" + String(r.stderr ?? "")).replace(/\x1b\[[0-9;]*m/g, "");
     return { status: r.status, text };
   };
-  const lock = join(KEY_DIR, ".proton-lock");
-  mkdirSync(KEY_DIR, { recursive: true, mode: 0o700 });
+  // The lock guards the proton CLI's shared chain setting, so it lives with the user, not with the
+  // key directory (two PRIVATEXPR_HOME values must still share it). The holder writes its pid; a
+  // lock whose holder is gone, or older than two minutes, is stale and reclaimed.
+  const lock = join(homedir(), ".privatexpr-signing.lock");
+  const pidFile = join(lock, "pid");
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
   const deadline = Date.now() + 60_000;
   for (;;) {
-    try { mkdirSync(lock); break; } catch { if (Date.now() > deadline) throw new Error("another privatexpr invocation is holding the signing lock"); spawnSync("sleep", ["0.2"]); }
+    try { mkdirSync(lock); writeFileSync(pidFile, String(process.pid)); break; } catch {
+      let stale = false;
+      try {
+        const st = statSync(lock);
+        const pid = Number(readFileSync(pidFile, "utf8").trim());
+        stale = (Number.isInteger(pid) && pid > 0 && !alive(pid)) || Date.now() - st.mtimeMs > 120_000;
+      } catch { stale = true; }
+      if (stale) { rmSync(lock, { recursive: true, force: true }); continue; }
+      if (Date.now() > deadline) throw new Error("another privatexpr invocation is holding the signing lock");
+      spawnSync("sleep", ["0.2"]);
+    }
   }
   let r;
   try {

@@ -293,3 +293,11 @@ Auditor tab and a successor-contract procedure is rehearsed before half capacity
 | 4 | medium | malformed token or tree rows from one node could abort a read two healthy nodes agreed on, in both clients | those rows are validated inside each node's answer; a bad answer is dropped |
 | 5 | medium | the Auditor tab measured capacity by output rows; a deposit stores one row but takes two tree slots | capacity is the agreed `next_leaf` against 1,048,576 slots |
 
+## Shielded mode: independent review, tenth pass (Codex, 2026-09-08, at `0216114`)
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | medium | the client's signing lock lived under the key directory, so two key directories on one user had two locks while the proton CLI's chain setting stayed shared | the lock lives with the user (`~/.privatexpr-signing.lock`), one per user regardless of key directory |
+| 2 | medium | a killed client left its lock behind and later invocations refused to sign | the holder records its pid; a lock whose holder is gone, or older than two minutes, is reclaimed (tested with a planted dead-owner lock) |
+| 3 | low | the client README still showed recovery words as command arguments | the README shows the hidden prompt and explains why |
+
