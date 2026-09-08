@@ -3,12 +3,12 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { lockActive, readState, writeState } from "./_lib/state.js";
 import { lockNoteFor, verifyAttestation } from "./_lib/verify.js";
 
-const LOCK_MINUTES = 20;
+const LOCK_MINUTES = 30; // phase 1 in a browser can take several minutes on a slow device, then a wallet signature and a 25 MB upload
 const NAME_RE = /^[a-z1-5.]{1,12}$/;
 const SKEW_MS = 5 * 60_000;
 
 /**
- * POST { actor, permission, ts, signature } → take the turn (20 min). The signature is the
+ * POST { actor, permission, ts, signature } → take the turn (30 min). The signature is the
  * account's over the never-broadcast viewkey note `ceremony/lock/<phase>/<index>/<ts>`, so
  * only the account itself can take its turn. Returns a lock token; the same token releases it:
  * POST { actor, release: true, token }.

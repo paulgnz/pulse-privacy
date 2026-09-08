@@ -27,7 +27,7 @@ export function App() {
   const [log, setLog] = useState<string[]>([]);
   const [elapsed, setElapsed] = useState(0);
   const [result, setResult] = useState<{ index: number; phase: number; sha256: string; contributionHash: string | null; file: string } | null>(null);
-  const [turn, setTurn] = useState<{ index: number; head: Head; phase: 1 | 2 } | null>(null);
+  const [turn, setTurn] = useState<{ index: number; head: Head; phase: 1 | 2; until: string } | null>(null);
   const sentenceReady = useRef<((s: string) => void) | null>(null);
   const timer = useRef<number | null>(null);
   // the finished contribution, held until the user clicks to sign: the wallet popup is only
@@ -101,11 +101,11 @@ export function App() {
       const ts = Date.now();
       const lockSig = await signAttestation(session, lockNoteFor(state.phase, (state.head.index ?? 0) + 1, ts));
       const lr = await fetch("/api/lock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actor, permission: session.auth.permission, ts, signature: lockSig }) });
-      const lj = (await lr.json()) as { error?: string; head?: Head; phase?: 1 | 2; index?: number; token?: string };
+      const lj = (await lr.json()) as { error?: string; head?: Head; phase?: 1 | 2; index?: number; token?: string; lock?: { until: string } };
       if (!lr.ok) throw new Error(lj.error ?? "could not take a turn");
       lockToken.current = lj.token ?? null;
       const head = lj.head!, phase = lj.phase!, index = lj.index!;
-      setTurn({ index, head, phase });
+      setTurn({ index, head, phase, until: lj.lock?.until ?? new Date(Date.now() + 30 * 60_000).toISOString() });
 
       // 2. download the current file
       setStep("downloading");
@@ -149,15 +149,26 @@ export function App() {
     }
   };
 
+  const release = async (actor: string, token: string) => {
+    for (let i = 0; i < 4; i++) {
+      try {
+        const r = await fetch("/api/lock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actor, release: true, token }) });
+        if (r.ok || r.status === 409) return; // released, or no longer ours
+      } catch { /* retry */ }
+      await new Promise((res) => setTimeout(res, 2000 * (i + 1)));
+    }
+  };
   const fail = (e: Error, actor: string) => {
     if (timer.current) clearInterval(timer.current);
     setErr(e.message);
     setStep("idle");
     ready.current = null;
-    // give the turn back if we hold it
-    if (lockToken.current) fetch("/api/lock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actor, release: true, token: lockToken.current }) }).catch(() => {});
+    // give the turn back if we hold it; retried, because a coordinator that is briefly unreachable
+    // would otherwise leave the turn taken until it expires
+    const token = lockToken.current;
     lockToken.current = null;
-    refresh();
+    if (token) release(actor, token).finally(refresh);
+    else refresh();
   };
 
   /** from a click: sign the attestation (never broadcast), then upload and record */
@@ -167,6 +178,7 @@ export function App() {
     const actor = session.auth.actor;
     const { out, outputSha, inputSha, phase, index } = r;
     setErr(null);
+    if (turn && Date.parse(turn.until) < Date.now()) { fail(new Error("Your turn ran out before the file was recorded. Nothing was saved. Take a new turn when it is free."), actor); return; }
     setStep("signing");
     let signature: string;
     try {
@@ -197,7 +209,7 @@ export function App() {
         body: JSON.stringify({ actor, token: lockToken.current, permission: session.auth.permission, phase, index, inputSha256: inputSha, outputSha256: outputSha, contributionHash: ready.current?.contributionHash ?? null, signature }),
       });
       const cj = (await cr.json()) as { error?: string; attestation?: { contributionHash?: string | null } };
-      if (!cr.ok) throw new Error(cj.error ?? "the coordinator rejected the contribution");
+      if (!cr.ok) throw new Error(/not your turn/.test(cj.error ?? "") ? "Your turn ran out before the file was recorded. Nothing was saved. Take a new turn when it is free; it will be quicker the second time, the file is cached." : cj.error ?? "the coordinator rejected the contribution");
       setResult({ index, phase, sha256: outputSha, contributionHash: cj.attestation?.contributionHash ?? ready.current?.contributionHash ?? null, file: pathname });
       lockToken.current = null;
       ready.current = null;
@@ -280,7 +292,7 @@ export function App() {
 
         {step !== "idle" && step !== "done" ? (
           <ol className="steps">
-            <li className={step === "locking" ? "now" : "done"}>Taking your turn{turn ? `: contribution ${turn.index} of phase ${turn.phase}` : ""}{step === "locking" ? " (sign in your wallet to claim it)" : ""}</li>
+            <li className={step === "locking" ? "now" : "done"}>Taking your turn{turn ? `: contribution ${turn.index} of phase ${turn.phase}, yours until ${when(turn.until)}` : ""}{step === "locking" ? " (sign in your wallet to claim it)" : ""}</li>
             <li className={step === "downloading" ? "now" : ["entropy", "computing", ...AFTER_COMPUTE].includes(step) ? "done" : ""}>Downloading the current file ({turn?.phase === 1 ? "about 25 MB" : "about 25 MB"})</li>
             <li className={step === "entropy" ? "now" : ["computing", ...AFTER_COMPUTE].includes(step) ? "done" : ""}>
               Adding your randomness
