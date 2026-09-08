@@ -388,5 +388,7 @@ Codex reviewed the rollover series (`35341a0` to `7e6d944`): the fund-locking fi
 
 Follow-up at `06b1171`: the offline client regression passes with network access blocked; one low item, the browser regression's forged history accepted a deposit-only account (zero identifiers). It now requires a real received note and a real spent note before forging, and fails without them.
 
+Verified clean by Codex at `d125e1f`: the rollover series (contract, circuit revision 6, app, headless client, tests) is closed.
+
 Outstanding as before: transitive dependency advisories in the ceremony web app.
 
