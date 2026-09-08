@@ -1,5 +1,5 @@
 import { Asset, Contract, ExtendedAsset, Name, Symbol, Table, TableStore, check, print, requireAuth } from "proton-tsc";
-import { sendTransferTokens } from "proton-tsc/token";
+import { Account as TokenAccount, sendTransferTokens } from "proton-tsc/token";
 import { groth16Verify } from "./groth16";
 import { Limbs, fromBytesBE, fromU64, hex, isCanonicalBE, toBytesBE } from "./fr";
 import { hash2, poseidon, zeroAt } from "./poseidon";
@@ -153,19 +153,27 @@ class OutputRow extends Table {
 }
 
 /**
- * A deposit that has arrived but not yet been placed in the tree. The token transfer's
- * notification cannot bill the depositor, so it only records this small row; the owner's own
- * `deposit` action then builds the note and pays for its rows. An unfinished deposit can be
- * finished any time later.
+ * One owner-paid deposit slot per registered account, created at `register` (or by `open` for
+ * accounts registered before slots existed). A token transfer with memo `shield:<r>` fills the
+ * empty slot from inside the notification, which is allowed because the row does not change
+ * size and so bills nothing; the owner's `deposit` then builds the note and empties the slot.
+ * An occupied slot refuses further transfers (the transaction fails and the tokens never
+ * leave the sender), so nobody but its owner can grow this table, and lookup is one get.
  */
+function emptyR(): u8[] {
+  const z = new Array<u8>(32);
+  for (let i = 0; i < 32; i++) z[i] = 0;
+  return z;
+}
+
 @table("credits")
 class Credit extends Table {
-  constructor(public id: u64 = 0, public owner: Name = new Name(), public sym: u64 = 0, public amount: u64 = 0, public r: u8[] = []) {
+  constructor(public owner: Name = new Name(), public sym: u64 = 0, public amount: u64 = 0, public r: u8[] = []) {
     super();
   }
   @primary
   get primary(): u64 {
-    return this.id;
+    return this.owner.N;
   }
 }
 
@@ -269,6 +277,7 @@ class XprShield extends Contract {
     requireAuth(this.receiver);
     check(this.configs.get(0) == null, "already initialised");
     check(onCurve(auditor_pubkey), "auditor pubkey not on curve");
+    check(inPrimeSubgroup(auditor_pubkey), "auditor pubkey is the identity or has low order");
     check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 27 public inputs");
     this.configs.store(new Config(0, auditor_pubkey, vk, false), this.receiver);
     const filled = new Array<u8>(DEPTH * 32);
@@ -318,6 +327,7 @@ class XprShield extends Contract {
     requireAuth(this.receiver);
     const c = this.config();
     check(onCurve(auditor_pubkey), "auditor pubkey not on curve");
+    check(inPrimeSubgroup(auditor_pubkey), "auditor pubkey is the identity or has low order");
     c.auditor_pubkey = auditor_pubkey;
     this.configs.update(c, this.receiver);
   }
@@ -365,6 +375,7 @@ class XprShield extends Contract {
     t.pool -= v;
     t.withdrawals += v;
     this.tokens.update(t, this.receiver);
+    check(new TableStore<TokenAccount>(t.token_contract, to).get(quantity.symbol.code()) != null, "the account must hold a balance row for this token");
     sendTransferTokens(this.receiver, to, [new ExtendedAsset(quantity, t.token_contract)], "restore: " + memo);
   }
 
@@ -392,26 +403,55 @@ class XprShield extends Contract {
     check(onCurve(pubkey), "pubkey not on curve");
     check(inPrimeSubgroup(pubkey), "pubkey is the identity or has low order");
     check(this.keys.get(owner.N) == null, "already registered");
+    // one key, one name: a sender who looks a name up must reach that account alone, and the
+    // auditor's key-to-name mapping must be unambiguous (a scan; fine for the sizes expected)
+    let k = this.keys.first();
+    while (k != null) {
+      check(!bytesEq(k.pubkey, pubkey), "this key is already registered by another account");
+      k = this.keys.next(k);
+    }
     this.keys.store(new KeyRow(owner, pubkey), owner);
+    if (this.credits.get(owner.N) == null) this.credits.store(new Credit(owner, 0, 0, emptyR()), owner);
   }
 
-  /** store, replace or clear (empty) the owner's recovery copies; the owner pays the row */
+  /** an owner-paid deposit slot for an account registered before slots existed; idempotent */
+  @action("open")
+  open(owner: Name): void {
+    requireAuth(owner);
+    check(this.keys.get(owner.N) != null, "register a key first");
+    if (this.credits.get(owner.N) == null) this.credits.store(new Credit(owner, 0, 0, emptyR()), owner);
+  }
+
+  /**
+   * Store or replace the owner's recovery copies; the owner pays the row. An empty argument
+   * keeps what is there, so a client that could not read the row cannot wipe the other copy;
+   * `clearbackup` removes copies explicitly.
+   */
   @action("setbackup")
   setbackup(owner: Name, phrase: u8[], committee: u8[]): void {
     requireAuth(owner);
     check(phrase.length == 0 || (phrase.length >= 60 && phrase.length <= 160), "phrase copy must be 60 to 160 bytes");
     check(committee.length == 0 || committee.length == 64, "committee copy must be 64 bytes");
+    check(phrase.length > 0 || committee.length > 0, "nothing to store");
     const b = this.backups.get(owner.N);
-    if (phrase.length == 0 && committee.length == 0) {
-      if (b != null) this.backups.remove(b);
-      return;
-    }
     if (b == null) this.backups.store(new BackupRow(owner, phrase, committee), owner);
     else {
-      b.phrase = phrase;
-      b.committee = committee;
+      if (phrase.length > 0) b.phrase = phrase;
+      if (committee.length > 0) b.committee = committee;
       this.backups.update(b, owner);
     }
+  }
+
+  /** remove the phrase copy, the committee copy, or both; the row goes when both are gone */
+  @action("clearbackup")
+  clearbackup(owner: Name, phrase: bool, committee: bool): void {
+    requireAuth(owner);
+    const b = this.backups.get(owner.N);
+    check(b != null, "no recovery copies stored");
+    if (phrase) b!.phrase = [];
+    if (committee) b!.committee = [];
+    if (b!.phrase.length == 0 && b!.committee.length == 0) this.backups.remove(b!);
+    else this.backups.update(b!, owner);
   }
 
   // ---------------------------------------------------------------- tree
@@ -489,8 +529,15 @@ class XprShield extends Contract {
     t.pool += v;
     t.deposits += v;
     this.tokens.update(t, this.receiver);
-    // the note is built by the owner's `deposit` action, which pays for its rows
-    this.credits.store(new Credit(this.credits.availablePrimaryKey, from, quantity.symbol.raw(), v, r), this.receiver);
+    // the note is built by the owner's `deposit` action, which pays for its rows; here the arrival
+    // fills the owner's slot, a same-size update that bills nothing inside the notification
+    const slot = this.credits.get(from.N);
+    check(slot != null, "no deposit slot: registered before slots existed? send the open action once");
+    check(slot!.amount == 0, "finish your pending deposit first");
+    slot!.sym = quantity.symbol.raw();
+    slot!.amount = v;
+    slot!.r = r;
+    this.credits.update(slot!, from);
   }
 
   /**
@@ -502,19 +549,19 @@ class XprShield extends Contract {
     requireAuth(owner);
     check(!this.config().paused, "paused");
     check(r.length == 32 && isCanonicalBE(r, 0), "r must be a field element");
-    let cr = this.credits.first();
-    while (cr != null) {
-      if (cr.owner == owner && bytesEq(cr.r, r)) break;
-      cr = this.credits.next(cr);
-    }
-    check(cr != null, "no arrived deposit with this r for this owner");
-    const credit = cr!;
+    const slot = this.credits.get(owner.N);
+    check(slot != null && slot!.amount > 0, "no arrived deposit for this owner");
+    const credit = slot!;
+    check(bytesEq(credit.r, r), "r does not match the arrived deposit");
     const tok = this.tokens.get(credit.sym);
     check(tok != null, "token not accepted by this contract");
     const key = this.keys.get(owner.N);
     check(key != null, "owner has not registered a key");
     const v = credit.amount;
-    this.credits.remove(credit);
+    credit.amount = 0;
+    credit.sym = 0;
+    credit.r = emptyR();
+    this.credits.update(credit, owner);
 
     const pk = key!.pubkey;
     const inp = new StaticArray<Limbs>(5);
@@ -537,7 +584,7 @@ class XprShield extends Contract {
    * Signed by `owner`, who pays CPU and RAM. The proof is bound to `owner`, to the key
    * registered for `owner`, and to the withdrawal destination, which is `owner` itself.
    * `amount` > 0 makes it a withdrawal of `token_id`; `root_seq` names the tree root the
-   * proof was built against (one of the last 128).
+   * proof was built against (one of the last RING).
    */
   @action("spend")
   spend(owner: Name, proof: u8[], publics: u8[], amount: u64, token_id: u8, root_seq: u64): void {
@@ -561,6 +608,9 @@ class XprShield extends Contract {
     check(rootRow != null, "unknown or stale root");
     const epk1 = decompress(word(publics, 4));
     const epk2 = decompress(word(publics, 5));
+    // a low-order ephemeral key (esk a multiple of the subgroup order passes the circuit's
+    // esk != 0 check) would make both ciphertexts readable by anyone
+    check(inPrimeSubgroup(epk1) && inPrimeSubgroup(epk2), "ephemeral key is the identity or has low order");
     const vPub: u64 = amount;
     const tokenPub: u64 = amount > 0 ? (token_id as u64) : 0;
     const to: u64 = amount > 0 ? owner.N : 0;
@@ -592,6 +642,9 @@ class XprShield extends Contract {
       t.withdrawals += vPub;
       this.tokens.update(t, this.receiver);
       const sym = Symbol.fromU64(t.sym);
+      // the receiver must already hold a balance row for this token, or the token contract would
+      // bill the new row to this contract (the inline transfer carries only our authority)
+      check(new TableStore<TokenAccount>(t.token_contract, owner).get(sym.code()) != null, "open a balance for this token in your wallet first");
       sendTransferTokens(this.receiver, owner, [new ExtendedAsset(new Asset(<i64>vPub, sym), t.token_contract)], "shielded withdraw");
     }
     print("shield leaf " + index.toString());

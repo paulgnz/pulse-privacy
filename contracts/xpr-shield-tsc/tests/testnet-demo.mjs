@@ -152,7 +152,7 @@ if (cmd === "reset") {
 } else if (cmd === "finish") {
   // place any arrived deposits of `who` that were never finished
   const who = args[0];
-  const credits = (await rows("credits", "id")).filter((c) => c.owner === ACCOUNTS[who]);
+  const credits = (await rows("credits", "owner")).filter((c) => c.owner === ACCOUNTS[who] && BigInt(c.amount) > 0n);
   if (!credits.length) console.log("no unfinished deposits");
   for (const c of credits) { const out = action(CONTRACT, "deposit", { owner: ACCOUNTS[who], r: c.r }, `${ACCOUNTS[who]}@active`); console.log(`placed ${c.amount} units: tx ${txId(out)}`); }
 } else if (cmd === "scan") {

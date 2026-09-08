@@ -13,5 +13,5 @@ await page.goto("http://localhost:5175/shielded?demo=paul123", { waitUntil: "net
 await page.waitForSelector("text=Restore your shielded key", { timeout: 20000 });
 console.log("restore screen shown; notice:", (await page.locator(".note").first().textContent().catch(() => "(none)")).slice(0, 90));
 console.log("storage:", await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("pulse-privacy/shield/paul123"))));
-console.log("balance zero shown:", await page.locator("text=Shielded balance").count());
+console.log("balance zero shown:", await page.locator("text=Private balance").count());
 await browser.close(); console.log("errors:", errors.length ? errors : "none");

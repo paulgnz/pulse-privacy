@@ -75,9 +75,30 @@ async function rows<T extends Record<string, unknown>>(table: string, key: strin
 
 export interface ShieldConfig { auditorPk: Pt; paused: boolean; tokens: { token: Token; id: bigint; contract: string; maxPool: bigint; maxDeposit: bigint; pool: bigint }[] }
 
+/** the config row as at least two nodes report it, and as this build expects it */
+async function agreedConfig(): Promise<{ auditor_pubkey: string; paused: boolean } | null> {
+  const answers = await Promise.allSettled([...new Set(ENDPOINTS)].map(async (ep) => {
+    const res = await fetch(`${ep}/v1/chain/get_table_rows`, { method: "POST", body: JSON.stringify({ code: SHIELD.contract, scope: SHIELD.contract, table: "config", json: true, limit: 1 }), signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const j = (await res.json()) as { rows: { auditor_pubkey: string; paused: number | boolean }[] };
+    if (!j.rows.length) return null;
+    if (!/^[0-9a-f]{128}$/i.test(j.rows[0].auditor_pubkey)) throw new Error("malformed config");
+    return { auditor_pubkey: j.rows[0].auditor_pubkey.toLowerCase(), paused: !!j.rows[0].paused };
+  }));
+  const got = answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
+  if (got.length < 2) throw new Error("Cannot confirm the contract's configuration with two independent servers. Try again shortly.");
+  if (got.every((g) => g === null)) return null;
+  const rows = got.filter((g): g is { auditor_pubkey: string; paused: boolean } => !!g);
+  const agreed = rows.find((r) => rows.filter((o) => o.auditor_pubkey === r.auditor_pubkey).length >= 2);
+  if (!agreed) throw new Error("The servers disagree about the contract's auditor key. Try again shortly.");
+  if (SHIELD.auditorPk && agreed.auditor_pubkey !== SHIELD.auditorPk.toLowerCase()) throw new Error("The auditor key on chain is not the committee key this app was built with. Refusing to continue; contact the operator.");
+  return { auditor_pubkey: agreed.auditor_pubkey, paused: rows.some((r) => r.paused) };
+}
+
 export async function getConfig(knownTokens: Token[]): Promise<ShieldConfig | null> {
-  const c = await rpc<{ rows: { auditor_pubkey: string; paused: number | boolean }[] }>("get_table_rows", { code: SHIELD.contract, scope: SHIELD.contract, table: "config", json: true, limit: 1 });
-  if (!c.rows.length) return null;
+  const row = await agreedConfig();
+  if (!row) return null;
+  const c = { rows: [row] };
   const a = words(c.rows[0].auditor_pubkey);
   const t = await rows<{ sym: string | number; token_contract: string; token_id: string | number; max_pool: string | number; max_deposit: string | number; pool: string | number }>("tokens", "sym");
   const tokens = t.flatMap((row) => {
@@ -136,24 +157,66 @@ export async function registeredKey(actor: string): Promise<Pt | null> {
 /** a short fingerprint of a key, shown next to the recipient so a wrong key is visible */
 export const keyFingerprint = (pk: Pt) => hex32(pk[1]).slice(0, 4) + "·" + hex32(pk[1]).slice(-4);
 
-/** the tree rebuilt from the leaves table; throws if it disagrees with the contract's root */
-export async function chainTree(): Promise<{ tree: Tree; nextLeaf: number; rootSeq: bigint }> {
-  const t = await rpc<{ rows: { next_leaf: string | number; root: string; root_seq: string | number }[] }>("get_table_rows", { code: SHIELD.contract, scope: SHIELD.contract, table: "tree", json: true, limit: 1 });
-  const next = Number(t.rows[0]?.next_leaf ?? 0);
-  const leaves = await rows<{ index: string | number; cm: string }>("leaves", "index");
-  const byIndex = new Map(leaves.map((l) => [Number(l.index), BigInt("0x" + l.cm)]));
-  const tree = new Tree();
-  for (let i = 0; i < next; i++) tree.append(byIndex.get(i) ?? 0n);
-  if (t.rows.length && hex32(tree.root) !== t.rows[0].root) throw new Error("The tree read from the chain does not match the contract's root; try again.");
-  return { tree, nextLeaf: next, rootSeq: BigInt(t.rows[0]?.root_seq ?? 0) };
+/** the tree row (root, next_leaf, root_seq) that at least two nodes agree on; `confirmed` false when only one answered */
+async function agreedTreeRow(): Promise<{ next: number; root: string; rootSeq: bigint; confirmed: boolean }> {
+  const answers = await Promise.allSettled([...new Set(ENDPOINTS)].map(async (ep) => {
+    const res = await fetch(`${ep}/v1/chain/get_table_rows`, { method: "POST", body: JSON.stringify({ code: SHIELD.contract, scope: SHIELD.contract, table: "tree", json: true, limit: 1 }), signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const j = (await res.json()) as { rows: { next_leaf: string | number; root: string; root_seq: string | number }[] };
+    const r = j.rows[0];
+    return r ? { next: Number(r.next_leaf), root: r.root.toLowerCase(), rootSeq: BigInt(r.root_seq) } : { next: 0, root: hex32(new Tree().root), rootSeq: 0n };
+  }));
+  const got = answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
+  if (!got.length) throw new Error("No node answered.");
+  // nodes can be a block apart: take the most advanced state that two nodes share; else the single answer, unconfirmed
+  const same = (a: typeof got[0], b: typeof got[0]) => a.root === b.root && a.next === b.next;
+  const shared = got.filter((r) => got.filter((o) => same(o, r)).length >= 2).sort((a, b) => b.next - a.next);
+  if (shared.length) return { ...shared[0], confirmed: true };
+  return { ...got.sort((a, b) => b.next - a.next)[0], confirmed: got.length >= 2 ? false : false };
 }
 
-export interface ScanResult { notes: OwnedNote[]; spent: OwnedNote[]; }
+// the rebuilt tree is cached and extended: leaves are append-only, so a later scan hashes only
+// what is new; a leaf that changes under the cache means a lying or inconsistent node, and the
+// cache is thrown away
+let treeCache: { tree: Tree; cms: string[] } | null = null;
+function rebuildTo(next: number, byIndex: Map<number, string>): Tree {
+  let cache = treeCache;
+  if (cache) {
+    for (let i = 0; i < Math.min(cache.cms.length, next); i++) if ((byIndex.get(i) ?? "0".repeat(64)) !== cache.cms[i]) { cache = null; break; }
+  }
+  if (!cache || cache.cms.length > next) cache = { tree: new Tree(), cms: [] };
+  for (let i = cache.cms.length; i < next; i++) { const cm = byIndex.get(i) ?? "0".repeat(64); cache.tree.append(BigInt("0x" + cm)); cache.cms.push(cm); }
+  treeCache = cache;
+  return cache.tree;
+}
+
+/** the tree rebuilt from the leaves table and checked against the root two nodes agree on */
+export async function chainTree(): Promise<{ tree: Tree; nextLeaf: number; rootSeq: bigint; confirmed: boolean }> {
+  const agreed = await agreedTreeRow();
+  let lastErr: unknown = new Error("No node answered.");
+  for (const ep of await endpoints()) {
+    try {
+      const leaves = await rows<{ index: string | number; cm: string }>("leaves", "index", ep);
+      const byIndex = new Map(leaves.map((l) => [Number(l.index), l.cm.toLowerCase()]));
+      const tree = rebuildTo(agreed.next, byIndex);
+      if (hex32(tree.root) !== agreed.root) throw new Error("leaves do not hash to the agreed root");
+      return { tree, nextLeaf: agreed.next, rootSeq: agreed.rootSeq, confirmed: agreed.confirmed };
+    } catch (e) { lastErr = e; treeCache = null; }
+  }
+  throw new Error(`The tree read from the chain does not match the contract's root (${(lastErr as Error).message}); try again.`);
+}
+
+export interface ScanResult { notes: OwnedNote[]; spent: OwnedNote[]; confirmed?: boolean }
 export type NoteKind = "deposit" | "note";
 
 /** every note of ours, from the outputs, leaves and nullifiers tables; zero-value notes are skipped */
-/** the three tables a scan needs, all from one node so a lagging node cannot mix with a current one */
+/**
+ * The tables a scan needs, from one node, checked against the tree two nodes agree on: only
+ * leaves below the agreed next_leaf count, and they must hash to the agreed root, so a node
+ * cannot invent a note or a balance. `confirmed` is false when only one node answered.
+ */
 async function scanTables() {
+  const agreed = await agreedTreeRow();
   let lastErr: unknown;
   for (const ep of await endpoints()) {
     try {
@@ -162,16 +225,20 @@ async function scanTables() {
         rows<{ index: string | number; cm: string }>("leaves", "index", ep),
         rows<{ key: string | number; nf: string }>("nullifiers", "key", ep),
       ]);
-      // every output has its leaf: a node that answers one table but not the other is not current
-      if (outs.some((o) => !leaves.some((l) => Number(l.index) === Number(o.index)))) throw new Error("outputs without leaves");
-      return { outs, leaves, nfs };
-    } catch (e) { lastErr = e; }
+      const inTree = leaves.filter((l) => Number(l.index) < agreed.next);
+      const byIndex = new Map(inTree.map((l) => [Number(l.index), l.cm.toLowerCase()]));
+      const tree = rebuildTo(agreed.next, byIndex);
+      if (hex32(tree.root) !== agreed.root) throw new Error("leaves do not hash to the agreed root");
+      const outsInTree = outs.filter((o) => Number(o.index) < agreed.next);
+      if (outsInTree.some((o) => !byIndex.has(Number(o.index)))) throw new Error("outputs without leaves");
+      return { outs: outsInTree, leaves: inTree, nfs, confirmed: agreed.confirmed };
+    } catch (e) { lastErr = e; treeCache = null; }
   }
   throw lastErr instanceof Error ? lastErr : new Error("No node answered the scan.");
 }
 
 export async function scan(keys: ShieldKeys): Promise<ScanResult> {
-  const { outs, leaves, nfs } = await scanTables();
+  const { outs, leaves, nfs, confirmed } = await scanTables();
   const cmOf = new Map(leaves.map((l) => [Number(l.index), BigInt("0x" + l.cm)]));
   const spentSet = new Set(nfs.map((n) => n.nf));
   const notes: OwnedNote[] = [];
@@ -199,7 +266,7 @@ export async function scan(keys: ShieldKeys): Promise<ScanResult> {
     else notes.push(owned);
   }
   if (skipped) console.warn(`shield scan: ${skipped} malformed output row(s) skipped`);
-  return { notes, spent };
+  return { notes, spent, confirmed };
 }
 
 export function pick(notes: OwnedNote[], tokenId: bigint, amount: bigint): OwnedNote[] {
@@ -299,7 +366,7 @@ export function registerAction(s: Session, pk: Pt) {
  * A deposit is two actions in one wallet transaction: the token transfer whose memo carries the
  * note's random value, and the owner's `deposit`, which places the note and pays for its rows.
  */
-export function depositActions(s: Session, cfg: ShieldConfig, token: Token, pk: Pt, amount: bigint) {
+export function depositActions(s: Session, cfg: ShieldConfig, token: Token, pk: Pt, amount: bigint, hasSlot = true) {
   const entry = cfg.tokens.find((t) => t.token.code === token.code);
   if (!entry) throw new Error(`${token.code} is not enabled in the shielded contract.`);
   const note = newNote(pk, amount, entry.id);
@@ -308,6 +375,7 @@ export function depositActions(s: Session, cfg: ShieldConfig, token: Token, pk: 
   return {
     note,
     actions: [
+      ...(hasSlot ? [] : [openSlotAction(s)]),
       { account: entry.contract, name: "transfer", authorization: auth, data: { from: s.auth.actor, to: SHIELD.contract, quantity, memo: `shield:${hex32(note.r)}` } },
       { account: SHIELD.contract, name: "deposit", authorization: auth, data: { owner: s.auth.actor, r: hex32(note.r) } },
     ],
@@ -316,8 +384,18 @@ export function depositActions(s: Session, cfg: ShieldConfig, token: Token, pk: 
 
 /** deposits that arrived but were never placed (the second action did not run) */
 export async function unfinishedDeposits(actor: string): Promise<{ id: number; amount: bigint; sym: string; r: string }[]> {
-  const all = await rows<{ id: string | number; owner: string; sym: string | number; amount: string | number; r: string }>("credits", "id");
-  return all.filter((c) => c.owner === actor).map((c) => ({ id: Number(c.id), amount: BigInt(c.amount), sym: String(c.sym), r: c.r }));
+  const slot = await depositSlot(actor);
+  return slot && slot.amount > 0n ? [{ id: 0, amount: slot.amount, sym: slot.sym, r: slot.r }] : [];
+}
+/** the account's owner-paid deposit slot: null when the account has none yet (registered before slots existed) */
+export async function depositSlot(actor: string): Promise<{ amount: bigint; sym: string; r: string } | null> {
+  const r = await rpc<{ rows: { owner: string; sym: string | number; amount: string | number; r: string }[] }>("get_table_rows", { code: SHIELD.contract, scope: SHIELD.contract, table: "credits", json: true, limit: 1, lower_bound: actor, upper_bound: actor });
+  const row = r.rows[0];
+  return row && row.owner === actor ? { amount: BigInt(row.amount), sym: String(row.sym), r: row.r } : null;
+}
+/** creates the slot for an account registered before slots existed; idempotent */
+export function openSlotAction(s: Session) {
+  return { account: SHIELD.contract, name: "open", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { owner: s.auth.actor } };
 }
 export function finishDepositAction(s: Session, r: string) {
   return { account: SHIELD.contract, name: "deposit", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { owner: s.auth.actor, r } };
@@ -339,9 +417,9 @@ export interface ShieldLedgerRow {
 }
 
 /** one signed spend from history: who, when, the nullifiers and commitments it carried, the public amount */
-export interface SpendRecord { owner: string; ts: string; trx: string; nf: string[]; cm: string[]; amount: bigint; tokenId: bigint }
+export interface SpendRecord { owner: string; ts: string; trx: string; block: number; publics: string; nf: string[]; cm: string[]; amount: bigint; tokenId: bigint }
 /** every spend on the contract, oldest first, from the first history node that answers; [] when none does */
-async function spendHistory(): Promise<SpendRecord[] | null> {
+export async function spendHistory(): Promise<SpendRecord[] | null> {
   for (const h of HYPERIONS) {
     try {
       const out: SpendRecord[] = [];
@@ -349,11 +427,11 @@ async function spendHistory(): Promise<SpendRecord[] | null> {
       for (let page = 0; page < 50; page++) {
         const r = await fetch(`${h}/v2/history/get_actions?account=${SHIELD.contract}&filter=${SHIELD.contract}:spend&limit=100&skip=${skip}&sort=asc`, { signal: AbortSignal.timeout(15000) });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const j = (await r.json()) as { actions: { timestamp: string; trx_id: string; act: { data: { owner?: string; publics?: string; amount?: string | number; token_id?: string | number } } }[] };
+        const j = (await r.json()) as { actions: { timestamp: string; trx_id: string; block_num: number; act: { data: { owner?: string; publics?: string; amount?: string | number; token_id?: string | number } } }[] };
         for (const a of j.actions) {
           const p = (a.act.data.publics ?? "").toLowerCase();
-          if (!a.act.data.owner || p.length < 4 * 64) continue;
-          out.push({ owner: a.act.data.owner, ts: a.timestamp, trx: a.trx_id, nf: [p.slice(0, 64), p.slice(64, 128)], cm: [p.slice(128, 192), p.slice(192, 256)], amount: BigInt(a.act.data.amount ?? 0), tokenId: BigInt(a.act.data.token_id ?? 0) });
+          if (!a.act.data.owner || p.length < 4 * 64 || !/^[0-9a-f]{64}$/.test(a.trx_id)) continue;
+          out.push({ owner: a.act.data.owner, ts: a.timestamp, trx: a.trx_id.toLowerCase(), block: Number(a.block_num), publics: p, nf: [p.slice(0, 64), p.slice(64, 128)], cm: [p.slice(128, 192), p.slice(192, 256)], amount: BigInt(a.act.data.amount ?? 0), tokenId: BigInt(a.act.data.token_id ?? 0) });
         }
         if (j.actions.length < 100) break;
         skip += 100;
@@ -363,10 +441,62 @@ async function spendHistory(): Promise<SpendRecord[] | null> {
   }
   return null;
 }
-/** map commitment → the account that signed the spend creating it */
+/**
+ * A history record is only believed once a chain node's block confirms it: the transaction is in
+ * that block, the action is this contract's `spend`, its data (owner, publics, amount, token) is
+ * what history claims, and the owner authorised it. Verified records are remembered per
+ * transaction id in this browser, so each block is fetched once.
+ */
+const VERIFIED = "pulse-privacy/shield/verified";
+/** the record as the chain's block has it, or null when the block does not confirm it; history only says where to look */
+export async function verifySpend(rec: SpendRecord): Promise<SpendRecord | null> {
+  let cache: Record<string, string> = {};
+  try { cache = JSON.parse(localStorage.getItem(VERIFIED) ?? "{}") as Record<string, string>; } catch { /* ignore */ }
+  const fromFp = (fp: string): SpendRecord | null => {
+    const [owner, publics, amount, tokenId, block, ts] = fp.split("|");
+    if (!owner || !publics) return null;
+    return { ...rec, owner, publics, block: Number(block), ts, nf: [publics.slice(0, 64), publics.slice(64, 128)], cm: [publics.slice(128, 192), publics.slice(192, 256)], amount: BigInt(amount), tokenId: BigInt(tokenId) };
+  };
+  if (cache[rec.trx]) return fromFp(cache[rec.trx]);
+  try {
+    const b = await rpc<{ timestamp: string; transactions: { trx: { id?: string; transaction?: { actions: { account: string; name: string; authorization: { actor: string }[]; data: Record<string, unknown> }[] } } | string }[] }>("get_block", { block_num_or_id: rec.block });
+    const t = b.transactions.find((x) => typeof x.trx === "object" && x.trx.id?.toLowerCase() === rec.trx);
+    if (!t || typeof t.trx !== "object" || !t.trx.transaction) return null;
+    const a = t.trx.transaction.actions.find((x) => x.account === SHIELD.contract && x.name === "spend" && typeof x.data === "object" && x.data !== null && String(x.data.publics ?? "").toLowerCase() === rec.publics);
+    if (!a) return null;
+    const owner = String(a.data.owner ?? "");
+    if (!owner || !a.authorization.some((z) => z.actor === owner)) return null;
+    const fp = [owner, rec.publics, String(a.data.amount ?? 0), String(a.data.token_id ?? 0), String(rec.block), b.timestamp].join("|");
+    cache[rec.trx] = fp;
+    try { localStorage.setItem(VERIFIED, JSON.stringify(cache)); } catch { /* ignore */ }
+    return fromFp(fp);
+  } catch { return null; }
+}
+/**
+ * Records that are verified, unique by transaction and by first nullifier, whose nullifier is
+ * spent on chain and whose outputs are leaves on chain (a spend from before a testnet reset can
+ * share a nullifier with a current one; only the one whose outputs exist counts).
+ */
+async function verifiedSpends(nfOnChain: Set<string>, cmOnChain: Set<string>, relevant: (r: SpendRecord) => boolean): Promise<SpendRecord[] | null> {
+  const all = await spendHistory();
+  if (all === null) return null;
+  const seenTrx = new Set<string>(), seenNf = new Set<string>();
+  const out: SpendRecord[] = [];
+  for (const r of all) {
+    if (seenTrx.has(r.trx) || seenNf.has(r.nf[0]) || !nfOnChain.has(r.nf[0]) || !r.cm.every((c) => cmOnChain.has(c))) continue;
+    if (!relevant(r)) continue;
+    const v = await verifySpend(r);
+    if (!v) continue;
+    seenTrx.add(v.trx); seenNf.add(v.nf[0]);
+    out.push(v);
+  }
+  return out;
+}
+/** map commitment → the account that signed the spend creating it (verified against the chain) */
 async function sendersByCommitment(): Promise<Map<string, string>> {
   const out = new Map<string, string>();
-  for (const sp of (await spendHistory()) ?? []) for (const cm of sp.cm) out.set(cm, sp.owner);
+  const [nfs, lv] = await Promise.all([rows<{ key: string | number; nf: string }>("nullifiers", "key"), rows<{ index: string | number; cm: string }>("leaves", "index")]);
+  for (const sp of (await verifiedSpends(new Set(nfs.map((n) => n.nf.toLowerCase())), new Set(lv.map((l) => l.cm.toLowerCase())), () => true)) ?? []) for (const cm of sp.cm) out.set(cm, sp.owner);
   return out;
 }
 
@@ -421,10 +551,12 @@ export interface ActivityEvent {
  */
 export async function activity(keys: ShieldKeys, actor: string, res: ScanResult): Promise<{ events: ActivityEvent[]; history: boolean }> {
   const mine = [...res.notes, ...res.spent];
-  const [spends, deposits, leafRows] = await Promise.all([spendHistory(), depositHistory(actor), rows<{ index: string | number; cm: string }>("leaves", "index")]);
-  const onChain = new Set(leafRows.map((l) => l.cm.toLowerCase()));
   const byCm = new Map(mine.map((n) => [hex32(n.cm), n]));
   const byNf = new Map(mine.map((n) => [hex32(nullifier(keys.nk, n.index)), n]));
+  const [deposits, leafRows, nfRows] = await Promise.all([depositHistory(actor), rows<{ index: string | number; cm: string }>("leaves", "index"), rows<{ key: string | number; nf: string }>("nullifiers", "key")]);
+  const onChain = new Set(leafRows.map((l) => l.cm.toLowerCase()));
+  // only spends that touch this account's notes are fetched from a chain node and verified
+  const spends = await verifiedSpends(new Set(nfRows.map((n) => n.nf.toLowerCase())), onChain, (r) => r.cm.some((c) => byCm.has(c)) || r.nf.some((f) => byNf.has(f)));
   const sends = rememberedSends(actor);
   const events: ActivityEvent[] = [];
   for (const n of mine) {
@@ -513,8 +645,9 @@ export async function shieldEdges(cfg: ShieldConfig): Promise<ShieldEdges> {
     const bal = await rpc<string[]>("get_currency_balance", { code: entry.contract, account: SHIELD.contract, symbol: entry.token.code }).catch(() => [] as string[]);
     escrow[entry.token.code] = bal.length ? BigInt(Math.round(parseFloat(bal[0]) * 10 ** entry.token.precision)) : 0n;
   }
-  const credits = await rows<{ sym: string | number; amount: string | number }>("credits", "id");
-  for (const c of credits) { const entry = cfg.tokens.find((e) => e.token.raw === String(c.sym)); const code = entry?.token.code ?? String(c.sym); unfinished[code] = (unfinished[code] ?? 0n) + BigInt(c.amount); }
+  const credits = await rows<{ sym: string | number; amount: string | number }>("credits", "owner");
+  for (const c of credits) {
+    if (BigInt(c.amount) === 0n) continue; const entry = cfg.tokens.find((e) => e.token.raw === String(c.sym)); const code = entry?.token.code ?? String(c.sym); unfinished[code] = (unfinished[code] ?? 0n) + BigInt(c.amount); }
   const [nfs, lv] = await Promise.all([rows<{ key: string | number }>("nullifiers", "key"), rows<{ index: string | number }>("leaves", "index")]);
   return { escrow, deposits, withdrawals, unfinished, nullifiers: nfs.length, leaves: lv.length };
 }

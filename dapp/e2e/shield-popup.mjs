@@ -28,7 +28,7 @@ console.log("blocked popup:", JSON.stringify(blocked));
 await page.goto("http://localhost:5175/shielded?demo=paul123", { waitUntil: "networkidle" });
 await page.evaluate((ask) => localStorage.setItem("pulse-privacy/shield/paul123", ask), keys.alice);
 await page.goto("http://localhost:5175/shielded?demo=paul123", { waitUntil: "networkidle" });
-await page.waitForSelector("text=Shielded balance", { timeout: 20000 });
+await page.waitForSelector("text=Private balance", { timeout: 20000 });
 await page.click(".statement .actions button:has-text('Send')");
 await page.waitForTimeout(1500);
 const hint0 = await page.locator(".statement .form .field .hint").first().textContent();

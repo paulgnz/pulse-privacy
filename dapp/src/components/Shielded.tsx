@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PATHS, SHIELD, SHIELD_HOME } from "../config";
-import { broadcast, describeLastError, deterministicSigner, getPublicBalance } from "../lib/chain";
+import { broadcast, describeLastError, deterministicSigner, getPublicBalance, hasBalanceRow, openBalanceAction } from "../lib/chain";
 import type { Session } from "../lib/chain";
 import type { Pt } from "../lib/crypto/babyjub";
 import { eq } from "../lib/crypto/babyjub";
@@ -59,6 +59,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const [notice, setNotice] = useState<{ ok: boolean; text: string; txid?: string } | null>(null);
   const [revealed, setRevealed] = useState(() => { try { return localStorage.getItem(REVEAL) === "1"; } catch { return false; } });
   const [showSpent, setShowSpent] = useState(false);
+  const [confirmed, setConfirmed] = useState(true);
   // read ahead when a form opens, so the click leads straight to the proof and the wallet
   const pre = useRef<Prefetched | null>(null);
   const seq = useRef(0);
@@ -71,6 +72,8 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const [restoreSecret, setRestoreSecret] = useState("");
   const [restorePass, setRestorePass] = useState("");
   const [restoreWith, setRestoreWith] = useState<"phrase" | "file">("phrase");
+  const [derivedMismatch, setDerivedMismatch] = useState(false);
+  const [regUnknown, setRegUnknown] = useState(false);
   const [tab, setTab] = useState<ShieldTab>(() => { const t = new URLSearchParams(location.search).get("tab"); return SHIELD_TABS.some(([k]) => k === t) ? (t as ShieldTab) : "statement"; });
 
   const shieldTokens = useMemo(() => (cfg?.tokens ?? []).map((t) => t.token).sort((a, b) => (a.code === "XPR" ? -1 : b.code === "XPR" ? 1 : a.code.localeCompare(b.code))), [cfg]);
@@ -87,7 +90,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     seq.current += 1;
     const mine = seq.current;
     setKeys(null); setRegistered(undefined); setNotes(null); setSpent([]); setPub({}); setPeers([]); setShowSpent(false); setNotice(null); setForm(null); setStage(null);
-    setFirstAsk(null); setKeyDerived(false); setBackup(undefined); setPendingBackup(null); setRestoreSecret(""); setRestorePass("");
+    setFirstAsk(null); setKeyDerived(false); setBackup(undefined); setPendingBackup(null); setRestoreSecret(""); setRestorePass(""); setDerivedMismatch(false); setRegUnknown(false);
     pre.current = null;
     if (!actor) return;
     // a saved key from an earlier visit (passkey wallets, or a wallet that signs differently each time);
@@ -96,7 +99,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       const saved = localStorage.getItem(SAVED(actor));
       if (saved) setKeys(keygen(BigInt(saved)));
     } catch { /* ignore */ }
-    sh.registeredKey(actor).then((k) => { if (seq.current === mine) setRegistered(k); }).catch(() => { if (seq.current === mine) setRegistered(null); });
+    sh.registeredKey(actor).then((k) => { if (seq.current === mine) { setRegistered(k); setRegUnknown(false); } }).catch(() => { if (seq.current === mine) { setRegistered(undefined); setRegUnknown(true); } });
     sh.backupRow(actor).then((b) => { if (seq.current === mine) setBackup(b); }).catch(() => { if (seq.current === mine) setBackup(null); });
   }, [actor, session]);
 
@@ -107,6 +110,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     if (seq.current !== mine) return; // the account changed while reading
     setNotes(r.notes);
     setSpent(r.spent);
+    setConfirmed(r.confirmed !== false);
     const p: Record<string, bigint> = {};
     for (const t of shieldTokens) p[t.code] = await getPublicBalance(actor, t).catch(() => 0n);
     const u = await sh.unfinishedDeposits(actor).catch(() => []);
@@ -140,7 +144,8 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     if (registered && !eq(registered, k.pk)) {
       // a key saved in this browser from the registration is still valid
       try { const s = localStorage.getItem(SAVED(actor)); if (s && eq(keygen(BigInt(s)).pk, registered)) { setKeys(keygen(BigInt(s))); return; } } catch { /* ignore */ }
-      throw new Error("This wallet derives a different key from the one registered for this account. If you registered from another device with a saved key, restore that key here, or contact the operator.");
+      setDerivedMismatch(true);
+      throw new Error("This wallet derives a different key from the one registered for this account: the registration was made with a saved key, or with a different wallet key or permission. Restore the registered key from your recovery phrase or key file.");
     }
     if (save) { try { localStorage.setItem(SAVED(actor), ask.toString()); } catch { /* ignore */ } }
     setKeyDerived(!save);
@@ -200,14 +205,14 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const savePhrase = async (passphrase: string) => {
     if (!session || !keys) return;
     const phrase = await phraseCopy(keys.ask, passphrase);
-    await broadcast(session, [sh.setBackupAction(session, phrase, backup?.committee ?? "")]);
+    await broadcast(session, [sh.setBackupAction(session, phrase, "")]); // empty keeps the committee copy on chain
     try { localStorage.setItem(BACKED(actor), "1"); } catch { /* ignore */ }
     await refreshBackup((b) => b?.phrase === phrase);
   };
   const keepCommittee = async () => {
     if (!session || !keys || !cfg) return;
     const committee = committeeCopy(keys.ask, cfg.auditorPk);
-    await broadcast(session, [sh.setBackupAction(session, backup?.phrase ?? "", committee)]);
+    await broadcast(session, [sh.setBackupAction(session, "", committee)]); // empty keeps the phrase copy on chain
     await refreshBackup((b) => b?.committee === committee);
   };
 
@@ -280,7 +285,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const hasSaved = (() => { try { return !!localStorage.getItem(SAVED(actor)); } catch { return false; } })();
   const passkey = !!session && !deterministicSigner(session);
   // a passkey wallet cannot re-derive: the key lives where it was made, and moves only as a recovery copy
-  const needsRestore = passkey && !!registered && !hasSaved && !keys;
+  const needsRestore = !!registered && !hasSaved && !keys && (passkey || derivedMismatch);
   const setupSteps = needsRestore
     ? ["Connect wallet", "Restore your key", "Ready"]
     : registered
@@ -299,6 +304,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       </section>
     );
   }
+  if (regUnknown) return <section className="statement">{intro}<Note level="error">Your registration could not be confirmed: fewer than two nodes agreed. Nothing is wrong with your account; try again in a moment.</Note><div className="row" style={{ marginTop: 14 }}><button className="btn secondary" onClick={() => { setRegUnknown(false); setRegistered(undefined); sh.registeredKey(actor).then((k) => { setRegistered(k); }).catch(() => setRegUnknown(true)); }}>Try again</button></div></section>;
   if (cfg === undefined || registered === undefined) return <section className="statement">{intro}<div className="empty">Checking the shielded contract</div></section>;
   if (cfg === null) return <section className="statement">{intro}<Note level="error">The shielded contract is not reachable right now.</Note></section>;
 
@@ -403,7 +409,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   );
   const fileSaved = (() => { try { return localStorage.getItem(BACKED(actor)) === "1"; } catch { return false; } })();
   const forget = () => {
-    try { localStorage.removeItem(SAVED(actor)); localStorage.removeItem(BACKED(actor)); } catch { /* ignore */ }
+    try { for (const k of Object.keys(localStorage)) if (k.startsWith(`pulse-privacy/shield/${actor}`)) localStorage.removeItem(k); } catch { /* ignore */ }
     setKeys(null); setNotes(null); setSpent([]); setFirstAsk(null); setKeyDerived(false); setPendingBackup(null); setTab("statement");
   };
   if (tab === "settings") return <>{nav}<section className="statement" aria-label="Shielded settings"><ShieldSettings actor={actor} keys={keys} registered={registered} derived={keyDerived} backup={backup} busy={busy} onSavePhrase={async (p) => { setBusy(true); try { await savePhrase(p); } finally { setBusy(false); } }} onKeepCommittee={async () => { setBusy(true); try { await keepCommittee(); } finally { setBusy(false); } }} onForget={forget} /></section></>;
@@ -435,6 +441,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
           </div>
         </Note>
       ) : null}
+      {!confirmed ? <Note level="warn">Only one node answered, so this balance is unconfirmed. Wait for a second node before acting on it.</Note> : null}
       {!keyDerived && backup !== undefined && !backup?.phrase && !backup?.committee && !fileSaved ? (
         <Note level="warn">
           <p>Recovery is not set up. Your shielded key is saved in this browser only: without a recovery copy, a lost or cleared browser means these notes are gone.</p>
@@ -469,11 +476,11 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       ) : null}
       {form === "deposit" ? (
         <DepositForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} publicBalance={pub[token.code] ?? null} busy={busy} parsed={parsedAmount} onClose={() => setForm(null)}
-          onDeposit={(amount) => run(`Deposited ${fmtUnits(amount, token)} ${token.code} into a shielded note.`, async () => { const { actions } = sh.depositActions(session, cfg, token, keys.pk, amount); const txid = await broadcast(session, actions); return { txid }; })} />
+          onDeposit={(amount) => run(`Deposited ${fmtUnits(amount, token)} ${token.code} into a private note.`, async () => { const slot = await sh.depositSlot(actor); if (slot && slot.amount > 0n) throw new Error("A deposit is still waiting to be placed. Finish it first."); const { actions } = sh.depositActions(session, cfg, token, keys.pk, amount, !!slot); const txid = await broadcast(session, actions); return { txid }; })} />
       ) : null}
       {form === "withdraw" ? (
         <WithdrawForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} spendable={balance(token.code)} busy={busy} stage={stage} parsed={parsedAmount} onClose={() => setForm(null)} actor={actor}
-          onWithdraw={(amount) => run(`Withdrew ${fmtUnits(amount, token)} ${token.code} to ${actor}.`, async (p) => { const prep = await sh.prepareWithdraw(session, keys, cfg, token, amount, p, pre.current); const txid = await broadcast(session, [prep.action]); p(1, "Done"); return { txid }; })} />
+          onWithdraw={(amount) => run(`Withdrew ${fmtUnits(amount, token)} ${token.code} to ${actor}.`, async (p) => { const prep = await sh.prepareWithdraw(session, keys, cfg, token, amount, p, pre.current); const hasRow = await hasBalanceRow(actor, token).catch(() => true); const txid = await broadcast(session, [...(hasRow ? [] : [openBalanceAction(session, token)]), prep.action]); p(1, "Done"); return { txid }; })} />
       ) : null}
 
       <div className="group public">

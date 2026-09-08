@@ -47,7 +47,7 @@ await page.waitForSelector(".note", { timeout: 20000 });
 console.log("wrong phrase:", await page.locator(".note").first().textContent());
 await page.fill("input[type=password]", backup.pass);
 await page.click("button:has-text('Restore')");
-await page.waitForSelector("text=Shielded balance", { timeout: 30000 });
+await page.waitForSelector("text=Private balance", { timeout: 30000 });
 console.log("right phrase: statement shown; saved =", await page.evaluate(() => [localStorage.getItem("pulse-privacy/shield/paul123") !== null, localStorage.getItem("pulse-privacy/shield/paul123/backedup")]));
 console.log("recovery notice on statement:", await page.locator("text=Recovery is not set up").count());
 
@@ -65,7 +65,7 @@ await page.waitForSelector("text=Restore your shielded key", { timeout: 20000 })
 await page.click("text=I have the key file instead");
 await page.fill("textarea.mono", JSON.stringify({ format: "pulse-privacy/shieldkey/v1", secret: "0x" + BigInt(keys.alice).toString(16).padStart(64, "0") }));
 await page.click("button:has-text('Restore')");
-await page.waitForSelector("text=Shielded balance", { timeout: 30000 });
+await page.waitForSelector("text=Private balance", { timeout: 30000 });
 console.log("key file restore: ok");
 await browser.close();
 console.log("errors:", errors.length ? errors : "none");

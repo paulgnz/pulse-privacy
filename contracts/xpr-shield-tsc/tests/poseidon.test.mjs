@@ -1,4 +1,4 @@
-// Conformance: the contract's Poseidon must equal circomlibjs bit for bit, for t = 3 and t = 7,
+// Conformance: the contract's Poseidon must equal circomlibjs bit for bit, for t = 3 and t = 6,
 // and the tree insertion must equal a JS reference. Run after `npm run build:bench`.
 import { Blockchain } from "@proton/vert";
 import { createRequire } from "node:module";

@@ -31,7 +31,7 @@ const alice = N.keygen(), bob = N.keygen(), auditor = N.keygen();
 const ALICE = N.nameToU64("alice"), BOB = N.nameToU64("bob");
 
 const bc = new Blockchain();
-bc.createAccounts("alice", "bob", "carol");
+bc.createAccounts("alice", "bob", "carol", "frank");
 const token = bc.createContract("eosio.token", join(HERE, "../node_modules/proton-tsc/external/eosio.token/eosio.token"));
 const sh = bc.createContract("xprshield", join(HERE, "../assembly/target/xprshield.contract"));
 for (let i = 0; i < 400 && !(sh.actions.spend && token.actions.transfer); i++) await new Promise((r) => setTimeout(r, 25));
@@ -59,21 +59,31 @@ await expectToThrow(sh.actions.register(["bob", ptHex(bob.pk)]).send("bob@active
 await expectToThrow(sh.actions.register(["carol", hex(alice.pk[0]) + hex(alice.pk[1] + 1n)]).send("carol@active"), "eosio_assert: pubkey not on curve");
 await expectToThrow(sh.actions.register(["carol", hex(0n) + hex(1n)]).send("carol@active"), "eosio_assert: pubkey is the identity or has low order");
 await expectToThrow(sh.actions.register(["carol", hex(0n) + hex(N.F.p - 1n)]).send("carol@active"), "eosio_assert: pubkey is the identity or has low order");
+await expectToThrow(sh.actions.register(["carol", ptHex(alice.pk)]).send("carol@active"), "eosio_assert: this key is already registered by another account");
+assert.equal(sh.tables.credits(scope).getTableRows().length, 2, "register created one owner-paid deposit slot per account");
+await expectToThrow(sh.actions.open(["carol"]).send("carol@active"), "eosio_assert: register a key first");
+await sh.actions.open(["alice"]).send("alice@active"); // idempotent
+assert.equal(sh.tables.credits(scope).getTableRows().length, 2);
 // --- backups: phrase copy 60..160 bytes, committee copy exactly 64, empties clear the row ---
 {
   const phrase = "ab".repeat(96), committee = "cd".repeat(64);
   await sh.actions.setbackup(["alice", phrase, committee]).send("alice@active");
   let row = sh.tables.backups(nameToBigInt("xprshield")).getTableRow(nameToBigInt("alice"));
   assert.equal(row.phrase, phrase); assert.equal(row.committee, committee);
-  await sh.actions.setbackup(["alice", "", committee]).send("alice@active");
+  const committee2 = "ef".repeat(64);
+  await sh.actions.setbackup(["alice", "", committee2]).send("alice@active"); // empty keeps the phrase
   row = sh.tables.backups(nameToBigInt("xprshield")).getTableRow(nameToBigInt("alice"));
-  assert.equal(row.phrase, ""); assert.equal(row.committee, committee);
+  assert.equal(row.phrase, phrase); assert.equal(row.committee, committee2);
+  await sh.actions.clearbackup(["alice", true, false]).send("alice@active");
+  row = sh.tables.backups(nameToBigInt("xprshield")).getTableRow(nameToBigInt("alice"));
+  assert.equal(row.phrase, ""); assert.equal(row.committee, committee2);
   await expectToThrow(sh.actions.setbackup(["alice", "ab".repeat(10), ""]).send("alice@active"), "eosio_assert: phrase copy must be 60 to 160 bytes");
   await expectToThrow(sh.actions.setbackup(["alice", "", "cd".repeat(63)]).send("alice@active"), "eosio_assert: committee copy must be 64 bytes");
   await expectToThrow(sh.actions.setbackup(["alice", phrase, ""]).send("bob@active"), "missing required authority alice");
-  await sh.actions.setbackup(["alice", "", ""]).send("alice@active");
+  await expectToThrow(sh.actions.setbackup(["alice", "", ""]).send("alice@active"), "eosio_assert: nothing to store");
+  await sh.actions.clearbackup(["alice", false, true]).send("alice@active");
   assert.equal(sh.tables.backups(nameToBigInt("xprshield")).getTableRow(nameToBigInt("alice")), undefined);
-  console.log("ok  backups: store, replace, refuse bad sizes, clear");
+  console.log("ok  backups: store, replace one copy keeping the other, refuse bad sizes, clear");
 }
 const local = new N.Tree();
 assert.equal(treeRow().root, hex(local.root), "empty root matches");
@@ -94,20 +104,26 @@ assert.deepEqual(leaves().map((l) => [Number(l.index), l.cm]), [[0, hex(a1.cm)],
 assert.equal(treeRow().root, hex(local.root), "root after two deposits matches");
 await expectToThrow(token.actions.transfer(["alice", "xprshield", "1.0000 XPR", "shield:zz"]).send("alice@active"), "eosio_assert: memo must carry one 32-byte hex value");
 await expectToThrow(token.actions.transfer(["carol", "xprshield", "1.0000 XPR", `shield:${hex(2n)}`]).send("carol@active"), "eosio_assert: depositor has not registered a key");
+assert.equal(sh.tables.credits(scope).getTableRows().every((c) => String(c.amount) === "0"), true, "slots empty after placed deposits");
 await expectToThrow(token.actions.transfer(["alice", "xprshield", "0.5000 XPR", `shield:${hex(3n)}`]).send("alice@active"), "eosio_assert: deposit below the minimum");
 await expectToThrow(token.actions.transfer(["alice", "xprshield", "1.0000 XPR", "not a deposit"]).send("alice@active"), "eosio_assert: memo must be shield:<r>");
 // an arrived deposit waits as a credit until the owner's own action places it (owner pays the rows)
 const a4 = N.newNote(alice.pk, units(2), N.TOKENS.XPR);
 await token.actions.transfer(["alice", "xprshield", "2.0000 XPR", `shield:${hex(a4.r)}`]).send("alice@active");
-assert.equal(sh.tables.credits(scope).getTableRows().length, 1, "credit recorded");
-await expectToThrow(sh.actions.deposit(["bob", hex(a4.r)]).send("bob@active"), "eosio_assert: no arrived deposit with this r for this owner");
-await expectToThrow(sh.actions.deposit(["alice", hex(a4.r + 1n)]).send("alice@active"), "eosio_assert: no arrived deposit with this r for this owner");
+const slotOf = (who) => sh.tables.credits(scope).getTableRow(nameToBigInt(who));
+assert.equal(String(slotOf("alice").amount), String(units(2)), "the arrival filled alice's slot");
+assert.equal(slotOf("alice").owner, "alice");
+// an occupied slot refuses the next arrival: the transaction fails and the tokens never leave alice
+await expectToThrow(token.actions.transfer(["alice", "xprshield", "3.0000 XPR", `shield:${hex(a4.r + 7n)}`]).send("alice@active"), "eosio_assert: finish your pending deposit first");
+await expectToThrow(sh.actions.deposit(["bob", hex(a4.r)]).send("bob@active"), "eosio_assert: no arrived deposit for this owner");
+await expectToThrow(sh.actions.deposit(["alice", hex(a4.r + 1n)]).send("alice@active"), "eosio_assert: r does not match the arrived deposit");
 await sh.actions.deposit(["alice", hex(a4.r)]).send("alice@active");
-assert.equal(sh.tables.credits(scope).getTableRows().length, 0, "credit consumed");
+assert.equal(String(slotOf("alice").amount), "0", "slot emptied");
+assert.equal(slotOf("alice").r, "00".repeat(32));
 local.append(a4.cm); local.append(0n);
 assert.equal(treeRow().root, hex(local.root), "root after the late deposit matches");
-await expectToThrow(sh.actions.deposit(["alice", hex(a4.r)]).send("alice@active"), "eosio_assert: no arrived deposit with this r for this owner");
-lap("deposits: commitments and root match the library; the owner's action places them; bad memos refused");
+await expectToThrow(sh.actions.deposit(["alice", hex(a4.r)]).send("alice@active"), "eosio_assert: no arrived deposit for this owner");
+lap("deposits: commitments and root match the library; the owner's slot takes one arrival at a time; bad memos refused");
 
 // --- alice → bob 1,234 XPR, signed by alice ---
 const seq = () => Number(treeRow().root_seq);
@@ -175,6 +191,12 @@ await expectToThrow(sh.actions.spend(["alice", p1.proof, tampered, "0", 0, p1.se
 const jsKey = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: bobNote, index: bobLeaf }], outputs: [{ pk: alice.pk, v: 1n }, { pk: bob.pk, v: AMOUNT - 1n }] });
 const pKey = await prove(jsKey);
 await expectToThrow(spend("alice", pKey).send("alice@active"), "eosio_assert: invalid proof");
+// esk a multiple of the subgroup order: the circuit only forbids esk = 0, so epk would be the
+// identity and both ciphertexts readable by anyone; the contract refuses the low-order key
+const jsEsk = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: BOB, inputs: [{ note: bobNote, index: bobLeaf }], outputs: [{ pk: alice.pk, v: 1n, esk: N.bj.subOrder }, { pk: bob.pk, v: AMOUNT - 1n }] });
+assert.deepEqual(jsEsk.expected.epk[0], [0n, 1n], "esk = L gives the identity in the library");
+const pEsk = await prove(jsEsk);
+await expectToThrow(spend("bob", pEsk).send("bob@active"), "eosio_assert: ephemeral key is the identity or has low order");
 // a proof for a different auditor key than the contract's
 const jsAud = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: N.keygen().pk, sender: BOB, inputs: [{ note: bobNote, index: bobLeaf }], outputs: [{ pk: alice.pk, v: 1n }, { pk: bob.pk, v: AMOUNT - 1n }] });
 const pAud = await prove(jsAud);
@@ -201,11 +223,32 @@ const jw = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sen
 const pw = await prove(jw, { vPub: units(1000), tokenPub: N.TOKENS.XPR });
 await expectToThrow(spend("bob", pw, { token: 2 }).send("bob@active"), "eosio_assert: invalid proof");
 await expectToThrow(spend("bob", pw, { amount: "5000000" }).send("bob@active"), "eosio_assert: invalid proof");
+await expectToThrow(spend("bob", pw).send("bob@active"), "eosio_assert: open a balance for this token in your wallet first"); // bob never held XPR
+await token.actions.open(["bob", "4,XPR", "bob"]).send("bob@active");
 await spend("bob", pw).send("bob@active");
 assert.equal(balance("bob"), "1000.0000 XPR", "bob received the withdrawal");
 const tok = sh.tables.tokens(scope).getTableRows()[0];
 assert.equal(BigInt(tok.pool), units(5000) + units(700) + units(2) + units(1) - units(1000));
 lap(`bob withdrew 1,000 XPR to himself: public balance ${balance("bob")}; pool ${tok.pool}`);
+// frank has never held XPR: a withdrawal would make the token contract bill his balance row to
+// xprshield, so it is refused until he opens one
+const frank = N.keygen(), FRANK = N.nameToU64("frank");
+await sh.actions.register(["frank", ptHex(frank.pk)]).send("frank@active");
+local.append(jw.outNotes[0].cm); local.append(jw.outNotes[1].cm); // bob's withdrawal outputs
+const bobNote3 = jw.outNotes[1]; const bobIdx3 = local.size - 1;
+const jsToFrank = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: BOB, inputs: [{ note: bobNote3, index: bobIdx3 }], outputs: [{ pk: frank.pk, v: units(5) }, { pk: bob.pk, v: bobNote3.v - units(5) }] });
+const pToFrank = await prove(jsToFrank);
+await spend("bob", pToFrank).send("bob@active");
+local.append(jsToFrank.outNotes[0].cm); local.append(jsToFrank.outNotes[1].cm);
+const frankNote = jsToFrank.outNotes[0]; const frankIdx = local.size - 2;
+const jwFrank = N.buildJoinSplit({ keys: frank, tree: local, auditorPk: auditor.pk, sender: FRANK, inputs: [{ note: frankNote, index: frankIdx }], outputs: [{ pk: frank.pk, v: 0n }, { pk: frank.pk, v: 0n }], vPub: units(5), tokenPub: N.TOKENS.XPR, to: FRANK });
+const pwFrank = await prove(jwFrank, { vPub: units(5), tokenPub: N.TOKENS.XPR });
+await expectToThrow(spend("frank", pwFrank).send("frank@active"), "eosio_assert: open a balance for this token in your wallet first");
+await token.actions.open(["frank", "4,XPR", "frank"]).send("frank@active");
+await spend("frank", pwFrank).send("frank@active");
+local.append(jwFrank.outNotes[0].cm); local.append(jwFrank.outNotes[1].cm);
+assert.equal(balance("frank"), "5.0000 XPR", "frank received the withdrawal once he held a balance row");
+lap("a withdrawal to an account with no balance row is refused; after open it pays");
 
 // --- pause ---
 await sh.actions.pause([true]).send("xprshield@active");

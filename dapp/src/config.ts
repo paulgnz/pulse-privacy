@@ -46,7 +46,11 @@ export const APP_NAME = "Private XPR";
 
 /** The shielded contract (docs/06 §8): testnet only for now. The sender's wallet signs every spend. */
 // (PATHS below: where each product lives on this network's site)
-export const SHIELD = NETWORK === "testnet" ? { enabled: true, contract: "xprshield" } : { enabled: false, contract: "privatexpr" }; // mainnet: enabled at v2 launch (docs/07)
+export const SHIELD = NETWORK === "testnet"
+  ? { enabled: true, contract: "xprshield", auditorPk: "2496233cca7c277d1e86aa8ffa6e25032580ff53a8a37f867fc045114a70e32c0f9d825b40b4bcc7b53a4f8fe1e0a10b6f00980b3510051d8b78ba72fdb2beaa" }
+  : { enabled: false, contract: "privatexpr", auditorPk: "" }; // mainnet: enabled at v2 launch (docs/07); pin the committee's key here then
+// `auditorPk` is the committee's public key as this build knows it: a node that reports another
+// key cannot make the app seal a recovery copy to it, nor open the auditor page with it.
 
 /** "real" (default) proves in the browser and broadcasts to the contract; VITE_CRYPTO=mock simulates. */
 export const CRYPTO_MODE: "mock" | "real" = (import.meta.env.VITE_CRYPTO as "mock" | "real") === "mock" ? "mock" : "real";

@@ -138,6 +138,16 @@ export async function getPublicBalance(actor: string, token: Token = XPR): Promi
   return rows.length ? fromAsset(rows[0]) : 0n;
 }
 
+/** whether the account holds a balance row for the token (a withdrawal to an account without one is refused by the contract) */
+export async function hasBalanceRow(actor: string, token: Token = XPR): Promise<boolean> {
+  const r = await rpc<{ rows: { balance: string }[] }>("get_table_rows", { code: token.contract, scope: actor, table: "accounts", json: true, limit: 50 });
+  return r.rows.some((row) => row.balance.endsWith(" " + token.code));
+}
+/** eosio.token `open`: creates the account's balance row for the token, paid by the account */
+export function openBalanceAction(s: Session, token: Token) {
+  return { account: token.contract, name: "open", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { owner: s.auth.actor, symbol: `${token.precision},${token.code}`, ram_payer: s.auth.actor } };
+}
+
 export async function getInfo(): Promise<{ head_block_num: number; server_version_string: string }> {
   return rpc("get_info", {});
 }

@@ -164,3 +164,31 @@ key files were world-readable on the developer machine and are now owner-only; t
 testnet relay key is gone from the contract's permissions, confirmed on two nodes. The known
 release risks stand as stated in the design doc: rehearsal proving keys, browser storage for
 fallback keys, and the tree's capacity, which the minimum deposit prices but does not remove.
+
+## Shielded mode: third round, after recovery, /old and the activity timeline (2026-09-08, evening)
+
+Three internal reviewers worked the code that changed after the second round: native math and
+tree, actions and money flows, the client's recovery, scan and history. All findings fixed the
+same day; contract redeployed to testnet (code `e42775fc…`), mainnet build re-hashed (docs/07).
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | medium | Deposit credits were contract-paid, unbounded and found by a linear scan: an attacker's `min_deposit` transfers with no second action would fill the contract's RAM (about 4,500 rows per 800 KB) and slow every honest deposit; the attacker's capital was only locked, not spent | One owner-paid deposit **slot** per registered account, created at `register` (or `open` for earlier accounts). The notification fills the empty slot with a same-size update, which bills nothing; `deposit` empties it; an occupied slot refuses the next transfer, so the table grows only with registrations and lookup is one get |
+| 2 | low | `esk = L` (a multiple of the subgroup order) passes the circuit's `esk != 0` check; `epk` is the identity and both ciphertexts are readable by anyone. A malicious sender can publish a payment; the receiver can still spend it | `spend` refuses an ephemeral key that is the identity or has low order (`inPrimeSubgroup` after decompression). Circuit revision 5, when there is one, bounds `esk` below L like `ask` |
+| 3 | low | `init` and `setauditor` accepted a low-order auditor key (operator error that would make every note public) | subgroup check on the auditor key in both |
+| 4 | low | `register` accepted a key already registered by another account (a sender looking up the second name pays the first; the auditor's key-to-name mapping becomes ambiguous) | `register` refuses a key any other row holds |
+| 5 | low | A withdrawal (or `restore`) to an account with no balance row for the token made the token contract bill the new row to xprshield | the contract refuses unless the row exists; the app adds the token's `open` to the withdrawal transaction when it is missing |
+| 6 | **high** (client) | The committee copy was sealed to whatever auditor key one node reported, and the Auditor tab accepted such a key: a lying node turns "committee copy" into a copy for itself | the committee key is **pinned per network in the build** and the config row must be agreed by two nodes and equal the pin; otherwise the app refuses to seal or to open the auditor page |
+| 7 | **high** (client) | A lying node could show any balance and any "received" note: scan trusted one node's tables and never checked the root | the tree row (root, next_leaf) must be agreed by two nodes; the leaves are rebuilt (cached, append-only) and must hash to that root; only outputs inside the agreed tree count; a single-node answer shows the balance as unconfirmed |
+| 8 | medium (client) | Payer names, withdrawals and the sent arithmetic followed an unverified Hyperion record; forged records named a wrong payer, showed a fake withdrawal, and overrode the payer in the Auditor tab | every record that touches the account's notes is verified against a chain node's block (transaction id, this contract's `spend`, owner authorised, publics equal) and its fields are taken from the block; records are unique by transaction and by nullifier, and only count when the nullifier is spent and the outputs are leaves on chain; verified records are cached per transaction |
+| 9 | medium (client) | A node that hid the `backups` row made the client wipe the other recovery copy when saving one | the contract keeps a copy when the argument is empty (`clearbackup` removes explicitly) and the client never sends the other copy |
+| 10 | low (client) | "Forget key" left a set-aside key and the sends memory in storage | forget removes everything under the account's prefix |
+| 11 | low (client) | A standard-key wallet whose derived key did not match the registration had no restore path; a failed registration lookup showed as "not registered" | the restore screen also opens on a derived-key mismatch; a lookup that fewer than two nodes confirm shows "cannot confirm" with a retry, never the registration flow |
+
+Also from this round: `inPrimeSubgroup` checks "not low order" (8·P ≠ O), which is what the
+contract needs since every honest key lies in the prime subgroup; documented, not changed. The
+signed derivation text `SHIELD_NOTE` says "(testnet)" and is part of the digest; it is frozen
+as-is (changing it would change every derived key). The reviewers' reproductions are in the
+session scratchpad and their tree/ring test is kept as `tests/tree-ring.test.mjs`; the differential
+fuzz (`tests/fuzz.test.mjs`) and the bit-flip fuzz in the main suite were added the same evening.
+
