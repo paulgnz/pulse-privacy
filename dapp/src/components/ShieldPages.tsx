@@ -11,6 +11,7 @@ import { keygen } from "../lib/shield/notes";
 import type { Token } from "../lib/token";
 import { Amount } from "./Amount";
 import { Field, Line, Note, TokenIcon } from "./ui";
+import { ShieldWalkthrough } from "./ShieldWalkthrough";
 
 const tokenOf = (cfg: ShieldConfig, id: bigint, fallback: Token) => cfg.tokens.find((t) => t.id === id)?.token ?? fallback;
 
@@ -444,7 +445,9 @@ export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: 
 
     <section>
       <h2>Who can read a payment</h2>
-      <p>Alice pays Bob. Compare what each party can read.</p>
+      <p>See Alice pay Bob, then compare what each party can read.</p>
+      <ShieldWalkthrough />
+      <h3 style={{ marginTop: 26 }}>Party by party</h3>
       <WhoSees />
       <p>
         The one thing the public always sees is the payer's signature. There is no anonymous sending: every payment is signed by the
