@@ -335,3 +335,12 @@ Auditor tab and a successor-contract procedure is rehearsed before half capacity
 | 2 | medium | perl's END block restored the chain even after the lock acquisition had timed out | gone with the fallback; the python helper restores only inside the section it entered after taking the lock |
 | 3 | medium | a proton child could outlive the helper's lock if the helper was killed mid-action | the locked descriptor is passed to every proton child, so the lock is inherited and lasts as long as the last process of the sequence. Tested: a helper killed with -9 while its child ran left the lock held until the child exited |
 
+## Shielded mode: independent review, sixteenth pass (Codex, 2026-09-08, at `ccb2b6e`)
+
+No actionable findings. Confirmed: transaction data stays out of shell commands; a timed-out
+waiter cannot change the network; a proton child keeps the lock after its helper is terminated;
+three concurrent signers stay exclusive through cleanup; a missing python3 and a failed network
+check stop signing safely; the security regressions pass. This closes the review series for the
+headless client as well: three internal rounds and sixteen Codex passes across contract, circuit,
+app and client, every finding fixed and tested.
+
