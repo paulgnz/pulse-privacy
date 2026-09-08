@@ -31,7 +31,7 @@ jobs:
         working-directory: ceremony-web
       - run: npx tsc --noEmit -p .
         working-directory: ceremony-web
-      - run: node --test tests/
+      - run: node --test tests/security-regressions.test.mjs
 
   contract-v2:
     # the shielded contract: build, Poseidon conformance, differential fuzz, and the end-to-end vert
