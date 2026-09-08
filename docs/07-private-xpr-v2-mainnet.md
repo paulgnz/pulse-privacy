@@ -27,7 +27,7 @@ in order. Nothing here is done until its line says so.
 | Auditor key: reuse v1's mainnet viewing key (the file Paul holds) or generate a fresh pair the same way; only the public key goes on chain (`init`) and gets pinned in `dapp/src/config.ts` | Paul | decide |
 | External audit, if wanted (scope: `circuits/shielded/joinsplit.circom`, `contracts/xpr-shield-tsc/assembly/*.ts`, `dapp/src/lib/shield/*`); three internal rounds and three Codex passes are in docs/03 | Paul | optional |
 | Launch caps: XPR pool 1,000,000 / deposit 10,000 / min 1; XMD pool 100,000 / deposit 100 / min 1 (same as v1's first caps) | product | proposed |
-| Domain: register `privatexpr.com` (free on 2026-09-08; take `.io` too). Switch at launch, not before: passkey users' saved keys are per origin, and v2 has no mainnet users yet. Layout: `privatexpr.com` v2 at `/`, v1 at `/old`; `testnet.privatexpr.com`; `ceremony.privatexpr.com` alongside the current ceremony address; `private.protonnz.com` and its testnet become permanent redirects with the path kept. Code: `SITES` in `dapp/src/config.ts`, Open Graph URLs in `dapp/index.html`, ceremony-web links, README, docs | Paul | not registered |
+| Domains: **done 2026-09-08.** `privatexpr.com` registered; DNS at the registrar; on Vercel each project carries the old and the new name, all verified: `pulse-privacy` has `privatexpr.com` (308 → www), `www.privatexpr.com` (primary) and `private.protonnz.com`; `pulse-privacy-testnet` has `testnet.privatexpr.com` and `testnet.private.protonnz.com`; `pulse-privacy-ceremony` has `ceremony.privatexpr.com` and `ceremony.private.protonnz.com`. Until launch the old names stay primary in the code, because passkey users' saved keys are per origin | Paul | done |
 
 ## 2. Build the mainnet contract
 
@@ -71,6 +71,16 @@ Then move `privatexpr@active` to the committee (or an msig) as with v1.
   `/circuit/` is cached immutably for a year and the rehearsal key must never be served in its place.
 - `SHIELD_HOME` follows `SHIELD.enabled`, so enabling it on mainnet makes v2 the site and v1 `/old`.
 - Deploy is a push to `main`; the `pulse-privacy` Vercel project builds mainnet.
+
+## 4a. Domain switch (launch day)
+
+1. `dapp/src/config.ts`: `SITES` becomes `{ mainnet: "https://www.privatexpr.com/", testnet: "https://testnet.privatexpr.com/" }`;
+   `dapp/index.html` Open Graph and canonical URLs likewise; `ceremony-web` links and `CEREMONY_URL` in the dapp to
+   `https://ceremony.privatexpr.com`; README and docs.
+2. Vercel, per project: mark `private.protonnz.com`, `testnet.private.protonnz.com` and `ceremony.private.protonnz.com` as
+   redirects (308) to the new names, path preserved, so pay-me links and the announcement keep working.
+3. Passkey users on v1 who move to the new name restore from their recovery phrase, committee copy or key file, since a saved
+   key is per origin; v2 has no mainnet users yet, so nothing else moves.
 
 ## 5. After launch
 
