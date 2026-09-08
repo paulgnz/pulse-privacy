@@ -194,6 +194,16 @@ export class Net {
     return { notes, spent: spentNotes, outs: t.outs, tree: t.tree, rootSeq: t.rootSeq, confirmed: t.confirmed, reasons: t.reasons };
   }
 
+  /** one account's row of a table as two nodes agree on it; null when agreed absent */
+  async agreedRow(table, owner, ident) {
+    const got = await this.fromAll(async (ep) => (await this.table(ep, table)).find((r) => r.owner === owner) ?? null);
+    if (got.length < 2) throw new Error(`cannot confirm the ${table} row with two nodes; try again`);
+    const k = (r) => (r ? ident(r) : "");
+    const agreed = got.find((r) => got.filter((o) => k(o) === k(r)).length >= 2);
+    if (agreed === undefined) throw new Error(`the nodes disagree about the ${table} row; try again`);
+    return agreed;
+  }
+
   /** registered keys as two nodes agree on them: name → point */
   async registeredKeys() {
     const tables = await this.fromAll(async (ep) => new Map((await this.table(ep, "keys")).map((r) => [r.owner, lower(r.pubkey)])));

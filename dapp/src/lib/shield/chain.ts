@@ -425,9 +425,18 @@ export async function prepareWithdraw(s: Session, keys: ShieldKeys, cfg: ShieldC
 export interface BackupRow { phrase: string; committee: string }
 /** the account's recovery copies on chain, or null when none (the whole table is read: no request names the account) */
 export async function backupRow(actor: string): Promise<BackupRow | null> {
-  const all = await rows<{ owner: string; phrase: string; committee: string }>("backups", "owner");
-  const row = all.find((r) => r.owner === actor);
+  const row = await agreedRow<{ owner: string; phrase: string; committee: string }>("backups", "owner", actor, (r) => `${r.phrase}|${r.committee}`.toLowerCase());
   return row ? { phrase: row.phrase, committee: row.committee } : null;
+}
+/** one account's row of a table as two nodes agree on it (whole-table reads, matched locally); null when agreed absent */
+async function agreedRow<T extends Record<string, unknown>>(table: string, key: string, owner: string, ident: (r: T) => string): Promise<T | null> {
+  const answers = await Promise.allSettled([...new Set(ENDPOINTS)].map(async (ep) => (await rows<T>(table, key, ep)).find((r) => r.owner === owner) ?? null));
+  const got = answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
+  if (got.length < 2) throw new Error(`Cannot confirm the ${table} row with two independent servers. Try again shortly.`);
+  const k = (r: T | null) => (r ? ident(r) : "");
+  const agreed = got.find((r) => got.filter((o) => k(o) === k(r)).length >= 2);
+  if (agreed === undefined) throw new Error(`The servers disagree about the ${table} row. Try again shortly.`);
+  return agreed;
 }
 /** store, replace or clear the owner's recovery copies; hex without 0x, empty to clear */
 export function setBackupAction(s: Session, phrase: string, committee: string) {
@@ -465,8 +474,7 @@ export async function unfinishedDeposits(actor: string): Promise<{ id: number; a
 }
 /** the account's owner-paid deposit slot: null when the account has none yet (registered before slots existed) */
 export async function depositSlot(actor: string): Promise<{ amount: bigint; sym: string; r: string } | null> {
-  const all = await rows<{ owner: string; sym: string | number; amount: string | number; r: string }>("credits", "owner");
-  const row = all.find((c) => c.owner === actor);
+  const row = await agreedRow<{ owner: string; sym: string | number; amount: string | number; r: string }>("credits", "owner", actor, (c) => `${c.sym}|${c.amount}|${c.r}`.toLowerCase());
   return row ? { amount: BigInt(row.amount), sym: String(row.sym), r: row.r } : null;
 }
 /** creates the slot for an account registered before slots existed; idempotent */

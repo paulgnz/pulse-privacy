@@ -121,8 +121,7 @@ try {
     checkKeyMatches(name, k, await registeredOrThrow(name));
     const t = tokenOf(code);
     const v = units(amt, t);
-    const slots = await net.tableAny("credits");
-    const slot = slots.find((c) => c.owner === name);
+    const slot = await net.agreedRow("credits", name, (c) => `${c.sym}|${c.amount}|${c.r}`.toLowerCase());
     if (slot && BigInt(slot.amount) > 0n) throw new Error("a deposit is waiting to be placed: run `finish` first");
     if (!slot) { await act(net, net.contract, "open", { owner: name }, name); say("deposit slot opened"); }
     const note = N.newNote(k.pk, v, t.id);
@@ -132,7 +131,7 @@ try {
     say(`placed as a note: ${link(r2.id)} (${r2.cpu ?? "?"} µs)`);
   } else if (cmd === "finish") {
     const name = account(args[0]);
-    const slot = (await net.tableAny("credits")).find((c) => c.owner === name);
+    const slot = await net.agreedRow("credits", name, (c) => `${c.sym}|${c.amount}|${c.r}`.toLowerCase());
     if (!slot || BigInt(slot.amount) === 0n) { say("nothing waiting"); }
     else { const r = await act(net, net.contract, "deposit", { owner: name, r: slot.r }, name); say(`placed: ${link(r.id)}`); }
   } else if (cmd === "balance") {
@@ -223,7 +222,7 @@ try {
     if (rest.length) throw new Error("do not pass the words as arguments; the client asks for them, or reads them from standard input");
     const phrase = await readPhrase("recovery phrase");
     if (!phrase) throw new Error("no phrase given");
-    const row = (await net.tableAny("backups")).find((b) => b.owner === name);
+    const row = await net.agreedRow("backups", name, (b) => `${b.phrase}|${b.committee}`.toLowerCase());
     if (!row || !row.phrase) throw new Error(`${name} has no phrase copy on chain`);
     const ask = await openPhraseCopy(row.phrase, phrase);
     const reg = await registeredOrThrow(name);
@@ -240,7 +239,7 @@ try {
     if (apk[0] !== cfg.auditorPk[0] || apk[1] !== cfg.auditorPk[1]) throw new Error("that key is not the auditor key configured on the contract");
     if (cmd === "recover") {
       const name = account(args[0]);
-      const row = (await net.tableAny("backups")).find((b) => b.owner === name);
+      const row = await net.agreedRow("backups", name, (b) => `${b.phrase}|${b.committee}`.toLowerCase());
       if (!row || !row.committee) throw new Error(`${name} has no committee copy on chain`);
       const ask = openCommitteeCopy(row.committee, auditorAsk);
       const reg = await registeredOrThrow(name);
