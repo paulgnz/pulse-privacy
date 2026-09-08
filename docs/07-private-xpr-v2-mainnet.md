@@ -42,14 +42,14 @@ The hash goes in this file and in the announcement, so anyone can compare it wit
 Built 2026-09-08 from the revision-4 contract with `backups`: wasm `078a5275…b299f`, abi `c62c7475…cb022a`
 (full hashes: `078a527525edffb391d2db583a4d7367d26026be16665a31719dbe9bb02b299f`, `c62c747536f08e4a5ab4ec6786908234c4c21641236dba52c76c02528dcb022a`). Rebuild and re-hash after any contract change.
 
-## 2a. Secure the account (one command, once Paul says go)
+## 2a. Secure the account (launch day, after the final contract is deployed and verified; Paul's call, not before)
 
 ```sh
 proton chain:set proton
 proton action eosio updateauth '{"account":"privatexpr","permission":"owner","parent":"","auth":{"threshold":1,"keys":[],"accounts":[{"permission":{"actor":"admin.proton","permission":"committee"},"weight":1}],"waits":[]}}' privatexpr@owner
 ```
 
-After this only the committee (3 of 6) can change the account's keys; the operational key keeps `active` for deployment and setup, and moves to the committee after launch as with v1.
+After this only the committee (3 of 6) can change the account's keys; the operational key keeps `active` for deployment and setup (uploads use `active`, so the owner move alone would not block them), and `active` moves to the committee after launch as with v1. Decision 2026-09-08: owner stays on the operational key until the code is final, so contracts can be re-uploaded freely.
 
 ## 3. Deploy (day of)
 
