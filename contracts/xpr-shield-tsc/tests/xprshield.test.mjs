@@ -153,6 +153,24 @@ lap("alice signed alice → bob 1,234 XPR: receiver and amount hidden; bob and t
 await expectToThrow(spend("alice", p1).send("alice@active"), "eosio_assert: note already spent");
 const tampered = p1.publics.slice(0, 2 * 64) + hex(12345n) + p1.publics.slice(3 * 64);
 await expectToThrow(sh.actions.spend(["alice", p1.proof, tampered, "0", 0, p1.seq]).send("alice@active"), "eosio_assert: invalid proof");
+// bit-flip fuzz: p1 is a valid proof whose notes are now spent, so a flipped copy that somehow
+// verified would fail on "already spent"; every other outcome must be a refusal, never success
+{
+  const FLIPS = Number(process.env.FLIPS ?? 40);
+  const flip = (hexStr, bit) => { const bytes = Buffer.from(hexStr, "hex"); bytes[bit >> 3] ^= 1 << (bit & 7); return bytes.toString("hex"); };
+  let refused = 0;
+  const reasons = new Map();
+  for (let i = 0; i < FLIPS; i++) {
+    const inProof = i % 2 === 0;
+    const target = inProof ? p1.proof : p1.publics;
+    const bit = Math.floor(Math.random() * target.length * 4);
+    const args = inProof ? ["alice", flip(p1.proof, bit), p1.publics, "0", 0, p1.seq] : ["alice", p1.proof, flip(p1.publics, bit), "0", 0, p1.seq];
+    try { await sh.actions.spend(args).send("alice@active"); assert.fail(`flipped bit ${bit} in ${inProof ? "proof" : "publics"} was accepted`); }
+    catch (e) { if (/was accepted/.test(e.message)) throw e; refused++; const r = String(e.message).replace(/^.*eosio_assert: /, "").slice(0, 40); reasons.set(r, (reasons.get(r) ?? 0) + 1); }
+  }
+  assert.equal(refused, FLIPS);
+  lap(`bit-flip fuzz: ${FLIPS} corrupted proofs/publics all refused (${[...reasons].map(([r, n]) => `${r}: ${n}`).join("; ")})`);
+}
 // a proof built with bob's key but signed and named by alice: the contract inserts alice's registered key
 const jsKey = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: bobNote, index: bobLeaf }], outputs: [{ pk: alice.pk, v: 1n }, { pk: bob.pk, v: AMOUNT - 1n }] });
 const pKey = await prove(jsKey);

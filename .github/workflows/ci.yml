@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  dapp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: dapp/package-lock.json }
+      - run: npm ci
+        working-directory: dapp
+      - run: npx tsc --noEmit
+        working-directory: dapp
+      - run: npm run build
+        working-directory: dapp
+
+  ceremony:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+        working-directory: dapp
+      - run: npm ci
+        working-directory: ceremony-web
+      - run: npx tsc --noEmit -p .
+        working-directory: ceremony-web
+      - run: node --test tests/
+
+  contract-v2:
+    # the shielded contract: build, Poseidon conformance, differential fuzz, and the end-to-end vert
+    # suite with real proofs against the tracked revision-4 proving key
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+        working-directory: circuits
+      - run: npm ci
+        working-directory: contracts/xpr-shield-tsc
+      - run: npm run build
+        working-directory: contracts/xpr-shield-tsc
+      - name: proving key from the dapp's tracked circuit files
+        run: |
+          mkdir -p circuits/build/joinsplit_js
+          cp dapp/public/circuit/joinsplit-r4.wasm circuits/build/joinsplit_js/joinsplit.wasm
+          cp dapp/public/circuit/joinsplit-r4_final.zkey circuits/build/joinsplit_final.zkey
+          cd circuits && npx snarkjs zkey export verificationkey build/joinsplit_final.zkey build/joinsplit_vk.json
+      - run: node tests/poseidon.test.mjs
+        working-directory: contracts/xpr-shield-tsc
+      - run: node tests/fuzz.test.mjs 60
+        working-directory: contracts/xpr-shield-tsc
+      - run: FLIPS=12 node tests/xprshield.test.mjs
+        working-directory: contracts/xpr-shield-tsc

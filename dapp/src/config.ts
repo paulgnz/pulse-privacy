@@ -46,7 +46,7 @@ export const APP_NAME = "Private XPR";
 
 /** The shielded contract (docs/06 §8): testnet only for now. The sender's wallet signs every spend. */
 // (PATHS below: where each product lives on this network's site)
-export const SHIELD = NETWORK === "testnet" ? { enabled: true, contract: "xprshield" } : { enabled: false, contract: "" };
+export const SHIELD = NETWORK === "testnet" ? { enabled: true, contract: "xprshield" } : { enabled: false, contract: "privatexpr" }; // mainnet: enabled at v2 launch (docs/07)
 
 /** "real" (default) proves in the browser and broadcasts to the contract; VITE_CRYPTO=mock simulates. */
 export const CRYPTO_MODE: "mock" | "real" = (import.meta.env.VITE_CRYPTO as "mock" | "real") === "mock" ? "mock" : "real";
