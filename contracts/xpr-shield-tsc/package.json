@@ -8,7 +8,7 @@
     "consts": "node scripts/gen-poseidon-consts.mjs",
     "build:bench": "npx proton-asc ./assembly/shbench.contract.ts --target release",
     "build": "npm run build:bench && npm run build:contract",
-    "test": "node tests/poseidon.test.mjs && node tests/fuzz.test.mjs 100 && node tests/xprshield.test.mjs",
+    "test": "node tests/poseidon.test.mjs && node tests/fuzz.test.mjs 100 && node tests/xprshield.test.mjs && node tests/rollover-ring.test.mjs",
     "build:contract": "npx proton-asc ./assembly/xprshield.contract.ts --target release",
     "build:mainnet": "sh scripts/build-mainnet.sh"
   },

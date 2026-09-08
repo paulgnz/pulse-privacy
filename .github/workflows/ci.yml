@@ -59,3 +59,5 @@ jobs:
         working-directory: contracts/xpr-shield-tsc
       - run: FLIPS=12 node tests/xprshield.test.mjs
         working-directory: contracts/xpr-shield-tsc
+      - run: node tests/rollover-ring.test.mjs
+        working-directory: contracts/xpr-shield-tsc

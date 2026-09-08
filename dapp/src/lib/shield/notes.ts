@@ -30,7 +30,7 @@ export function keygen(ask: bigint): ShieldKeys {
 }
 export const commitment = (n: { pk: Pt; v: bigint; token: bigint; r: bigint }) => poseidon([n.pk[0], n.pk[1], n.v, n.token, n.r]);
 export const nullifier = (nk: bigint, index: number) => hash2(nk, BigInt(index));
-/** the nullifier a disabled second input emits (revision 5): Poseidon(nk, 2^40 + dummy), dummy < 2^40 */
+/** the nullifier a disabled second input emits (revision 5): Poseidon(nk, 2^60 + dummy), dummy < 2^40 */
 export const dummyNullifier = (nk: bigint, dummy: bigint) => hash2(nk, (1n << 60n) + dummy);
 /** leaf indices are global: tree · 2^DEPTH + position */
 export const treeOf = (index: number) => Math.floor(index / 2 ** DEPTH);

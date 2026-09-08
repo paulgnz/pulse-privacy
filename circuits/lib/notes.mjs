@@ -39,7 +39,7 @@ export function keygen(ask = randScalar()) {
 
 export const commitment = (n) => H(n.pk[0], n.pk[1], n.v, n.token, n.r);
 export const nullifier = (nk, index) => H(nk, BigInt(index));
-/** the nullifier a disabled second input emits: Poseidon(nk, 2^40 + dummy), dummy < 2^40 */
+/** the nullifier a disabled second input emits: Poseidon(nk, 2^60 + dummy), dummy < 2^40 */
 export const dummyNullifier = (nk, dummy) => H(nk, (1n << 60n) + BigInt(dummy));
 /** leaf indices are global: tree · 2^DEPTH + position (plain numbers; they stay far below 2^53) */
 export const POS_MASK = (1n << 20n) - 1n;

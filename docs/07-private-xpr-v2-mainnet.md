@@ -39,7 +39,7 @@ shasum -a 256 deploy/mainnet/xprshield.contract.wasm
 
 The hash goes in this file and in the announcement, so anyone can compare it with `get_code_hash`.
 
-Built 2026-09-09 from circuit revision 6 (several trees with automatic rollover; global leaf indices; `tree` public input) and the merged outputs table: wasm `69ccead8a06756c7f1b374dfae6a8b705f49013e0d6560070ae02f4a3b1fbfca`, abi `a67f932e2365cbc5253f0fe8e67ee7d7876e032ffe039399746a882c14747a5c`. Testnet runs the same source with TESTNET=true, initialised with the revision-6 rehearsal key. Rebuild and re-hash after any contract change.
+Built 2026-09-09 from circuit revision 6 (several trees with automatic rollover; global leaf indices; `tree` public input; a closed tree's final root kept in the ring for ever) and the merged outputs table: wasm `2b617881498d1df6efa2710c5ca100956c8d23c462cbb83b21bc6df332d50f3f`, abi `a67f932e2365cbc5253f0fe8e67ee7d7876e032ffe039399746a882c14747a5c`. Testnet runs the same source with TESTNET=true, initialised with the revision-6 rehearsal key. Rebuild and re-hash after any contract change.
 
 ## 2a. Secure the account (launch day, after the final contract is deployed and verified; Paul's call, not before)
 

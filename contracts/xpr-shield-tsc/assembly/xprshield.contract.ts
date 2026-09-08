@@ -13,7 +13,7 @@ import { decompress, inPrimeSubgroup, onCurve } from "./curve";
 // nullifiers Poseidon(nk, leafIndex). The owner's wallet signs `spend` (docs/06 §8): the chain
 // sees who initiated it; the receiver, the amount and which notes were spent stay hidden.
 //
-// Public signals of the join-split proof, 27 words (circuits/shielded/joinsplit.circom):
+// Public signals of the join-split proof, 28 words (circuits/shielded/joinsplit.circom):
 //   [0,1] nf  [2,3] cm  [4..7] epk (x,y × 2)  [8..11] cr (2 × 2)  [12..17] ca (3 × 2)
 //   [18,19] senderPk  [20] root  [21] vPub  [22] tokenPub  [23] to  [24] sender  [25,26] A
 // The action carries 16 words: nf, cm, epk compressed (y with the parity of x in the top bit),
@@ -312,7 +312,9 @@ class XprShield extends Contract {
   newtree(): void {
     requireAuth(this.receiver);
     const c = this.config();
-    check(this.trees.get(c.active_tree) != null, "not initialised");
+    const active = this.trees.get(c.active_tree);
+    check(active != null, "not initialised");
+    check(active!.next_leaf > 0, "the active tree is empty; nothing to roll over");
     c.active_tree += 1;
     this.configs.update(c, this.receiver);
     this.openTree(this.config());
@@ -499,7 +501,12 @@ class XprShield extends Contract {
 
   // ---------------------------------------------------------------- tree
 
-  /** record a tree's new root in the ring; the sequence is global across trees */
+  /**
+   * Record a tree's new root in the ring; the sequence is global across trees. The ring keeps
+   * the last RING roots, except that a closed tree's final root is never evicted: that tree
+   * receives no more leaves, so its final root is the only one its notes can ever be proved
+   * against. The ring therefore holds RING rows plus one per closed tree.
+   */
   rememberRoot(t: TreeRow, root: u8[]): void {
     const c = this.config();
     t.root = root;
@@ -507,7 +514,11 @@ class XprShield extends Contract {
     t.root_seq = c.root_seq;
     if (c.root_seq > RING) {
       const old = this.roots.get(c.root_seq - RING);
-      if (old != null) this.roots.remove(old); // free the slot first, so a full account still turns the ring
+      if (old != null) {
+        const closed = old.tree != t.id ? this.trees.get(old.tree) : null;
+        const finalRoot = closed != null && closed.root_seq == old.seq;
+        if (!finalRoot) this.roots.remove(old); // free the slot first, so a full account still turns the ring
+      }
     }
     this.roots.store(new RootRow(c.root_seq, t.id, root), this.receiver);
     this.configs.update(c, this.receiver);
@@ -666,7 +677,7 @@ class XprShield extends Contract {
     const tokenPub: u64 = amount > 0 ? (token_id as u64) : 0;
     const to: u64 = amount > 0 ? owner.N : 0;
 
-    // the verifier's 27 words
+    // the verifier's 28 words
     const inputs = publics.slice(0, 4 * 32)
       .concat(epk1).concat(epk2)
       .concat(publics.slice(6 * 32, 16 * 32))

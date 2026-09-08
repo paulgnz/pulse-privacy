@@ -354,3 +354,13 @@ contract binds to the root it looked up, with both inputs of a payment in that t
 suite exercises a rollover end to end; the app and the client rebuild and verify every tree and
 pick a payment's notes within one. A full tree can no longer block anyone's exit.
 
+### Internal review of the rollover (2026-09-09, at `d419d69`)
+
+| # | Where, severity | Finding | Fix |
+|---|---|---|---|
+| 1 | contract, **critical** | The root ring evicted by global sequence regardless of tree, so a closed tree's final root fell out of the ring 1,024 insertions after the rollover. A closed tree receives no more leaves, so that root is the only one its notes can be proved against: every unspent note of a closed tree became unspendable, transfers and withdrawals alike. The claim above did not hold. | `rememberRoot` never evicts a row that is a closed tree's final root (the row's sequence equals that tree's `root_seq`); the ring holds 1,024 rows plus one per closed tree. Regression `tests/rollover-ring.test.mjs`: 1,029 insertions after tree 0 closed, its unspent note still spends by the tree row's sequence, and the ring holds exactly 1,025 rows. |
+| 2 | contract, low | `newtree` opened a new tree even when the active one was empty, leaving empty closed trees behind. | Refused: "the active tree is empty; nothing to roll over". |
+| 3 | comments | Stale counts (27 verifier words, dummy nullifier domain 2^40) in the contract, the note libraries and the app. | Corrected to 28 and 2^60. |
+
+The regression runs in CI beside the main suite.
+
