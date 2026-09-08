@@ -92,8 +92,10 @@ Then move `privatexpr@active` to the committee (or an msig) as with v1.
   Auditor tab shows the active tree's fill. A successor contract is no longer needed for capacity.
 
 - Announce: contract hash, ceremony transcript, caps, what is hidden and what is not.
-- Watch the first day: `testnet-demo.mjs audit` equivalent for mainnet (auditor CLI) with the
-  committee key; escrow against counters on the Auditor tab.
+- Watch the first day: `PRIVATEXPR_AUDITOR_KEY=<file> node client/privatexpr.mjs audit --network mainnet`
+  with the committee key (every note opened, with time, block and transaction); escrow against
+  counters on the Auditor tab. Incident switch: `pause` stops deposits and spends alike, so use it
+  only for a suspected proof or contract flaw; for anything else lower the caps with `addtoken`.
 - v1 retirement: already closed to deposits; keep withdrawals and the auditor working
   indefinitely; after a quiet period, return remaining escrow through the committee's `restore`.
 
