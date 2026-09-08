@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SHIELD } from "../config";
+import { PATHS, SHIELD, SHIELD_HOME } from "../config";
 import { broadcast, describeLastError, deterministicSigner, getPublicBalance } from "../lib/chain";
 import type { Session } from "../lib/chain";
 import type { Pt } from "../lib/crypto/babyjub";
@@ -272,7 +272,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const intro = (
     <>
       <h2>Shielded</h2>
-      <p className="lede" style={{ marginBottom: 26 }}>A shielded payment hides who was paid and how much. The chain shows only that you paid someone. Your wallet signs every payment, as always, and only the XPR Network auditor's key opens the details. Deposits and withdrawals stay public. Testnet only, early access. <a href="/shielded/about">How it works</a>.</p>
+      <p className="lede" style={{ marginBottom: 26 }}>A shielded payment hides who was paid and how much. The chain shows only that you paid someone. Your wallet signs every payment, as always, and only the XPR Network auditor's key opens the details. Deposits and withdrawals stay public.{SHIELD_HOME ? " Testnet, early access." : " Testnet only, early access."} <a href={PATHS.shieldedAbout}>How it works</a>.</p>
     </>
   );
 

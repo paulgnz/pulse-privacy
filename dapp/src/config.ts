@@ -45,7 +45,18 @@ export const NETWORK_LABEL = NETWORK === "mainnet" ? "XPR Network" : "XPR Networ
 export const APP_NAME = "Confidential XPR";
 
 /** The shielded contract (docs/06 §8): testnet only for now. The sender's wallet signs every spend. */
+// (PATHS below: where each product lives on this network's site)
 export const SHIELD = NETWORK === "testnet" ? { enabled: true, contract: "xprshield" } : { enabled: false, contract: "" };
 
 /** "real" (default) proves in the browser and broadcasts to the contract; VITE_CRYPTO=mock simulates. */
 export const CRYPTO_MODE: "mock" | "real" = (import.meta.env.VITE_CRYPTO as "mock" | "real") === "mock" ? "mock" : "real";
+
+/**
+ * Where each product lives. Where the shielded contract is enabled it is the product: home page,
+ * How it works; the confidential contract becomes "the old contract" at /old, withdraw-only
+ * (docs/06 §8.5). Elsewhere the confidential statement is home and shielded is not served.
+ */
+export const SHIELD_HOME = SHIELD.enabled;
+export const PATHS = SHIELD_HOME
+  ? { shielded: "/", shieldedAbout: "/about", conf: "/old", confAbout: "/old/about" }
+  : { shielded: "/shielded", shieldedAbout: "/shielded/about", conf: "/", confAbout: "/about" };

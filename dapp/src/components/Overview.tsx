@@ -36,6 +36,8 @@ export const Overview = ({
   backupNeeded = false,
   onStoreRecovery,
   onWithdrawToken,
+  legacy = false,
+  onGoShielded,
 }: {
   /** the token the forms act on */
   st: ConfState;
@@ -58,6 +60,9 @@ export const Overview = ({
   onWithdrawToken?: (code: string, amount: bigint, onProgress: (f: number, s: string) => void, close?: boolean) => Promise<string>;
   tokens?: { code: string }[];
   onSelectToken?: (code: string) => void;
+  /** the old contract, withdraw-only: no send, no deposit, a notice pointing to shielded */
+  legacy?: boolean;
+  onGoShielded?: () => void;
 }) => {
   const [revealed, setRevealed] = useState<boolean>(() => {
     try {
@@ -104,6 +109,14 @@ export const Overview = ({
 
   return (
     <section className="statement">
+      {legacy ? (
+        <Note level="warn">
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 16 }}>
+            <span>This is the old confidential contract. Withdraw what is here to your wallet, then deposit it into shielded. Sending and depositing here are closed.</span>
+            {onGoShielded ? <button className="textbtn" onClick={onGoShielded}>Go to shielded</button> : null}
+          </div>
+        </Note>
+      ) : null}
       <h2>Statement</h2>
       {backupNeeded ? (
         <Note level="warn">
@@ -206,19 +219,23 @@ export const Overview = ({
       {anyRegistered ? (
         <>
           <div className="actions" role="group" aria-label="Actions">
-            <button className="btn" onClick={() => toggle("send")} aria-expanded={form === "send"}>
-              Send
-            </button>
-            <button className="btn secondary" onClick={() => toggle("deposit")} aria-expanded={form === "deposit"}>
-              Deposit
-            </button>
-            <button className="btn secondary" onClick={() => toggle("withdraw")} aria-expanded={form === "withdraw"}>
+            {legacy ? null : (
+              <>
+                <button className="btn" onClick={() => toggle("send")} aria-expanded={form === "send"}>
+                  Send
+                </button>
+                <button className="btn secondary" onClick={() => toggle("deposit")} aria-expanded={form === "deposit"}>
+                  Deposit
+                </button>
+              </>
+            )}
+            <button className={legacy ? "btn" : "btn secondary"} onClick={() => toggle("withdraw")} aria-expanded={form === "withdraw"}>
               Withdraw
             </button>
           </div>
 
-          {form === "send" ? <Send st={st} onSend={onSend} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} publicBalance={figures.find((f) => f.st.token.code === st.token.code)?.publicBalance ?? null} onDepositFirst={depositFirst} /> : null}
-          {form === "deposit" ? <Deposit key={depositPrefill ?? "deposit"} st={st} publicBalance={figures.find((f) => f.st.token.code === st.token.code)?.publicBalance ?? null} onDeposit={onDeposit} busy={busy} onClose={() => { setForm(null); setDepositPrefill(undefined); }} onDone={(m, t) => { setDepositPrefill(undefined); done(m, t); }} tokens={tokens} onSelectToken={onSelectToken} initialAmount={depositPrefill} /> : null}
+          {form === "send" && !legacy ? <Send st={st} onSend={onSend} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} publicBalance={figures.find((f) => f.st.token.code === st.token.code)?.publicBalance ?? null} onDepositFirst={depositFirst} /> : null}
+          {form === "deposit" && !legacy ? <Deposit key={depositPrefill ?? "deposit"} st={st} publicBalance={figures.find((f) => f.st.token.code === st.token.code)?.publicBalance ?? null} onDeposit={onDeposit} busy={busy} onClose={() => { setForm(null); setDepositPrefill(undefined); }} onDone={(m, t) => { setDepositPrefill(undefined); done(m, t); }} tokens={tokens} onSelectToken={onSelectToken} initialAmount={depositPrefill} /> : null}
           {form === "withdraw" ? <Withdraw st={st} onWithdraw={onWithdraw} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} allTokens={figures.filter((f) => f.st.registered)} onWithdrawAll={onWithdrawToken} /> : null}
         </>
       ) : (

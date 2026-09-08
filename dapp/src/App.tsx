@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_NETWORK, SHIELD } from "./config";
+import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_NETWORK, PATHS, SHIELD, SHIELD_HOME } from "./config";
 import { fmtUnits } from "./lib/format";
 import * as chain from "./lib/chain";
 import type { Session } from "./lib/chain";
@@ -31,11 +31,17 @@ type Tab = (typeof TABS)[number][0];
 
 const backend = selectBackend();
 
-/** path-based routes: "/" is the app, "/about" is How it works */
+/** path-based routes; see PATHS in config for where each product lives on this network */
 type Route = "app" | "about" | "shielded" | "shielded-about";
-// the shield site serves the shielded page at "/" and the confidential statement at "/private"
 const routeOf = (path: string): Route => {
   const p = path.replace(/\/+$/, "");
+  if (SHIELD_HOME) {
+    if (p === "/old") return "app";
+    if (p === "/old/about" || p === "/about/old") return "about";
+    if (p === "/about" || p === "/shielded/about") return "shielded-about";
+    if (p === "/private") return "app"; // links from the short-lived separate site
+    return "shielded";
+  }
   if (p === "/about") return "about";
   if (p === "/shielded/about" && SHIELD.enabled) return "shielded-about";
   return p === "/shielded" && SHIELD.enabled ? "shielded" : "app";
@@ -138,8 +144,8 @@ export default function App() {
   const goHome = useCallback(() => {
     const q = new URLSearchParams(location.search);
     for (const k of ["tab", "form", "to"]) q.delete(k);
-    history.pushState(null, "", "/" + (q.toString() ? `?${q}` : ""));
-    setRoute(routeOf("/"));
+    history.pushState(null, "", PATHS.shielded + (q.toString() ? `?${q}` : ""));
+    setRoute(routeOf(PATHS.shielded));
     setTab("overview");
     window.scrollTo(0, 0);
   }, []);
@@ -275,7 +281,7 @@ export default function App() {
       setSession(s);
       setKeypair(loadKeypair(s.auth.actor));
       event("connected");
-      if (route === "about") navigate("/"); else if (route === "shielded-about") navigate("/shielded");
+      if (route === "about") navigate(PATHS.conf); else if (route === "shielded-about") navigate(PATHS.shielded);
     } catch (e) {
       setLoginErr((e as Error).message);
     } finally {
@@ -358,7 +364,9 @@ export default function App() {
             : justRegistered && !finished
               ? "deposit"
               : null;
-  const inApp = !!session && step === null && st !== null;
+  const onShield = route === "shielded" || route === "shielded-about";
+  // the old contract still holds something for this account: show the way to it
+  const legacyHas = SHIELD_HOME && !!st?.registered && (st.balance > 0n || st.pending > 0n || Object.values(others).some((o) => o.st?.registered && (o.st.balance > 0n || o.st.pending > 0n)));
 
   const link = (path: string, label: string, current: boolean) => (
     <a
@@ -379,9 +387,9 @@ export default function App() {
       <div className="right">
         {session ? (
           <>
-            {inApp && (route === "about" || route === "shielded-about") ? link("/", "Statement", false) : null}
-            {link(route === "shielded" || route === "shielded-about" ? "/shielded/about" : "/about", "How it works", route === "about" || route === "shielded-about")}
-            {SHIELD.enabled ? link("/shielded", "Shielded", route === "shielded" || route === "shielded-about") : null}
+            {route === "about" ? link(PATHS.conf, SHIELD_HOME ? "Old contract" : "Statement", false) : route === "shielded-about" ? link(PATHS.shielded, SHIELD_HOME ? "Statement" : "Shielded", false) : null}
+            {link(onShield ? PATHS.shieldedAbout : PATHS.confAbout, "How it works", route === "about" || route === "shielded-about")}
+            {SHIELD_HOME ? (onShield ? (legacyHas ? link(PATHS.conf, "Old confidential balance", false) : null) : link(PATHS.shielded, "Back to shielded", false)) : SHIELD.enabled ? link(PATHS.shielded, "Shielded", onShield) : null}
             <a className="textbtn quiet netswitch" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
               Switch to {OTHER_NETWORK.label.toLowerCase()}
             </a>
@@ -395,8 +403,8 @@ export default function App() {
           </>
         ) : (
           <>
-            {link(route === "shielded" || route === "shielded-about" ? "/shielded/about" : "/about", "How it works", route === "about" || route === "shielded-about")}
-            {SHIELD.enabled ? link("/shielded", "Shielded", route === "shielded" || route === "shielded-about") : null}
+            {link(onShield ? PATHS.shieldedAbout : PATHS.confAbout, "How it works", route === "about" || route === "shielded-about")}
+            {SHIELD_HOME ? (onShield ? null : link(PATHS.shielded, "Back to shielded", false)) : SHIELD.enabled ? link(PATHS.shielded, "Shielded", onShield) : null}
             <a className="textbtn quiet netswitch" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
               Switch to {OTHER_NETWORK.label.toLowerCase()}
             </a>
@@ -439,6 +447,19 @@ export default function App() {
     );
   }
 
+  if (SHIELD_HOME && session && (step === "register" || step === "deposit")) {
+    return (
+      <div className="page">
+        {header}
+        <section className="statement">
+          <h2>The old confidential contract</h2>
+          <p className="lede">{session.auth.actor} has no balance in the confidential contract ({CONTRACT}). There is nothing to withdraw. Shielded payments are the product now.</p>
+          <div className="row"><button className="btn private" onClick={() => navigate(PATHS.shielded)}>Go to shielded</button></div>
+        </section>
+        {foot}
+      </div>
+    );
+  }
   if (step || (session && st === null)) {
     return (
       <div className="page">
@@ -460,7 +481,7 @@ export default function App() {
             connectBusy={loginBusy}
             connectError={loginErr}
             onConnect={doLogin}
-            onAbout={() => navigate("/about")}
+            onAbout={() => navigate(PATHS.confAbout)}
             onKeyReady={(kp, derived, keepRecovery = true, passphrase) => {
               setKeypair(kp);
               setKeyDerived(derived);
@@ -558,6 +579,8 @@ export default function App() {
         <Overview
           st={st.token.code === token.code ? st : others[token.code]?.st ?? { ...st, token, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], historyLoaded: false }}
           figures={figures}
+          legacy={SHIELD_HOME}
+          onGoShielded={() => navigate(PATHS.shielded)}
           hasKey={!!keypair}
           onRegister={(code) => wrap(async () => { const r = await clientFor(code).register(); event("registered"); return r; })}
           backupNeeded={!keyDerived && !!keypair && !!st?.registered && recoveryOnChain === false && backupOnChain === false && !backedUp}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { EXPLORER, SHIELD } from "../config";
+import { EXPLORER, PATHS, SHIELD } from "../config";
 import type { Pt } from "../lib/crypto/babyjub";
 import { fmtUnits } from "../lib/format";
 import * as sh from "../lib/shield/chain";
@@ -105,7 +105,7 @@ export const ShieldSettings = ({ actor, keys, registered, derived, backup, busy,
   const [pass, setPass] = useState("");
   const [custom, setCustom] = useState(false);
   const [passCopied, setPassCopied] = useState(false);
-  const payMe = `${location.origin}/shielded?to=${actor}`;
+  const payMe = `${location.origin}${PATHS.shielded}?to=${actor}`;
   const phraseSet = !!backup?.phrase, committeeKept = !!backup?.committee;
   const anyBackup = phraseSet || committeeKept || fileSaved;
   // the chain answer can arrive after this page opened; open the form when there is no phrase yet

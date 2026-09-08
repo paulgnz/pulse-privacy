@@ -380,11 +380,16 @@ migrated by anyone but their owners, and deployed tables cannot change shape. A 
 was the only clean path; what looked like mess was two products coexisting during the
 transition. The transition is kept short and tidy by three rules:
 
-1. **One site per network.** The shielded page lives at `/shielded` on private.protonnz.com
-   (and testnet.private.protonnz.com), with its own tabs and walkthrough at `/shielded/about`.
-   The separate shield site tried on 2026-09-08 was retired the same day: a saved key is
-   bound to the browser *and the site origin*, so a second origin only creates a second place
-   to lose it. When shielded is the default, it moves to `/` and confidential to `/private`.
+1. **One site per network.** Wherever the shielded contract is enabled, shielded is the site:
+   the statement at `/`, How it works at `/about`. The confidential contract becomes "the old
+   contract" at `/old`, withdraw-only: no send, no deposit, no onboarding for accounts with
+   nothing in it, a notice pointing to shielded, and a header link "Old confidential balance"
+   shown only to accounts that still hold something there. Auditor and Settings for the old
+   contract stay reachable so the committee can read it and a user can restore a key to
+   withdraw. Done on testnet 2026-09-08; mainnet follows the same switch once `xprshield` is
+   live there. The separate shield site tried on 2026-09-08 was retired the same day: a saved
+   key is bound to the browser *and the site origin*, so a second origin only creates a second
+   place to lose it.
 2. **Parity before mainnet.** Recovery (seven-word phrase, committee copy, key file; built
    2026-09-08 with the `backups` table and `setbackup`), the onboarding steps with a progress
    bar, Activity, Auditor and Settings tabs, the auditor CLI, caps, pause and the runbook.
