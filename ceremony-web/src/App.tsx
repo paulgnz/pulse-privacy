@@ -7,7 +7,7 @@ import { lockNoteFor, login, noteFor, signAttestation, type Session } from "./li
 
 interface Head { file: string; sha256: string; index: number; name: string; url: string }
 interface Contribution { phase: 1 | 2; index: number; actor: string; timestamp: string; input: { file: string; sha256: string }; output: { file: string; sha256: string; url: string }; contributionHash: string | null; signerKey: string; note: string; signature: string }
-interface State { version: number; phase: 1 | 2; finished: boolean; head: Head | null; lock: { actor: string; until: string } | null; contributions: Contribution[]; phase1Final?: Head | null; updatedAt: string }
+interface State { version: number; phase: 1 | 2; finished: boolean; head: Head | null; lock: { actor: string; until: string } | null; contributions: Contribution[]; phase1Final?: Head | null; updatedAt: string; stale?: string }
 
 type Step = "idle" | "locking" | "downloading" | "entropy" | "computing" | "sign" | "signing" | "uploading" | "recording" | "done";
 const AFTER_SIGN: Step[] = ["uploading", "recording"];
@@ -49,20 +49,31 @@ export function App() {
     return () => clearTimeout(t);
   }, [step]);
 
+  const failures = useRef(0);
   const refresh = useCallback(async () => {
     try {
       const r = await fetch("/api/state", { cache: "no-store" });
       if (!r.ok) throw new Error(`state ${r.status}`);
-      setState((await r.json()) as State);
-      setStateErr(null);
+      const s = (await r.json()) as State;
+      setState(s);
+      setStateErr(s.stale ?? null);
+      failures.current = s.stale ? failures.current + 1 : 0;
     } catch (e) {
+      failures.current += 1;
       setStateErr((e as Error).message);
     }
   }, []);
+  // poll every 15 s; after failures back off to 30 s, then 60 s, so a struggling coordinator is not hammered
   useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 15000);
-    return () => clearInterval(t);
+    let stop = false;
+    let t = 0;
+    const tick = async () => {
+      await refresh();
+      if (stop) return;
+      t = window.setTimeout(tick, failures.current === 0 ? 15000 : failures.current === 1 ? 30000 : 60000);
+    };
+    tick();
+    return () => { stop = true; window.clearTimeout(t); };
   }, [refresh]);
   useEffect(() => {
     login(true).then((s) => s && setSession(s)).catch(() => {});
@@ -223,14 +234,18 @@ export function App() {
         </p>
         <p>
           Your turn takes a couple of minutes and happens entirely in your browser. Your randomness never leaves your machine. What gets recorded is
-          your account name, the hash of the file you produced, and a signature from your XPR account saying you produced it. Nothing is sent to the
-          chain.
+          your account name, the hash of the file you produced, and a signature from your XPR account saying you produced it. Your wallet signs a
+          message shaped like a transaction, but it is never broadcast: nothing is written to the chain, nothing is paid, and nothing appears in your
+          account history.
         </p>
       </section>
 
       <section className="status">
         <h2>Right now</h2>
-        {stateErr ? <p className="error">Could not reach the coordinator: {stateErr}</p> : null}
+        {lockHeld && lockHeld.actor !== mine ? (
+          <p className="busy"><span className="busy-dot" aria-hidden="true" /><span><b>{lockHeld.actor}</b> is taking their turn right now. It ends by {when(lockHeld.until)} at the latest, and the next person can go as soon as their file is verified.</span></p>
+        ) : null}
+        {stateErr ? <p className="muted">The coordinator did not answer just now ({stateErr}). {state ? "Showing the last state it reported; " : ""}retrying shortly. This does not affect anyone's turn.</p> : null}
         {state ? (
           <dl className="facts">
             <div><dt>Phase</dt><dd>{state.phase === 1 ? "1 of 2, universal setup" : "2 of 2, the join-split circuit, revision 6"}{state.finished ? ", closed" : ""}</dd></div>
@@ -248,7 +263,7 @@ export function App() {
         {!session ? (
           <div className="row">
             <button className="btn" onClick={connect}>Connect wallet</button>
-            <span className="muted">XPR Network mainnet, WebAuth. Your wallet only signs a message; it never sends a transaction.</span>
+            <span className="muted">XPR Network mainnet, WebAuth. Your wallet only signs a message; nothing is broadcast to the chain.</span>
           </div>
         ) : (
           <p>Signed in as <b>{session.auth.actor}</b>.{alreadyDone ? " You have already contributed to this phase. Thank you." : ""}</p>
@@ -287,7 +302,7 @@ export function App() {
               {step === "computing" && log.length ? <pre className="log">{log.join("\n")}</pre> : null}
             </li>
             <li className={step === "sign" || step === "signing" ? "now" : AFTER_SIGN.includes(step) ? "done" : ""}>
-              Signing your attestation in the wallet (one signature, nothing is sent to the chain)
+              Signing your attestation in the wallet (one signature; the signed message is never broadcast)
               {step === "sign" ? (
                 <div className="row" style={{ marginTop: 10 }}>
                   <button className="btn private" onClick={signAndFinish}>Sign the attestation</button>

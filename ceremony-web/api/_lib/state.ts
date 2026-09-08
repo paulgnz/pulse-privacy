@@ -43,6 +43,25 @@ export interface CeremonyState {
 
 const EMPTY: CeremonyState = { version: 0, phase: 1, finished: false, head: null, lock: null, contributions: [], updatedAt: new Date(0).toISOString() };
 
+// A version's content never changes (versions are append-only and never overwritten), so the
+// content of the newest version is remembered per function instance and fetched again only when
+// the listing names a newer file. The public blob host has answered 403 for a couple of minutes
+// at a time under polling; the fetch retries, then falls back to an authenticated read.
+let remembered: { pathname: string; state: CeremonyState } | null = null;
+let lastGood: CeremonyState | null = null;
+
+async function fetchVersion(url: string): Promise<CeremonyState> {
+  let last = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 300 * attempt));
+    const headers: Record<string, string> = attempt === 2 && process.env.BLOB_READ_WRITE_TOKEN ? { authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` } : {};
+    const res = await fetch(url, { cache: "no-store", headers });
+    if (res.ok) return (await res.json()) as CeremonyState;
+    last = `state fetch ${res.status}`;
+  }
+  throw new Error(last);
+}
+
 export async function readState(): Promise<CeremonyState> {
   // walk every page: the newest version must never fall off the end of a single listing
   let cursor: string | undefined;
@@ -53,10 +72,15 @@ export async function readState(): Promise<CeremonyState> {
     cursor = page.hasMore ? page.cursor : undefined;
   } while (cursor);
   if (!latest) return EMPTY;
-  const res = await fetch(latest.url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`state fetch ${res.status}`);
-  return (await res.json()) as CeremonyState;
+  if (remembered && remembered.pathname === latest.pathname) return remembered.state;
+  const state = await fetchVersion(latest.url);
+  remembered = { pathname: latest.pathname, state };
+  lastGood = state;
+  return state;
 }
+
+/** the last state this instance read successfully, for a read-only listing when the store is unreachable */
+export const lastKnownState = () => lastGood;
 
 export async function writeState(next: Omit<CeremonyState, "version" | "updatedAt">, prevVersion: number): Promise<CeremonyState> {
   const version = prevVersion + 1;
