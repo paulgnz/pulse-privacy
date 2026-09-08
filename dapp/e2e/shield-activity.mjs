@@ -1,0 +1,18 @@
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+const require = createRequire(process.env.PLAYWRIGHT_PKG ?? import.meta.url);
+const { chromium } = require("playwright");
+const OUT = process.env.E2E_OUT ?? "/tmp";
+const keys = JSON.parse(readFileSync(new URL("../../contracts/xpr-shield-tsc/tests/.testnet-shield-keys.json", import.meta.url), "utf8"));
+const browser = await chromium.launch();
+const page = await (await browser.newContext({ viewport: { width: 1100, height: 1000 } })).newPage();
+const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+await page.goto("http://localhost:5175/shielded?demo=paul123", { waitUntil: "networkidle" });
+await page.evaluate((ask) => { localStorage.setItem("pulse-privacy/shield/paul123", ask); localStorage.setItem("pulse-privacy/shield/reveal", "1"); }, keys.alice);
+await page.goto("http://localhost:5175/shielded?demo=paul123&tab=activity", { waitUntil: "networkidle" });
+await page.waitForSelector("table.ledger", { timeout: 30000 });
+await page.waitForTimeout(1500);
+const rows = await page.locator("table.ledger tbody tr").evaluateAll((trs) => trs.map((tr) => tr.innerText.replace(/\s+/g, " ").trim()));
+console.log(rows.join("\n"));
+await page.screenshot({ path: `${OUT}/activity-events.png`, fullPage: true });
+await browser.close(); console.log("errors:", errors.length ? errors : "none");

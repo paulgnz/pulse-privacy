@@ -207,7 +207,7 @@ export function App() {
       <header className="top">
         <a className="brand" href="https://private.protonnz.com">
           <img src="/xpr-network.svg" alt="XPR Network" height={20} />
-          <span>Shielded</span>
+          <span>Private XPR</span>
         </a>
         <div className="muted">
           Trusted setup ceremony <span className="sep">|</span> <a href="https://private.protonnz.com/about">How it works</a> <span className="sep">|</span> <a href="https://private.protonnz.com">Open the app</a>
@@ -217,7 +217,7 @@ export function App() {
       <section>
         <h1>Help make the proving key that no one can forge</h1>
         <p>
-          Every shielded payment on XPR Network carries a small proof. The key those proofs are checked against is built from a random secret,
+          Every Private XPR payment carries a small proof. The key those proofs are checked against is built from a random secret,
           and whoever knew that secret could forge proofs. So the key is built by many people in turn: each adds their own randomness and throws it
           away. To forge a proof you would need everyone's randomness. As long as one person really threw theirs away, nobody can.
         </p>
@@ -320,7 +320,7 @@ export function App() {
           <div className="done">
             <h3>Done. Thank you.</h3>
             <p>Your contribution is number {result.index} of phase {result.phase}. Please post this somewhere public that you control, so anyone can check the transcript against it:</p>
-            <pre className="publish">{JSON.stringify({ ceremony: "Shielded XPR", phase: result.phase, index: result.index, account: mine, file: result.file, sha256: result.sha256, contribution_hash: result.contributionHash }, null, 2)}</pre>
+            <pre className="publish">{JSON.stringify({ ceremony: "Private XPR", phase: result.phase, index: result.index, account: mine, file: result.file, sha256: result.sha256, contribution_hash: result.contributionHash }, null, 2)}</pre>
             <p className="muted">Close this tab afterwards. Nothing on your machine needs to be kept.</p>
           </div>
         ) : null}
@@ -368,7 +368,7 @@ node verify.mjs               # the release check, once both phases are final`}<
       </section>
 
       <footer className="foot">
-        <span>Shielded XPR ceremony. Coordinator: <a href="https://protonnz.com">protonnz</a>. Phase 1 is universal; phase 2 is for the shielded contract xprshield on XPR Network.</span>
+        <span>Private XPR ceremony. Coordinator: <a href="https://protonnz.com">protonnz</a>. Phase 1 is universal; phase 2 is for the version 2 contract xprshield on XPR Network.</span>
         <a href="https://private.protonnz.com">private.protonnz.com</a>
       </footer>
     </main>

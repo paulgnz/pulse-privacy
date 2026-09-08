@@ -1,0 +1,31 @@
+// shielded as home: "/" is shielded, "/old" the withdraw-only confidential page, abouts swapped
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+const require = createRequire(process.env.PLAYWRIGHT_PKG ?? import.meta.url);
+const { chromium } = require("playwright");
+const OUT = process.env.E2E_OUT ?? "/tmp";
+const keys = JSON.parse(readFileSync(new URL("../../contracts/xpr-shield-tsc/tests/.testnet-shield-keys.json", import.meta.url), "utf8"));
+const browser = await chromium.launch();
+const page = await (await browser.newContext({ viewport: { width: 1100, height: 900 } })).newPage();
+const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+await page.goto("http://localhost:5175/?demo=paul123", { waitUntil: "networkidle" });
+await page.evaluate((ask) => localStorage.setItem("pulse-privacy/shield/paul123", ask), keys.alice);
+const look = async (path, shot) => {
+  await page.goto("http://localhost:5175" + path, { waitUntil: "networkidle" });
+  await page.waitForTimeout(3500);
+  const h = await page.locator("main h1, main h2, .page h1, .page h2").first().textContent().catch(() => "?");
+  const links = await page.locator("header a").evaluateAll((as) => as.map((a) => `${a.textContent.trim()}→${a.getAttribute("href")}`).filter((l) => !/Switch|XPR Network/.test(l)));
+  const brand = await page.locator(".brand span").textContent();
+  const actions = await page.locator(".statement .actions button").allTextContents().catch(() => []);
+  const notice = await page.locator(".note").first().textContent().catch(() => "");
+  const foot = (await page.locator(".foot, footer").first().innerText().catch(() => "")).match(/Contract \w+/)?.[0];
+  console.log(`${path}\n   brand=${brand} h=${h} | ${links.join(" ")} | actions=[${actions.join(",")}] | ${foot}\n   notice: ${notice.slice(0, 110)}`);
+  if (shot) await page.screenshot({ path: `${OUT}/${shot}.png`, fullPage: true });
+};
+await look("/?demo=paul123", "home-shielded");
+await look("/old?demo=paul123", "home-old");
+await look("/about?demo=paul123");
+await look("/old/about?demo=paul123");
+await look("/shielded?demo=paul123");
+await look("/old?demo=nobody12345", "home-old-empty");
+await browser.close(); console.log("errors:", errors.length ? errors : "none");

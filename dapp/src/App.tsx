@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_NETWORK, PATHS, SHIELD, SHIELD_HOME } from "./config";
+import { CONF_DEPOSITS_CLOSED, CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_NETWORK, PATHS, SHIELD, SHIELD_HOME } from "./config";
 import { fmtUnits } from "./lib/format";
 import * as chain from "./lib/chain";
 import type { Session } from "./lib/chain";
@@ -264,12 +264,12 @@ export default function App() {
       const msg = delta > 0n ? `You received ${fmtUnits(delta, x.token)} ${x.token.code} inside the contract. Add it to your balance when you like.` : `You received a confidential ${x.token.code} payment. Add it to your balance when you like.`;
       setReceived({ msg, token: x.token.code });
       try {
-        if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("Confidential XPR", { body: msg });
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("Private XPR", { body: msg });
       } catch { /* ignore */ }
     }
-    if (total > 0) document.title = `(${total}) Confidential XPR`;
+    if (total > 0) document.title = `(${total}) Private XPR`;
   }, [st, others]);
-  useEffect(() => { if (!received) document.title = "Confidential XPR"; }, [received]);
+  useEffect(() => { if (!received) document.title = "Private XPR"; }, [received]);
   const askNotify = async () => { try { await Notification.requestPermission(); } catch { /* ignore */ } };
 
   const doLogin = async () => {
@@ -389,7 +389,7 @@ export default function App() {
           <>
             {route === "about" ? link(PATHS.conf, SHIELD_HOME ? "Old contract" : "Statement", false) : route === "shielded-about" ? link(PATHS.shielded, SHIELD_HOME ? "Statement" : "Shielded", false) : null}
             {link(onShield ? PATHS.shieldedAbout : PATHS.confAbout, "How it works", route === "about" || route === "shielded-about")}
-            {SHIELD_HOME ? (onShield ? (legacyHas ? link(PATHS.conf, "Old confidential balance", false) : null) : link(PATHS.shielded, "Back to shielded", false)) : SHIELD.enabled ? link(PATHS.shielded, "Shielded", onShield) : null}
+            {SHIELD_HOME ? (onShield ? (legacyHas ? link(PATHS.conf, "Old contract balance", false) : null) : link(PATHS.shielded, "Back to Private XPR", false)) : SHIELD.enabled ? link(PATHS.shielded, "Private XPR v2", onShield) : null}
             <a className="textbtn quiet netswitch" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
               Switch to {OTHER_NETWORK.label.toLowerCase()}
             </a>
@@ -404,7 +404,7 @@ export default function App() {
         ) : (
           <>
             {link(onShield ? PATHS.shieldedAbout : PATHS.confAbout, "How it works", route === "about" || route === "shielded-about")}
-            {SHIELD_HOME ? (onShield ? null : link(PATHS.shielded, "Back to shielded", false)) : SHIELD.enabled ? link(PATHS.shielded, "Shielded", onShield) : null}
+            {SHIELD_HOME ? (onShield ? null : link(PATHS.shielded, "Back to Private XPR", false)) : SHIELD.enabled ? link(PATHS.shielded, "Private XPR v2", onShield) : null}
             <a className="textbtn quiet netswitch" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
               Switch to {OTHER_NETWORK.label.toLowerCase()}
             </a>
@@ -453,8 +453,8 @@ export default function App() {
         {header}
         <section className="statement">
           <h2>The old confidential contract</h2>
-          <p className="lede">{session.auth.actor} has no balance in the confidential contract ({CONTRACT}). There is nothing to withdraw. Shielded payments are the product now.</p>
-          <div className="row"><button className="btn private" onClick={() => navigate(PATHS.shielded)}>Go to shielded</button></div>
+          <p className="lede">{session.auth.actor} has no balance in the old contract ({CONTRACT}). There is nothing to withdraw. Private XPR v2 is the product now.</p>
+          <div className="row"><button className="btn private" onClick={() => navigate(PATHS.shielded)}>Go to Private XPR</button></div>
         </section>
         {foot}
       </div>
@@ -580,6 +580,7 @@ export default function App() {
           st={st.token.code === token.code ? st : others[token.code]?.st ?? { ...st, token, balance: 0n, pending: 0n, pendingCount: 0, nonce: 0n, activity: [], incoming: [], historyLoaded: false }}
           figures={figures}
           legacy={SHIELD_HOME}
+          depositsClosed={CONF_DEPOSITS_CLOSED}
           onGoShielded={() => navigate(PATHS.shielded)}
           hasKey={!!keypair}
           onRegister={(code) => wrap(async () => { const r = await clientFor(code).register(); event("registered"); return r; })}

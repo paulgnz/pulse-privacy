@@ -55,9 +55,9 @@ const Limits = () => {
 export const About = ({ signedIn, onConnect }: { signedIn: boolean; onConnect?: () => void }) => (
   <article className="about">
     <section>
-      <h1>How Confidential XPR works</h1>
+      <h1>How Private XPR works</h1>
       <p>
-        Confidential XPR is a balance you hold inside a contract on XPR Network. It holds XPR and XMD, the Metal Dollar, and more
+        Private XPR (version 1, the confidential contract) is a balance you hold inside a contract on XPR Network. It holds XPR and XMD, the Metal Dollar, and more
         tokens can be added. You deposit ordinary tokens into it, and from then on your balance and every payment you make are
         stored as encrypted numbers. The chain still records who paid whom and when. It no longer shows how much.
       </p>
@@ -207,8 +207,9 @@ export const About = ({ signedIn, onConnect }: { signedIn: boolean; onConnect?: 
         </li>
         <li>Proofs are generated in your browser and take about two seconds. The network checks one in about twelve milliseconds.</li>
         <li>
+          Deposits are paused (2026-09-08) while version 2 is prepared. Version 2 also hides who you pay. Withdrawals and payments inside continue.
           The proving key comes from a one-person rehearsal, and the caps above bound what that puts at stake. The public{" "}
-          <a href={CEREMONY_URL} target="_blank" rel="noreferrer">ceremony</a> is run for the shielded contract, which replaces this one; its first phase is shared.
+          <a href={CEREMONY_URL} target="_blank" rel="noreferrer">ceremony</a> is run for version 2's circuit; its first phase is shared.
         </li>
         <li>The code has not been audited yet. The caps above bound what is at stake until it has.</li>
       </ul>

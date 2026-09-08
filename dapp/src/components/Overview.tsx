@@ -37,6 +37,7 @@ export const Overview = ({
   onStoreRecovery,
   onWithdrawToken,
   legacy = false,
+  depositsClosed = false,
   onGoShielded,
 }: {
   /** the token the forms act on */
@@ -62,6 +63,8 @@ export const Overview = ({
   onSelectToken?: (code: string) => void;
   /** the old contract, withdraw-only: no send, no deposit, a notice pointing to shielded */
   legacy?: boolean;
+  /** deposits are closed on chain (caps at one unit); sending inside and withdrawing continue */
+  depositsClosed?: boolean;
   onGoShielded?: () => void;
 }) => {
   const [revealed, setRevealed] = useState<boolean>(() => {
@@ -112,9 +115,13 @@ export const Overview = ({
       {legacy ? (
         <Note level="warn">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 16 }}>
-            <span>This is the old confidential contract. Withdraw what is here to your wallet, then deposit it into shielded. Sending and depositing here are closed.</span>
-            {onGoShielded ? <button className="textbtn" onClick={onGoShielded}>Go to shielded</button> : null}
+            <span>This is the old contract. Withdraw what is here to your wallet, then deposit it into Private XPR v2. Sending and depositing here are closed.</span>
+            {onGoShielded ? <button className="textbtn" onClick={onGoShielded}>Go to Private XPR v2</button> : null}
           </div>
+        </Note>
+      ) : depositsClosed ? (
+        <Note level="warn">
+          <span>Deposits are paused while version 2 is prepared, which also hides who you pay. Your balance is yours: withdraw to your wallet any time, and payments inside still work.</span>
         </Note>
       ) : null}
       <h2>Statement</h2>
@@ -224,9 +231,11 @@ export const Overview = ({
                 <button className="btn" onClick={() => toggle("send")} aria-expanded={form === "send"}>
                   Send
                 </button>
-                <button className="btn secondary" onClick={() => toggle("deposit")} aria-expanded={form === "deposit"}>
-                  Deposit
-                </button>
+                {depositsClosed ? null : (
+                  <button className="btn secondary" onClick={() => toggle("deposit")} aria-expanded={form === "deposit"}>
+                    Deposit
+                  </button>
+                )}
               </>
             )}
             <button className={legacy ? "btn" : "btn secondary"} onClick={() => toggle("withdraw")} aria-expanded={form === "withdraw"}>
@@ -235,7 +244,7 @@ export const Overview = ({
           </div>
 
           {form === "send" && !legacy ? <Send st={st} onSend={onSend} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} publicBalance={figures.find((f) => f.st.token.code === st.token.code)?.publicBalance ?? null} onDepositFirst={depositFirst} /> : null}
-          {form === "deposit" && !legacy ? <Deposit key={depositPrefill ?? "deposit"} st={st} publicBalance={figures.find((f) => f.st.token.code === st.token.code)?.publicBalance ?? null} onDeposit={onDeposit} busy={busy} onClose={() => { setForm(null); setDepositPrefill(undefined); }} onDone={(m, t) => { setDepositPrefill(undefined); done(m, t); }} tokens={tokens} onSelectToken={onSelectToken} initialAmount={depositPrefill} /> : null}
+          {form === "deposit" && !legacy && !depositsClosed ? <Deposit key={depositPrefill ?? "deposit"} st={st} publicBalance={figures.find((f) => f.st.token.code === st.token.code)?.publicBalance ?? null} onDeposit={onDeposit} busy={busy} onClose={() => { setForm(null); setDepositPrefill(undefined); }} onDone={(m, t) => { setDepositPrefill(undefined); done(m, t); }} tokens={tokens} onSelectToken={onSelectToken} initialAmount={depositPrefill} /> : null}
           {form === "withdraw" ? <Withdraw st={st} onWithdraw={onWithdraw} busy={busy} onClose={() => setForm(null)} onDone={done} tokens={tokens} onSelectToken={onSelectToken} allTokens={figures.filter((f) => f.st.registered)} onWithdrawAll={onWithdrawToken} /> : null}
         </>
       ) : (

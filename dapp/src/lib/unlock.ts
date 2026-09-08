@@ -13,6 +13,7 @@ const SUBGROUP_ORDER = 273603035897990940278080071815715938607681397215856725920
 const DOMAIN = "pulse-privacy/elgamal/v1";
 
 /** Shown by the wallet in the signing prompt. Part of the signed message: changing it changes the key. */
+// Signed texts: part of the key derivation. Never change these strings; a changed text is a different key.
 export const VIEWKEY_NOTE = "Derives your Confidential XPR viewing key on private.protonnz.com. Never sent to the chain. Moves nothing.";
 
 /** Shown by the wallet when deriving the shielded spending key: a different message, so a different key. */

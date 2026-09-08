@@ -401,9 +401,9 @@ const WhoSees = () => (
 export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: () => void; signedIn: boolean; tokens?: Token[] }) => (
   <article className="about">
     <section>
-      <h1>How shielded payments work</h1>
+      <h1>How Private XPR works</h1>
       <p>
-        Shielded XPR is money you hold inside a contract on XPR Network, as sealed notes. It holds XPR and XMD, the Metal Dollar,
+        Private XPR is money you hold inside a contract on XPR Network, as sealed notes. It holds XPR and XMD, the Metal Dollar,
         and more tokens can be added. You deposit ordinary tokens into it, and from then on every payment you make is a new sealed
         note to the receiver. The chain records that you paid, and when. It shows neither whom nor how much.
       </p>

@@ -19,7 +19,7 @@ const options = (restoreSession: boolean): ConnectWalletArgs => ({
   linkOptions: { chainId: CHAIN_ID, endpoints: ENDPOINTS, restoreSession },
   transportOptions: { requestAccount: CONTRACT, requestStatus: true },
   selectorOptions: { enabledWalletTypes: ["proton", "webauth", "anchor"] },
-  uiOptions: { theme: "light", appInfo: { name: "Shielded XPR ceremony", logo: `${location.origin}/icon.svg`, logoRounded: true } },
+  uiOptions: { theme: "light", appInfo: { name: "Private XPR ceremony", logo: `${location.origin}/icon.svg`, logoRounded: true } },
 });
 
 export async function login(restore = false): Promise<Session | null> {

@@ -1,11 +1,19 @@
-# Confidential XPR
+# Private XPR
 
-Confidential transfers with auditability on XPR Network: hidden amounts, visible parties, and a
-viewing key held by the XPR Network committee. Confidential, not anonymous.
+Private payments with auditability on XPR Network. Version 2 (contract `xprshield`) hides who you
+pay and how much; the payer's signature stays public and a viewing key held by the XPR Network
+committee opens every payment. Private, not anonymous.
 
-**Live, early access:** <https://private.protonnz.com> (mainnet) and
-<https://testnet.private.protonnz.com> (testnet). Contract account `xprconf` on both networks.
-Trusted-setup ceremony: <https://ceremony.private.protonnz.com>.
+**Live:** <https://private.protonnz.com> runs version 1 on mainnet (contract `xprconf`, amount
+hidden, parties visible); **deposits into v1 are paused since 2026-09-08**, withdrawals and
+payments inside continue. <https://testnet.private.protonnz.com> runs version 2 on testnet, with
+v1 at `/old`. Trusted-setup ceremony: <https://ceremony.private.protonnz.com>.
+
+Start with [docs/00-overview.md](docs/00-overview.md): what is where, what is live, what is next.
+
+---
+
+## Version 1 (confidential, retiring)
 
 ## What it does
 

@@ -267,12 +267,12 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
 
   // ---------------------------------------------------------------- states
 
-  if (!SHIELD.enabled) return <section className="statement"><h2>Shielded</h2><p className="muted">Shielded payments are on the testnet site only for now.</p></section>;
+  if (!SHIELD.enabled) return <section className="statement"><h2>Private XPR</h2><p className="muted">Private XPR v2 is on the testnet site only for now.</p></section>;
 
   const intro = (
     <>
-      <h2>Shielded</h2>
-      <p className="lede" style={{ marginBottom: 26 }}>A shielded payment hides who was paid and how much. The chain shows only that you paid someone. Your wallet signs every payment, as always, and only the XPR Network auditor's key opens the details. Deposits and withdrawals stay public.{SHIELD_HOME ? " Testnet, early access." : " Testnet only, early access."} <a href={PATHS.shieldedAbout}>How it works</a>.</p>
+      <h2>Private XPR</h2>
+      <p className="lede" style={{ marginBottom: 26 }}>A private payment hides who was paid and how much. The chain shows only that you paid someone. Your wallet signs every payment, as always, and only the XPR Network auditor's key opens the details. Deposits and withdrawals stay public.{SHIELD_HOME ? " Testnet, early access." : " Testnet only, early access."} <a href={PATHS.shieldedAbout}>How it works</a>.</p>
     </>
   );
 
@@ -445,7 +445,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       ) : null}
       <div className="group private">
         <h3>
-          Shielded balance
+          Private balance
           <span className="sub">{revealed ? "Shown on this device only. The chain holds sealed notes." : "Hidden by default. Reveal shows it on this device only."}</span>
         </h3>
         <button className="textbtn" onClick={toggleReveal} aria-pressed={revealed}>{revealed ? "Hide" : "Reveal"}</button>
