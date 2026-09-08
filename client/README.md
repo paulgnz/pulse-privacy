@@ -51,7 +51,8 @@ and the auditor key must equal the one pinned for the network; each node's outpu
 against that root on their own; the note data beside the commitments is agreed by vote; a spend
 tag counts when two nodes list it. Anything less shows the balance as unconfirmed, and `send`
 and `withdraw` refuse to act on it unless `--force` is given. History is only believed after a
-chain node's block confirms the transaction.
+chain node's block confirms the transaction. `node client/tests/lying-node.test.mjs` checks the
+outputs reading against padded rows from a single node, live on testnet.
 
 ## The committee
 

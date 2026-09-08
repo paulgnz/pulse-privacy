@@ -31,20 +31,26 @@ await page.waitForTimeout(4000);
 const balanceText = async () => (await page.locator("section.statement").innerText()).match(/Private balance[\s\S]*?XPR\s+([0-9,.]+)/)?.[1] ?? "?";
 const trueBalance = await balanceText();
 
-// 1. a forged note to the victim's public key, appended to the outputs of every node
+// 1. a forged note to the victim's public key, appended to the outputs of every node; and, from
+//    the first node only, a copy of a real row at a fractional index (the root still matches, the
+//    row must be refused and that node dropped, the others still agree)
+let liar = null;
 await page.route("**/v1/chain/get_table_rows", async (route) => {
   const body = JSON.parse(route.request().postData() ?? "{}");
+  const host = new URL(route.request().url()).host;
+  liar ??= host;
   const j = await rows(route);
   if (body.table === "outputs" && !j.more && j.rows.length) {
     const last = j.rows[j.rows.length - 1];
     j.rows.push({ ...last, index: Number(last.index) + 1, epk: "", cr: "0".repeat(48) + "10000000000000000" + "0".repeat(64), ca: "" });
+    if (host === liar) j.rows.push({ ...last, index: Number(last.index) + 0.5 });
   }
   return fulfil(route, j);
 });
 await page.goto(`${BASE}/?demo=paul123`, { waitUntil: "networkidle" });
 await page.waitForSelector("text=Private balance", { timeout: 30000 });
 await page.waitForTimeout(4000);
-check((await balanceText()) === trueBalance, `forged output rows do not change the balance (${trueBalance} XPR)`);
+check((await balanceText()) === trueBalance, `forged output rows do not change the balance (${trueBalance} XPR); the fractional row from ${liar} did not stop the app`);
 await page.unroute("**/v1/chain/get_table_rows");
 
 // 2. forged history: a payer that never paid, and an invented withdrawal by the account itself

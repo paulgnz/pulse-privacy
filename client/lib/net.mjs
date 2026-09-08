@@ -128,6 +128,7 @@ export class Net {
       const byPos = new Map();
       for (const o of outs) {
         const g = Number(o.index);
+        if (!Number.isInteger(g) || g < 0) throw new Error("malformed outputs"); // a padded or fractional index: the node is lying
         if (N.treeOf(g) !== t.id) continue;
         const pos = N.posOf(g);
         if (pos >= t.next) continue;
@@ -204,6 +205,7 @@ export class Net {
         } else note = N.tryDecryptReceiver(keys, N.decompressPoint(words(o.epk)[0]), words(o.cr), cm);
       } catch { continue; }
       if (!note || note.v === 0n) continue;
+      if (!Number.isInteger(index) || index < 0) continue;
       if (notes.some((n) => n.index === index) || spentNotes.some((n) => n.index === index)) continue;
       const owned = { ...note, index, kind: o.epk ? "note" : "deposit" };
       (t.spent.has(hex(N.nullifier(keys.nk, index))) ? spentNotes : notes).push(owned);

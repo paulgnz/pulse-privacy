@@ -24,20 +24,23 @@ export function checkCircuitFiles() {
 export function pick(notes, tokenId, amount, fmt, trees) {
   const byTree = new Map();
   for (const n of notes) if (n.token === tokenId) { const id = N.treeOf(n.index); byTree.set(id, [...(byTree.get(id) ?? []), n]); }
-  const order = [...byTree.entries()].sort((a, b) => (b[1].reduce((s, n) => s + n.v, 0n) > a[1].reduce((s, n) => s + n.v, 0n) ? 1 : -1));
-  let lastErr = null;
+  const sum = (ns) => ns.reduce((s, n) => s + n.v, 0n);
+  const order = [...byTree.entries()].sort((a, b) => (sum(b[1]) > sum(a[1]) ? 1 : -1));
+  const total = sum([...byTree.values()].flat());
+  if (total < amount) throw new Error(`not enough: ${fmt(total)} available, need ${fmt(amount)}`);
   for (const [id, same0] of order) {
     const tree = trees.get(id);
     if (!tree) continue;
     const same = same0.sort((a, b) => (a.v > b.v ? -1 : 1));
     const chosen = [];
-    let sum = 0n;
-    for (const n of same) { if (sum >= amount || chosen.length === 2) break; chosen.push(n); sum += n.v; }
-    if (sum >= amount) return { inputs: chosen, tree };
-    lastErr = new Error(`not enough in two notes: ${fmt(sum)} in the largest two of tree ${id}, need ${fmt(amount)}${same.length > 2 ? " (consolidate first: pay yourself the total)" : ""}`);
+    let got = 0n;
+    for (const n of same) { if (got >= amount || chosen.length === 2) break; chosen.push(n); got += n.v; }
+    if (got >= amount) return { inputs: chosen, tree };
   }
-  if (order.length > 1) throw new Error("the amount spans notes in more than one tree; pay yourself the total from each tree first");
-  throw lastErr ?? new Error("nothing to spend");
+  // no tree pays with two notes, though the balance covers the amount
+  const covering = order.find(([, ns]) => sum(ns) >= amount);
+  if (covering) throw new Error(`the amount is spread over more than two notes in tree ${covering[0]} (a payment spends at most two): pay yourself the total first, two notes at a time`);
+  throw new Error("the amount spans notes in more than one tree (a payment spends from one): pay yourself what is in each tree, two notes at a time; the change lands in the current tree");
 }
 
 /** build, prove and return the `spend` action data for `owner` */

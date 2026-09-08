@@ -116,16 +116,19 @@ async function scan(who) {
 }
 
 function pick(notes, amount) {
-  // one root per proof: choose within the tree holding the most of the token
+  // one root per proof: choose within one tree, the richest first, then any tree that can pay
   const byTree = new Map();
   for (const n of notes) if (n.token === TOKEN_ID) byTree.set(N.treeOf(n.index), [...(byTree.get(N.treeOf(n.index)) ?? []), n]);
-  const best = [...byTree.values()].sort((a, b) => (b.reduce((s, n) => s + n.v, 0n) > a.reduce((s, n) => s + n.v, 0n) ? 1 : -1))[0] ?? [];
-  const same = best.sort((a, b) => (a.v > b.v ? -1 : 1));
-  const chosen = [];
-  let sum = 0n;
-  for (const n of same) { if (sum >= amount || chosen.length === 2) break; chosen.push(n); sum += n.v; }
-  if (sum < amount) throw new Error(`not enough in two notes: have ${asset(sum)} in the largest two, need ${asset(amount)}${same.length > 2 ? " (consolidate first: send yourself the total)" : ""}`);
-  return chosen;
+  const sum = (ns) => ns.reduce((s, n) => s + n.v, 0n);
+  const order = [...byTree.values()].sort((a, b) => (sum(b) > sum(a) ? 1 : -1));
+  for (const same0 of order) {
+    const same = same0.sort((a, b) => (a.v > b.v ? -1 : 1));
+    const chosen = [];
+    let got = 0n;
+    for (const n of same) { if (got >= amount || chosen.length === 2) break; chosen.push(n); got += n.v; }
+    if (got >= amount) return chosen;
+  }
+  throw new Error(`no tree pays ${asset(amount)} with two notes (have ${asset(sum(order.flat()))} in total; consolidate first: send yourself the total, two notes at a time)`);
 }
 
 async function submit(js, who, pub, label) {

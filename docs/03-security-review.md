@@ -364,3 +364,15 @@ pick a payment's notes within one. A full tree can no longer block anyone's exit
 
 The regression runs in CI beside the main suite.
 
+### Internal review of the rollover, app and clients (2026-09-09, at `440375e`)
+
+| # | Where, severity | Finding | Fix |
+|---|---|---|---|
+| 1 | client, medium | The headless client's `rebuildAll` let a row with a fractional index through (a copy of a real row at n + 0.5 keeps the root), and `scan` then threw converting it to a BigInt: one lying node denied balance, send, withdraw and history, and `--force` could not help. The app already refused such rows. | The global index must be a non-negative integer before anything else; `scan` skips any other index as well. Regression `client/tests/lying-node.test.mjs` (live testnet); the app's `e2e/lying-node.mjs` now pads one node's outputs with the same row. |
+| 2 | app and client, low | The "spans more than one tree" message appeared whenever notes sat in two trees and no tree paid with two notes, also when the balance was simply short or when one tree held the amount in three notes. | Total across trees checked first ("not enough"); then a tree holding the amount in more than two notes ("pay yourself the total first, two notes at a time"); only then the cross-tree message, which now says what to do. |
+| 3 | demo CLI, low | `pick` tried only the richest tree. | Every tree is tried, as in the client. |
+| 4 | app, low (predates the rollover) | A lying node's outputs were written into the tree cache before the root check, and the cache was deleted on a mismatch, so one lying node forced a full rebuild (two million hashes for a full tree) on every scan. | Each node's outputs are built into a candidate copy and only replace the cache once the root matched; a verified cache is never discarded because another node failed. |
+| 5 | app, nit | The auditor page said "tree 1 of 2 in use" for the second tree (0-based id beside a count). | 1-based. |
+
+Found sound: tree-row agreement (row set plus active tree as the key), output filtering per tree, proof binding of the tree word, per-tree root sequence carried into the proof, note picking within one tree, and activity and auditor paths ordered by the global index.
+

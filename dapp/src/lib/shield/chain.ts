@@ -211,18 +211,21 @@ async function agreedTrees(): Promise<{ trees: TreeRowAgreed[]; active: number; 
 }
 
 // each rebuilt tree is cached and extended: leaves are append-only, so a later scan hashes only
-// what is new; a leaf that changes under the cache means a lying or inconsistent node, and that
-// tree's cache is thrown away
+// what is new. A node's answer is built into a candidate (the cached prefix it agrees with, then
+// its own leaves) and only replaces the cache once its root matched, so a lying node can neither
+// poison the cache nor throw a verified one away and force the honest node to rebuild from scratch
 const treeCaches = new Map<number, { tree: Tree; cms: string[] }>();
-function rebuildTo(id: number, next: number, byIndex: Map<number, string>): Tree {
-  let cache = treeCaches.get(id) ?? null;
-  if (cache) {
-    for (let i = 0; i < Math.min(cache.cms.length, next); i++) if ((byIndex.get(i) ?? "0".repeat(64)) !== cache.cms[i]) { cache = null; break; }
+function rebuildTo(id: number, next: number, byIndex: Map<number, string>): { tree: Tree; cms: string[] } {
+  const cached = treeCaches.get(id) ?? null;
+  let keep = 0;
+  if (cached) {
+    keep = Math.min(cached.cms.length, next);
+    for (let i = 0; i < keep; i++) if ((byIndex.get(i) ?? "0".repeat(64)) !== cached.cms[i]) { keep = 0; break; }
   }
-  if (!cache || cache.cms.length > next) cache = { tree: new Tree(undefined, id), cms: [] };
-  for (let i = cache.cms.length; i < next; i++) { const cm = byIndex.get(i) ?? "0".repeat(64); cache.tree.append(BigInt("0x" + cm)); cache.cms.push(cm); }
-  treeCaches.set(id, cache);
-  return cache.tree;
+  const cand = cached && keep === cached.cms.length ? { tree: cached.tree.snapshot(), cms: cached.cms.slice() } : { tree: new Tree(undefined, id), cms: [] as string[] };
+  if (cand.cms.length > keep) { cand.tree = new Tree(undefined, id); cand.cms = []; }
+  for (let i = cand.cms.length; i < next; i++) { const cm = byIndex.get(i) ?? "0".repeat(64); cand.tree.append(BigInt("0x" + cm)); cand.cms.push(cm); }
+  return cand;
 }
 /** the outputs of one node grouped by tree and checked against the agreed roots; returns the rebuilt trees or throws */
 function rebuildAll(agreed: TreeRowAgreed[], outs: { index: string | number; cm: string }[]): Map<number, Tree> {
@@ -233,13 +236,16 @@ function rebuildAll(agreed: TreeRowAgreed[], outs: { index: string | number; cm:
       const g = Number(o.index);
       if (treeOf(g) !== t.id) continue;
       const pos = g - t.id * 2 ** 20;
+      if (!Number.isInteger(pos) || pos < 0) throw new Error("malformed outputs");
       if (pos >= t.next) continue;
-      if (!Number.isInteger(pos) || pos < 0 || byIndex.has(pos) || !/^[0-9a-f]{64}$/i.test(o.cm)) throw new Error("malformed outputs");
+      if (byIndex.has(pos) || !/^[0-9a-f]{64}$/i.test(o.cm)) throw new Error("malformed outputs");
       byIndex.set(pos, o.cm.toLowerCase());
     }
-    const tree = rebuildTo(t.id, t.next, byIndex);
-    if (hex32(tree.root) !== t.root) { treeCaches.delete(t.id); throw new Error(`outputs of tree ${t.id} do not hash to the agreed root`); }
-    result.set(t.id, tree);
+    const cand = rebuildTo(t.id, t.next, byIndex);
+    if (hex32(cand.tree.root) !== t.root) throw new Error(`outputs of tree ${t.id} do not hash to the agreed root`);
+    const prev = treeCaches.get(t.id);
+    if (!prev || prev.cms.length <= cand.cms.length) treeCaches.set(t.id, cand);
+    result.set(t.id, cand.tree);
   }
   return result;
 }
@@ -369,15 +375,18 @@ export async function scan(keys: ShieldKeys): Promise<ScanResult> {
 export function pickInTree(p: Prefetched, tokenId: bigint, amount: bigint): { inputs: OwnedNote[]; tree: Tree; rootSeq: bigint } {
   const byTree = new Map<number, OwnedNote[]>();
   for (const n of p.notes) if (n.token === tokenId) { const id = treeOf(n.index); byTree.set(id, [...(byTree.get(id) ?? []), n]); }
-  const order = [...byTree.entries()].sort((a, b) => (b[1].reduce((s, n) => s + n.v, 0n) > a[1].reduce((s, n) => s + n.v, 0n) ? 1 : -1));
-  let lastErr: Error | null = null;
+  const sum = (ns: OwnedNote[]) => ns.reduce((s, n) => s + n.v, 0n);
+  const order = [...byTree.entries()].sort((a, b) => (sum(b[1]) > sum(a[1]) ? 1 : -1));
+  const total = sum([...byTree.values()].flat());
+  if (total < amount) throw new Error("Not enough in your shielded balance.");
   for (const [id, notes] of order) {
     const t = p.trees.trees.get(id);
     if (!t) continue;
-    try { return { inputs: pick(notes, tokenId, amount), tree: t.tree, rootSeq: t.rootSeq }; } catch (e) { lastErr = e as Error; }
+    try { return { inputs: pick(notes, tokenId, amount), tree: t.tree, rootSeq: t.rootSeq }; } catch { /* try the next tree */ }
   }
-  if (order.length > 1) throw new Error("This amount spans notes in more than one tree. Send yourself the total from each tree first to combine them.");
-  throw lastErr ?? new Error("Not enough in your shielded balance.");
+  // no single tree pays with two notes, though the balance covers the amount
+  if (order.some(([, ns]) => sum(ns) >= amount)) throw new Error("This amount is spread over more than two notes. A payment spends at most two: send yourself the total first, two notes at a time.");
+  throw new Error("This amount spans notes in more than one tree, and a payment spends from one. Send yourself what is in each tree, two notes at a time; the change lands in the current tree.");
 }
 export function pick(notes: OwnedNote[], tokenId: bigint, amount: bigint): OwnedNote[] {
   const same = notes.filter((n) => n.token === tokenId).sort((a, b) => (a.v > b.v ? -1 : 1));
