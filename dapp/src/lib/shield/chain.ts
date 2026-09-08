@@ -236,37 +236,50 @@ async function scanTables() {
   // the nodes disagree on is disputed, every variant is tried, and the balance is unconfirmed
   type Out = { index: string | number; cm: string; epk: string; cr: string; ca: string };
   const outAnswers = await Promise.allSettled([...new Set(ENDPOINTS)].map((ep) => rows<Out>("outputs", "index", ep)));
-  const lists = outAnswers.flatMap((a) => (a.status === "fulfilled" ? [a.value.filter((o) => Number(o.index) < agreed.next)] : []));
-  if (!lists.length) throw new Error("No node answered the scan.");
+  // each node's answer is validated on its own before anything is merged: unique indices inside the
+  // agreed tree, well-formed words, and commitments that hash to the agreed root. A node that fails
+  // is simply dropped, so one bad answer cannot abort a scan two healthy nodes can complete
+  const valid: Out[][] = [];
+  for (const a of outAnswers) {
+    if (a.status !== "fulfilled") continue;
+    try {
+      const list = a.value.filter((o) => Number(o.index) < agreed.next);
+      const byIndex = new Map<number, string>();
+      for (const o of list) {
+        const i = Number(o.index);
+        if (!Number.isInteger(i) || i < 0 || byIndex.has(i) || !/^[0-9a-f]{64}$/i.test(o.cm)) throw new Error("malformed outputs");
+        byIndex.set(i, o.cm.toLowerCase());
+      }
+      const tree = rebuildTo(agreed.next, byIndex);
+      if (hex32(tree.root) !== agreed.root) { treeCache = null; throw new Error("outputs do not hash to the agreed root"); }
+      valid.push(list);
+    } catch { /* this node's answer is discarded */ }
+  }
+  if (!valid.length) throw new Error("No node returned outputs that match the agreed root; try again.");
+  // the commitments are authenticated by the root; the note data beside them (epk, cr, ca) is not,
+  // so it is authenticated by agreement: a row two nodes return identically is agreed, a disputed
+  // row has every variant tried, and any dispute or single-node answer leaves the balance unconfirmed
   const key = (o: Out) => `${o.cm}|${o.epk}|${o.cr}|${o.ca}`.toLowerCase();
   const variants = new Map<number, Map<string, { row: Out; votes: number }>>();
-  for (const l of lists) {
-    const seen = new Set<number>();
-    for (const o of l) {
-      const i = Number(o.index);
-      if (seen.has(i)) throw new Error("duplicate output rows");
-      seen.add(i);
-      const m = variants.get(i) ?? new Map<string, { row: Out; votes: number }>();
-      const k = key(o);
-      const v = m.get(k) ?? { row: o, votes: 0 };
-      v.votes += 1;
-      m.set(k, v);
-      variants.set(i, m);
-    }
+  for (const l of valid) for (const o of l) {
+    const i = Number(o.index);
+    const m = variants.get(i) ?? new Map<string, { row: Out; votes: number }>();
+    const k = key(o);
+    const v = m.get(k) ?? { row: o, votes: 0 };
+    v.votes += 1;
+    m.set(k, v);
+    variants.set(i, m);
   }
   const outs: Out[] = [];
-  const byIndex = new Map<number, string>();
-  let outsDisputed = lists.length < 2;
+  const cms = new Map<number, string>();
+  let outsDisputed = valid.length < 2;
   for (const [i, m] of variants) {
     const vs = [...m.values()].sort((a, b) => b.votes - a.votes);
     if (vs.length > 1 || vs[0].votes < 2) outsDisputed = true;
-    byIndex.set(i, vs[0].row.cm.toLowerCase());
+    cms.set(i, vs[0].row.cm.toLowerCase());
     for (const v of vs) outs.push(v.row); // every variant is tried; a note is only ever accepted if it recomputes to its commitment
   }
-  // a leaf every node omitted would still break the root, so an omission cannot pass either
-  const tree = rebuildTo(agreed.next, byIndex);
-  if (hex32(tree.root) !== agreed.root) { treeCache = null; throw new Error("The outputs read from the chain do not hash to the agreed root; try again."); }
-  return { outs, leaves: [...byIndex].map(([index, cm]) => ({ index, cm })), nfs, confirmed: agreed.confirmed && nfConfirmed && !outsDisputed };
+  return { outs, leaves: [...cms].map(([index, cm]) => ({ index, cm })), nfs, confirmed: agreed.confirmed && nfConfirmed && !outsDisputed };
 }
 
 export async function scan(keys: ShieldKeys): Promise<ScanResult> {

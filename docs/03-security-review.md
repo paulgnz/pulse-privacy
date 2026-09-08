@@ -254,3 +254,9 @@ Two medium findings in the client, fixed the same night.
 | 1 | medium | the root authenticates commitments but not the note data beside them: a node returning an altered ciphertext with the true commitment made the note vanish with a confirmed balance | outputs are read from every node; a row two nodes return identically is agreed, a disputed row has every variant tried (a note is only accepted if it recomputes to its authenticated commitment), and any dispute or single-node answer leaves the balance unconfirmed |
 | 2 | medium | contract-wide deposit history was keyed by the random value alone, so another owner's equal value could overwrite the transaction and time | keyed by owner and value; the match stays local |
 
+## Shielded mode: independent review, sixth pass (Codex, 2026-09-08, at `2e2fecf`)
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | medium | the new merge processed every node's outputs together, so one node's duplicate row or wrong commitment aborted a scan two healthy nodes could complete | each node's answer is validated on its own (unique indices inside the agreed tree, well-formed words, commitments hashing to the agreed root) and a failing answer is dropped before the payload variants are merged |
+
