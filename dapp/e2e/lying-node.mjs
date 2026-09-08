@@ -30,6 +30,8 @@ await page.waitForSelector("text=Private balance", { timeout: 30000 });
 await page.waitForTimeout(4000);
 const balanceText = async () => (await page.locator("section.statement").innerText()).match(/Private balance[\s\S]*?XPR\s+([0-9,.]+)/)?.[1] ?? "?";
 const trueBalance = await balanceText();
+check(/^[0-9][0-9,]*\.[0-9]{4}$/.test(trueBalance) && Number(trueBalance.replace(/,/g, "")) > 0, `an honest read gives a numeric, non-zero balance (${trueBalance})`);
+if (!/^[0-9]/.test(trueBalance)) { await browser.close(); console.log("no baseline: the balance could not be read, nothing below would be tested"); process.exit(1); }
 
 // 1. a forged note to the victim's public key, appended to the outputs of every node; and, from
 //    the first node only, a copy of a real row at a fractional index (the root still matches, the
@@ -67,6 +69,7 @@ await page.goto(`${BASE}/?demo=paul123&tab=activity`, { waitUntil: "networkidle"
 await page.waitForSelector("table.ledger", { timeout: 60000 });
 await page.waitForTimeout(3000);
 const activity = await page.locator("section.section").innerText();
+check(/received|sent|deposited|withdrew/i.test(activity), "the honest history rows are present, so the forged ones had something to hide among");
 check(!/evilnode1/.test(activity), "a forged payer is not shown in Activity");
 check(!/9,999,999/.test(activity), "a forged withdrawal is not shown in Activity");
 await page.unroute("**/v2/history/get_actions*");

@@ -376,3 +376,15 @@ The regression runs in CI beside the main suite.
 
 Found sound: tree-row agreement (row set plus active tree as the key), output filtering per tree, proof binding of the tree word, per-tree root sequence carried into the proof, note picking within one tree, and activity and auditor paths ordered by the global index.
 
+## Shielded mode: independent review, seventeenth pass (Codex, 2026-09-09, at `7e6d944`)
+
+Codex reviewed the rollover series (`35341a0` to `7e6d944`): the fund-locking fix and the client crash fix hold; no fund-loss or decryption issue reproduced; contract suite, fuzz, rollover regression, security regressions and both builds pass with hashes matching the runbook. Three items, all fixed:
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| 1 | medium | The client regression combined two-node agreed roots with the outputs of the first responding node, so a lagging testnet node failed CI while production scanning succeeded. | The test builds both trees and the outputs table locally with the note library and never touches a node; it also covers a duplicate position and a swapped commitment. |
+| 2 | low | The browser regression compared "?" with "?" when the balance could not be read. | The baseline must be a numeric non-zero balance and the honest history rows must be present, else the run fails. |
+| 3 | low | The runbook's dapp step still named revision-5 proving artifacts. | Revision 6, with the client's `REV` set to the same suffix. |
+
+Outstanding as before: transitive dependency advisories in the ceremony web app.
+

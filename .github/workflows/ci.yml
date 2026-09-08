@@ -61,5 +61,5 @@ jobs:
         working-directory: contracts/xpr-shield-tsc
       - run: node tests/rollover-ring.test.mjs
         working-directory: contracts/xpr-shield-tsc
-      - name: headless client reads live testnet tables and refuses padded rows
+      - name: headless client refuses padded output rows (local fixtures)
         run: node client/tests/lying-node.test.mjs

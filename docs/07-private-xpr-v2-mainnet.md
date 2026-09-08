@@ -66,9 +66,10 @@ Then move `privatexpr@active` to the committee (or an msig) as with v1.
 ## 4. Dapp
 
 - `dapp/src/config.ts`: mainnet block `SHIELD = { enabled: true, contract: "privatexpr", auditorPk: <pinned> }` (testnet stays `xprshield`); the
-  circuit files under `public/circuit/` must be the ceremony's final revision-5 zkey, shipped under a **fresh file name**
-  (for example `joinsplit-r5c_final.zkey`, with `WASM`/`ZKEY` in `lib/shield/chain.ts` and `debug.ts` updated), because
-  `/circuit/` is cached immutably for a year and the rehearsal key must never be served in its place.
+  circuit files under `public/circuit/` must be the ceremony's final revision-6 zkey, shipped under a **fresh file name**
+  (for example `joinsplit-r6c_final.zkey` beside `joinsplit-r6c.wasm`, with `WASM`/`ZKEY` in `lib/shield/chain.ts` and
+  `debug.ts` updated, and `REV` in `client/lib/prove.mjs` set to the same suffix so the headless client proves with the
+  same files), because `/circuit/` is cached immutably for a year and the rehearsal key must never be served in its place.
 - `SHIELD_HOME` follows `SHIELD.enabled`, so enabling it on mainnet makes v2 the site and v1 `/old`.
 - Deploy is a push to `main`; the `pulse-privacy` Vercel project builds mainnet.
 

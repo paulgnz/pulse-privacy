@@ -52,7 +52,7 @@ against that root on their own; the note data beside the commitments is agreed b
 tag counts when two nodes list it. Anything less shows the balance as unconfirmed, and `send`
 and `withdraw` refuse to act on it unless `--force` is given. History is only believed after a
 chain node's block confirms the transaction. `node client/tests/lying-node.test.mjs` checks the
-outputs reading against padded rows from a single node, live on testnet.
+outputs reading against padded rows from a single node, on locally built trees (no network).
 
 ## The committee
 
