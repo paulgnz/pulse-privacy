@@ -31,10 +31,10 @@ node scripts/seed.mjs start                 # phase 1 start (done 2026-09-07: p1
 # … contributors take turns on the site …
 # finalise phase 1 with the CLI: download the head file, then in ../ceremony:
 #   node finalize.mjs phase1 <head.ptau> --beacon-block N   → final/pot16_final.ptau
-#   node finalize.mjs setup ../circuits/build/transfer.r1cs   → contributions/00-setup.zkey
+#   node finalize.mjs setup ../circuits/build/joinsplit.r1cs  → contributions/00-setup.zkey
 node scripts/seed.mjs head ../ceremony/contributions/00-setup.zkey p2/00-setup.zkey 2 "coordinator setup (no secret)"
 # … contributors take turns again (phase 2) …
-#   node finalize.mjs phase2 <head.zkey> --beacon-block M   → final/transfer_final.zkey, vk
+#   node finalize.mjs phase2 <head.zkey> --beacon-block M   → final/joinsplit_final.zkey, vk
 curl -X POST https://pulse-privacy-ceremony.vercel.app/api/admin -H "x-admin-token: $ADMIN_TOKEN" -H 'content-type: application/json' -d '{"op":"finish"}'
 ```
 

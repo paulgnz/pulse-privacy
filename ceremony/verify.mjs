@@ -145,9 +145,11 @@ for (const phase of [1, 2]) {
 
 // ------------------------------------------------------------------ the final files and the beacon
 const finalPtau = join(FINAL, "pot16_final.ptau");
-const finalZkey = join(FINAL, "transfer_final.zkey");
-const vkPath = join(FINAL, "transfer_vk.json");
-const r1cs = resolve("../circuits/build/transfer.r1cs");
+// phase 2 is circuit-specific: the shielded join-split circuit (final/phase2.json names it)
+const CIRCUIT = (() => { try { return JSON.parse(readFileSync(join(FINAL, "phase2.json"), "utf8")).circuit ?? "joinsplit"; } catch { return "joinsplit"; } })();
+const finalZkey = join(FINAL, `${CIRCUIT}_final.zkey`);
+const vkPath = join(FINAL, `${CIRCUIT}_vk.json`);
+const r1cs = resolve(`../circuits/build/${CIRCUIT}.r1cs`);
 const tmp = mkdtempSync(join(tmpdir(), "ceremony-verify-"));
 
 async function checkBeacon(phase, last, finalPath, meta) {
@@ -166,7 +168,7 @@ async function checkBeacon(phase, last, finalPath, meta) {
     const beaconed = join(tmp, "beacon.zkey");
     run(["zkey", "beacon", last, beaconed, b.id, "10", `--name=${name}`]);
     if (sha256(beaconed) === sha256(finalPath)) ok(`phase 2: final zkey is the last contribution plus beacon block ${meta.beaconBlock}, recomputed byte for byte`);
-    else fail("phase 2: recomputed beacon does not match final/transfer_final.zkey");
+    else fail(`phase 2: recomputed beacon does not match final/${CIRCUIT}_final.zkey`);
   }
 }
 
@@ -179,7 +181,7 @@ if (existsSync(finalPtau)) {
 } else missing("phase 1: final/pot16_final.ptau not present");
 
 if (existsSync(finalZkey)) {
-  if (!existsSync(r1cs)) fail("circuits/build/transfer.r1cs missing (run `npm run compile` in circuits/)");
+  if (!existsSync(r1cs)) fail(`circuits/build/${CIRCUIT}.r1cs missing (run \`npm run compile:shielded\` in circuits/)`);
   else {
     try { run(["zkey", "verify", r1cs, finalPtau, finalZkey]); ok("phase 2: final zkey verifies against the circuit and the final ptau"); }
     catch (e) { fail(`phase 2: zkey verification failed\n${String(e.stdout || e.message).slice(-400)}`); }
@@ -193,8 +195,8 @@ if (existsSync(finalZkey)) {
     const a = JSON.stringify(JSON.parse(readFileSync(t, "utf8")));
     const b = JSON.stringify(JSON.parse(readFileSync(vkPath, "utf8")));
     if (a === b) ok(`published vk matches the final zkey (sha256 ${sha256(vkPath).slice(0, 16)}…)`); else fail("published vk does not match the final zkey");
-  } else missing("final/transfer_vk.json not present");
-} else missing("phase 2: final/transfer_final.zkey not present");
+  } else missing(`final/${CIRCUIT}_vk.json not present`);
+} else missing(`phase 2: final/${CIRCUIT}_final.zkey not present`);
 
 if (failures) {
   console.log(`\n${failures} failure(s). The ceremony is NOT verified.`);

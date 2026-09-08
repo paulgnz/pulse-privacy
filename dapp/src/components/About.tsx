@@ -207,8 +207,8 @@ export const About = ({ signedIn, onConnect }: { signedIn: boolean; onConnect?: 
         </li>
         <li>Proofs are generated in your browser and take about two seconds. The network checks one in about twelve milliseconds.</li>
         <li>
-          The proving key comes from a one-person rehearsal until the public ceremony completes. Anyone can{" "}
-          <a href={CEREMONY_URL} target="_blank" rel="noreferrer">contribute randomness</a>; as long as one contributor was honest, nobody can forge a proof.
+          The proving key comes from a one-person rehearsal, and the caps above bound what that puts at stake. The public{" "}
+          <a href={CEREMONY_URL} target="_blank" rel="noreferrer">ceremony</a> is run for the shielded contract, which replaces this one; its first phase is shared.
         </li>
         <li>The code has not been audited yet. The caps above bound what is at stake until it has.</li>
       </ul>

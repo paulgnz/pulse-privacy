@@ -3,7 +3,8 @@
 // BEFORE the last contribution, so nobody could have chosen it.
 //   node finalize.mjs phase1 <last.ptau> --beacon-block 402500000      → final/pot16_final.ptau (prepared for phase 2)
 //   node finalize.mjs setup  <circuit.r1cs>                             → contributions/00-setup.zkey (start of phase 2)
-//   node finalize.mjs phase2 <last.zkey>  --beacon-block 402600000      → final/transfer_final.zkey, final/transfer_vk.json, final/vk.hex
+//   node finalize.mjs phase2 <last.zkey>  --beacon-block 402600000      → final/joinsplit_final.zkey, final/joinsplit_vk.json, final/vk.hex
+// The circuit name (default joinsplit, the shielded join-split circuit) can be set with --circuit.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -12,6 +13,7 @@ import { beaconId } from "./lib/chain.mjs";
 
 const [step, file] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const bIdx = process.argv.indexOf("--beacon-block");
+const CIRCUIT = (() => { const i = process.argv.indexOf("--circuit"); return i > 0 ? process.argv[i + 1] : "joinsplit"; })();
 const beaconBlock = bIdx > -1 ? Number(process.argv[bIdx + 1]) : null;
 const snarkjs = resolve("node_modules/.bin/snarkjs");
 const FINAL = resolve("final");
@@ -42,15 +44,15 @@ if (step === "phase1") {
   console.log("phase 2 starts from", out);
 } else if (step === "phase2") {
   const id = await beacon();
-  const finalZkey = join(FINAL, "transfer_final.zkey");
+  const finalZkey = join(FINAL, `${CIRCUIT}_final.zkey`);
   run(["zkey", "beacon", file, finalZkey, id, "10", `--name=XPR mainnet block ${beaconBlock}`]);
-  const vk = join(FINAL, "transfer_vk.json");
+  const vk = join(FINAL, `${CIRCUIT}_vk.json`);
   run(["zkey", "export", "verificationkey", finalZkey, vk]);
   const { encodeVk } = await import("../circuits/lib/encode.mjs");
   const hex = encodeVk(JSON.parse(readFileSync(vk, "utf8")));
   writeFileSync(join(FINAL, "vk.hex"), hex + "\n");
-  writeFileSync(join(FINAL, "phase2.json"), JSON.stringify({ beaconBlock, beaconId: id, last: sha256(file), finalZkey: sha256(finalZkey), vk: sha256(vk), vkHex: sha256(join(FINAL, "vk.hex")) }, null, 2) + "\n");
+  writeFileSync(join(FINAL, "phase2.json"), JSON.stringify({ circuit: CIRCUIT, beaconBlock, beaconId: id, last: sha256(file), finalZkey: sha256(finalZkey), vk: sha256(vk), vkHex: sha256(join(FINAL, "vk.hex")) }, null, 2) + "\n");
   console.log(`final zkey ${finalZkey}\nvk ${vk}\nvk hex for setvk: final/vk.hex (${hex.length / 2} bytes)`);
 } else {
-  console.log("usage: finalize.mjs phase1 <last.ptau> --beacon-block N | setup <circuit.r1cs> | phase2 <last.zkey> --beacon-block N");
+  console.log("usage: finalize.mjs phase1 <last.ptau> --beacon-block N | setup <circuit.r1cs> | phase2 <last.zkey> --beacon-block N [--circuit joinsplit]");
 }
