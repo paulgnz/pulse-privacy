@@ -16,14 +16,17 @@
 //   send <from> <to> <amount> [XPR|XMD]    a private payment (receiver and amount hidden)
 //   withdraw <account> <amount> [XPR|XMD]  to the account's own public balance
 //   activity <account>                 what happened, verified against chain blocks
-//   backup phrase <account> [words…]   store the phrase copy (prints a generated phrase if none given)
+//   backup phrase <account>            store the phrase copy: prints a generated phrase, or --own reads yours from a hidden prompt
 //   backup committee <account>         store the copy sealed to the committee's key
-//   restore <account> <words…>         recover the key from the phrase copy on chain
+//   restore <account>                  recover the key from the phrase copy on chain (the words from a hidden prompt or stdin)
 //   audit                              the committee's view (PRIVATEXPR_AUDITOR_KEY=<key file>)
 //   recover <account>                  the committee returns an account's key from its committee copy
 //
 // --force sends a payment even when the balance is unconfirmed (one node, or nodes disagree).
+// Phrases are never taken from the command line (process listings and shell history keep those):
+// they are read from a hidden terminal prompt, or from standard input when it is not a terminal.
 import { readFileSync } from "node:fs";
+import { createInterface } from "node:readline";
 import N from "../circuits/lib/notes.mjs";
 import { Net, hex, words } from "./lib/net.mjs";
 import { act, keyPath, loadKey, parseSecret, saveKey } from "./lib/wallet.mjs";
@@ -35,6 +38,22 @@ const flag = (name) => { const i = argv.indexOf(name); if (i < 0) return null; c
 const has = (name) => { const i = argv.indexOf(name); if (i < 0) return false; argv.splice(i, 1); return true; };
 const network = flag("--network") ?? process.env.PRIVATEXPR_NETWORK ?? "testnet";
 const force = has("--force");
+const own = has("--own");
+
+/** a phrase from a hidden prompt when stdin is a terminal, else from stdin; never from argv */
+async function readPhrase(label) {
+  if (process.stdin.isTTY) {
+    const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
+    const muted = { write: () => true };
+    process.stderr.write(`${label}: `);
+    rl._writeToOutput = () => muted.write();
+    const line = await new Promise((res) => rl.question("", (a) => { rl.close(); process.stderr.write("\n"); res(a); }));
+    return line.trim();
+  }
+  const chunks = [];
+  for await (const c of process.stdin) chunks.push(c);
+  return Buffer.concat(chunks).toString("utf8").trim();
+}
 const [cmd, ...args] = argv;
 const net = new Net(network);
 await N.init();
@@ -183,10 +202,11 @@ try {
     const k = loadKey(network, name);
     checkKeyMatches(name, k, await registeredOrThrow(name));
     if (sub === "phrase") {
-      let phrase = rest.join(" ").trim();
-      const generated = !phrase;
+      if (rest.length) throw new Error("do not pass the phrase as an argument; use --own to type it at a hidden prompt");
+      let phrase;
+      const generated = !own;
       if (generated) phrase = generatePhrase();
-      else { const p = passphraseProblem(phrase); if (p) throw new Error(p); }
+      else { phrase = await readPhrase("your passphrase"); const p = passphraseProblem(phrase); if (p) throw new Error(p); }
       const blob = await phraseCopy(k.ask, phrase);
       const r = act(net, net.contract, "setbackup", { owner: name, phrase: blob, committee: "" }, name);
       say(`phrase copy stored: ${link(r.id)}`);
@@ -200,8 +220,9 @@ try {
   } else if (cmd === "restore") {
     const [name0, ...rest] = args;
     const name = account(name0);
-    const phrase = rest.join(" ").trim();
-    if (!phrase) throw new Error("restore <account> <the words>");
+    if (rest.length) throw new Error("do not pass the words as arguments; the client asks for them, or reads them from standard input");
+    const phrase = await readPhrase("recovery phrase");
+    if (!phrase) throw new Error("no phrase given");
     const row = (await net.tableAny("backups")).find((b) => b.owner === name);
     if (!row || !row.phrase) throw new Error(`${name} has no phrase copy on chain`);
     const ask = await openPhraseCopy(row.phrase, phrase);

@@ -283,3 +283,13 @@ file name (the circuit directory is cached immutably), the auditor key is pinned
 permissions verified before deposits open, tree capacity (1,048,576 leaves) is shown on the
 Auditor tab and a successor-contract procedure is rehearsed before half capacity.
 
+## Shielded mode: independent review, ninth pass (Codex, 2026-09-08, at `8c3986e`, including the headless client)
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | medium | the client signed even when selecting the chain in the proton CLI failed, and the CLI's chain setting is shared between processes | selection failure aborts; the selection is read back and must name the expected chain before signing; a lock under the key directory serialises the client's own invocations |
+| 2 | medium | recovery phrases were taken from the command line, so they showed in process listings and shell history | phrases come from a hidden terminal prompt, or standard input when not a terminal; an argument is refused |
+| 3 | medium | the client always put the receiver's note first and the change second, which the app randomises | the client shuffles the two outputs before building the witness |
+| 4 | medium | malformed token or tree rows from one node could abort a read two healthy nodes agreed on, in both clients | those rows are validated inside each node's answer; a bad answer is dropped |
+| 5 | medium | the Auditor tab measured capacity by output rows; a deposit stores one row but takes two tree slots | capacity is the agreed `next_leaf` against 1,048,576 slots |
+

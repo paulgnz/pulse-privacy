@@ -2,7 +2,7 @@
 // ~/.private-xpr/<network>/<account>.json (mode 600). Chain writes are signed by the proton CLI
 // keychain: the account's XPR key never enters this process.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import N from "../../circuits/lib/notes.mjs";
@@ -36,17 +36,35 @@ export function parseSecret(input) {
   return BigInt("0x" + t);
 }
 
-/** run one action through the proton CLI keychain on the network's chain; returns the transaction id */
+/**
+ * Run one action through the proton CLI keychain on the network's chain; returns the transaction
+ * id. The proton CLI's selected chain is a shared setting, so: selection failure aborts, the
+ * selection is read back and must name the expected chain before signing, and a lock under the
+ * key directory serialises this client's own concurrent invocations.
+ */
 export function act(net, contract, name, data, actor, permission = "active") {
   const run = (args) => {
     const r = spawnSync("proton", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     const text = (String(r.stdout ?? "") + "\n" + String(r.stderr ?? "")).replace(/\x1b\[[0-9;]*m/g, "");
     return { status: r.status, text };
   };
-  run(["chain:set", net.chain]);
+  const lock = join(KEY_DIR, ".proton-lock");
+  mkdirSync(KEY_DIR, { recursive: true, mode: 0o700 });
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    try { mkdirSync(lock); break; } catch { if (Date.now() > deadline) throw new Error("another privatexpr invocation is holding the signing lock"); spawnSync("sleep", ["0.2"]); }
+  }
   let r;
-  try { r = run(["action", contract, name, JSON.stringify(data), `${actor}@${permission}`]); }
-  finally { run(["chain:set", "proton"]); }
+  try {
+    const sel = run(["chain:set", net.chain]);
+    if (sel.status !== 0) throw new Error(`could not select the ${net.chain} chain in the proton CLI: ${sel.text.trim().slice(0, 200)}`);
+    const cur = run(["chain:get"]);
+    if (cur.status !== 0 || !new RegExp(`"chain":\\s*"${net.chain}"`).test(cur.text)) throw new Error(`the proton CLI is not on the ${net.chain} chain; refusing to sign`);
+    r = run(["action", contract, name, JSON.stringify(data), `${actor}@${permission}`]);
+  } finally {
+    run(["chain:set", "proton"]);
+    rmSync(lock, { recursive: true, force: true });
+  }
   if (process.env.PRIVATEXPR_DEBUG) console.error(r.text);
   const id = (r.text.match(/"transaction_id":\s*"([0-9a-f]{64})"/) || r.text.match(/tx\/([0-9a-f]{64})/) || [])[1];
   if (r.status !== 0 || !id) {

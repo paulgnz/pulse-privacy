@@ -84,9 +84,9 @@ export class Net {
     if (!agreed) throw new Error("the nodes disagree about the auditor key; try again");
     if (this.auditorPk && agreed.auditor_pubkey !== this.auditorPk.toLowerCase()) throw new Error("the auditor key on chain is not the pinned committee key; refusing");
     // token identity (symbol, issuing contract, id) agreed by two nodes and equal to this client's pinned ids
-    const lists = await this.fromAll((ep) => this.table(ep, "tokens"));
-    if (lists.length < 2) throw new Error("cannot confirm the token list with two nodes; try again");
     const identity = (r) => `${BigInt(r.sym)}|${r.token_contract}|${BigInt(r.token_id)}`;
+    const lists = await this.fromAll(async (ep) => { const l = await this.table(ep, "tokens"); for (const r of l) { identity(r); if (!/^[a-z1-5.]{1,12}$/.test(r.token_contract)) throw new Error("malformed token row"); } return l; });
+    if (lists.length < 2) throw new Error("cannot confirm the token list with two nodes; try again");
     const tokens = [];
     for (const l of lists) for (const r of l) {
       const id = identity(r);
@@ -107,10 +107,11 @@ export class Net {
     const got = await this.fromAll(async (ep) => {
       const j = await this.post(ep, "get_table_rows", { code: this.contract, scope: this.contract, table: "tree", json: true, limit: 1 });
       const r = j.rows[0];
-      return r ? { next: Number(r.next_leaf), root: lower(r.root), rootSeq: BigInt(r.root_seq) } : { next: 0, root: hex(new N.Tree().root), rootSeq: 0n };
+      const row = r ? { next: Number(r.next_leaf), root: lower(r.root), rootSeq: BigInt(r.root_seq) } : { next: 0, root: hex(new N.Tree().root), rootSeq: 0n };
+      if (row.rootSeq < 0n || row.rootSeq > 1n << 40n || !Number.isInteger(row.next) || row.next < 0 || row.next > 1 << 20 || !/^[0-9a-f]{64}$/.test(row.root)) throw new Error("malformed tree row");
+      return row;
     });
     if (!got.length) throw new Error("no node answered");
-    for (const g of got) if (g.rootSeq < 0n || g.rootSeq > 1n << 40n || g.next < 0 || g.next > 1 << 20 || !/^[0-9a-f]{64}$/.test(g.root)) throw new Error("malformed tree row");
     const shared = got.filter((r) => got.filter((o) => o.root === r.root && o.next === r.next && o.rootSeq === r.rootSeq).length >= 2).sort((a, b) => b.next - a.next);
     if (shared.length) return { ...shared[0], confirmed: true };
     return { ...got.sort((a, b) => b.next - a.next)[0], confirmed: false };

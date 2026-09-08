@@ -1,6 +1,7 @@
 // Proving with the shipped circuit files (the same wasm and rehearsal key the app serves), and
 // the spend action they produce. PRIVATEXPR_CIRCUIT_DIR overrides where the files are found.
 import { createRequire } from "node:module";
+import { randomInt } from "node:crypto";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,7 +33,9 @@ export function pick(notes, tokenId, amount, fmt) {
 /** build, prove and return the `spend` action data for `owner` */
 export async function proveSpend({ keys, tree, rootSeq, auditorPk, owner, inputs, outputs, vPub = 0n, tokenPub = 0n, to = 0n }) {
   checkCircuitFiles();
-  const js = N.buildJoinSplit({ keys, tree, auditorPk, sender: N.nameToU64(owner), inputs: inputs.map((n) => ({ note: n, index: n.index })), outputs, vPub, tokenPub, to });
+  // the two outputs go on chain in random order, so position does not say which is the change
+  const ordered = randomInt(2) ? [outputs[1], outputs[0]] : outputs;
+  const js = N.buildJoinSplit({ keys, tree, auditorPk, sender: N.nameToU64(owner), inputs: inputs.map((n) => ({ note: n, index: n.index })), outputs: ordered, vPub, tokenPub, to });
   const t0 = Date.now();
   const { proof } = await snarkjs.groth16.fullProve(js.input, WASM, ZKEY);
   const data = {
