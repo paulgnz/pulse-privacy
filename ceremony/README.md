@@ -14,7 +14,7 @@ Two phases, same contributors, same one-line command:
 | phase | what it is | starts from | contributor runs |
 |---|---|---|---|
 | 1 | universal "Powers of Tau", 2^16 (the public Hermez file would do, but its mirrors are not reachable, so we run our own) | `snarkjs powersoftau new bn128 16` by the coordinator | `node contribute.mjs prev.ptau NN-you.ptau --name "You @ Org"` |
-| 2 | circuit-specific, for `circuits/shielded/joinsplit.circom` revision 4 (29,826 constraints) | `finalize.mjs setup` after phase 1 | `node contribute.mjs prev.zkey NN-you.zkey --name "You @ Org"` |
+| 2 | circuit-specific, for `circuits/shielded/joinsplit.circom` revision 5 (31,659 constraints) | `finalize.mjs setup` after phase 1 | `node contribute.mjs prev.zkey NN-you.zkey --name "You @ Org"` |
 
 Each contribution is sequential (you receive the previous file, add your randomness, pass the
 result on) and takes a minute or two on a laptop. Files are ≈ 25 MB (ptau) and ≈ 25 MB (zkey).

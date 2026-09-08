@@ -44,7 +44,7 @@ lap("chain ready");
 
 const scope = nameToBigInt("xprshield");
 const treeRow = () => sh.tables.tree(scope).getTableRow(0n);
-const leaves = () => sh.tables.leaves(scope).getTableRows();
+const leaves = () => sh.tables.outputs(scope).getTableRows().map((o) => ({ index: o.index, cm: o.cm }));
 const nullifiers = () => sh.tables.nullifiers(scope).getTableRows();
 const balance = (acct) => { const r = token.tables.accounts(nameToBigInt(acct)).getTableRows(); return r.length ? r[0].balance : "0.0000 XPR"; };
 
@@ -163,6 +163,7 @@ assert.ok(bobNote && bobNote.v === AMOUNT && bobNote.token === N.TOKENS.XPR, "bo
 const aud = N.decryptAuditor(auditor.ask, epk4, words(row4.ca), js.outNotes[0].cm);
 assert.ok(aud.valid && aud.v === AMOUNT && aud.pk[0] === bob.pk[0] && aud.pk[1] === bob.pk[1], "auditor recovers the receiver key and amount; the action names alice");
 assert.deepEqual(words(outs[0].cr), [N.pack(a1.v, N.TOKENS.XPR), a1.r], "deposit row carries the packed plaintext note");
+assert.equal(outs[0].cm, hex(a1.cm), "the output row carries the commitment (no separate leaves table)");
 lap("alice signed alice → bob 1,234 XPR: receiver and amount hidden; bob and the auditor read it; wrong signers refused");
 
 // --- refusals ---
@@ -195,8 +196,8 @@ await expectToThrow(spend("alice", pKey).send("alice@active"), "eosio_assert: in
 // identity and both ciphertexts readable by anyone; the contract refuses the low-order key
 const jsEsk = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: auditor.pk, sender: BOB, inputs: [{ note: bobNote, index: bobLeaf }], outputs: [{ pk: alice.pk, v: 1n, esk: N.bj.subOrder }, { pk: bob.pk, v: AMOUNT - 1n }] });
 assert.deepEqual(jsEsk.expected.epk[0], [0n, 1n], "esk = L gives the identity in the library");
-const pEsk = await prove(jsEsk);
-await expectToThrow(spend("bob", pEsk).send("bob@active"), "eosio_assert: ephemeral key is the identity or has low order");
+// revision 5 bounds esk below L in the circuit, so no proof exists; the contract's own check stays as a second line
+await assert.rejects(prove(jsEsk), /Assert Failed/, "the circuit refuses esk = L");
 // a proof for a different auditor key than the contract's
 const jsAud = N.buildJoinSplit({ keys: bob, tree: local, auditorPk: N.keygen().pk, sender: BOB, inputs: [{ note: bobNote, index: bobLeaf }], outputs: [{ pk: alice.pk, v: 1n }, { pk: bob.pk, v: AMOUNT - 1n }] });
 const pAud = await prove(jsAud);
@@ -278,9 +279,9 @@ lap("a restored account cannot spend until the committee lifts the mark");
 // --- testnet reset wipes everything and allows a fresh init ---
 await expectToThrow(sh.actions.reset([]).send("bob@active"), "missing required authority xprshield");
 await sh.actions.reset([]).send("xprshield@active");
-assert.equal(leaves().length, 0); assert.equal(nullifiers().length, 0); assert.equal(sh.tables.keys(scope).getTableRows().length, 0);
+assert.equal(sh.tables.outputs(scope).getTableRows().length, 0); assert.equal(nullifiers().length, 0); assert.equal(sh.tables.keys(scope).getTableRows().length, 0);
 await sh.actions.init([ptHex(auditor.pk), encodeVk(VK)]).send("xprshield@active");
 assert.equal(treeRow().root, hex(new N.Tree().root), "fresh tree after reset");
 lap("reset: tables wiped, re-initialised");
-console.log("xprshield (revision 4) passed");
+console.log("xprshield (revision 5) passed");
 process.exit(0);

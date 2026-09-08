@@ -74,8 +74,8 @@ async function chainTree() {
   const tree = await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "tree", json: true, limit: 1 });
   const next = Number(tree.rows[0].next_leaf);
   const rootSeq = Number(tree.rows[0].root_seq);
-  const leaves = await rows("leaves");
-  const byIndex = new Map(leaves.map((l) => [Number(l.index), BigInt("0x" + l.cm)]));
+  const outs = await rows("outputs");
+  const byIndex = new Map(outs.map((o) => [Number(o.index), BigInt("0x" + o.cm)]));
   const t = new N.Tree();
   for (let i = 0; i < next; i++) t.append(byIndex.get(i) ?? 0n);
   if (hex(t.root) !== tree.rows[0].root) throw new Error(`local root ${hex(t.root)} != chain root ${tree.rows[0].root}`);
@@ -87,7 +87,7 @@ async function chainTree() {
 async function scan(who) {
   const k = K[who];
   const outs = await rows("outputs");
-  const leaves = new Map((await rows("leaves")).map((l) => [Number(l.index), BigInt("0x" + l.cm)]));
+  const leaves = new Map((await rows("outputs")).map((o) => [Number(o.index), BigInt("0x" + o.cm)]));
   const spent = new Set((await rows("nullifiers")).map((n) => n.nf));
   const mine = [];
   for (const o of outs) {
@@ -185,7 +185,7 @@ if (cmd === "reset") {
   await submit(js, who, { ...pub, seq: tree.rootSeq }, `${who} withdraws ${asset(amount)} to ${ACCOUNTS[who]}`);
 } else if (cmd === "audit") {
   const names = new Map((await rows("keys")).map((r) => [r.pubkey.slice(0, 64), r.owner]));
-  const leaves = new Map((await rows("leaves")).map((l) => [Number(l.index), BigInt("0x" + l.cm)]));
+  const leaves = new Map((await rows("outputs")).map((o) => [Number(o.index), BigInt("0x" + o.cm)]));
   for (const o of await rows("outputs")) {
     const index = Number(o.index);
     const cm = leaves.get(index);

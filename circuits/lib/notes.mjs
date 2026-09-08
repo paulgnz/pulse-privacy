@@ -39,6 +39,8 @@ export function keygen(ask = randScalar()) {
 
 export const commitment = (n) => H(n.pk[0], n.pk[1], n.v, n.token, n.r);
 export const nullifier = (nk, index) => H(nk, BigInt(index));
+/** the nullifier a disabled second input emits: Poseidon(nk, 2^40 + dummy), dummy < 2^40 */
+export const dummyNullifier = (nk, dummy) => H(nk, (1n << 40n) + BigInt(dummy));
 
 /** a fresh note to `pk` */
 export function newNote(pk, v, token, r = randField()) {
@@ -164,6 +166,8 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
   const inIndex = ins.map((i) => (i ? BigInt(i.index) : 0n));
   const inSiblings = ins.map((i) => (i ? tree.path(i.index).siblings : Array(tree.depth).fill(0n)));
   const enabled1 = ins[1] ? 1n : 0n;
+  // revision 5: a disabled second input carries a fresh dummy nullifier in a reserved domain
+  const dummy = BigInt("0x" + randomBytes(5).toString("hex"));
   const outNotes = outputs.map((o) => newNote(o.pk, o.v, token, o.r));
   const esk = outputs.map((o) => o.esk ?? randScalar());
   const total = inV[0] + inV[1];
@@ -172,7 +176,7 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
 
   const input = {
     ask: keys.ask,
-    inV, inToken, inR, inIndex, inSiblings, enabled1,
+    inV, inToken, inR, inIndex, inSiblings, enabled1, dummy,
     outPk: outNotes.map((n) => n.pk),
     outV: outNotes.map((n) => n.v),
     outR: outNotes.map((n) => n.r),
@@ -186,7 +190,7 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
   };
 
   const expected = {
-    nf: ins.map((i) => (i ? nullifier(keys.nk, i.index) : 0n)),
+    nf: ins.map((i) => (i ? nullifier(keys.nk, i.index) : dummyNullifier(keys.nk, dummy))),
     cm: outNotes.map((n) => n.cm),
     epk: esk.map((e) => pt(bj.mulPointEscalar(B8, e))),
     cr: outNotes.map((n, j) => encryptWith(ecdh(esk[j], n.pk), [pack(n.v, n.token), n.r])),

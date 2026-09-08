@@ -30,6 +30,8 @@ export function keygen(ask: bigint): ShieldKeys {
 }
 export const commitment = (n: { pk: Pt; v: bigint; token: bigint; r: bigint }) => poseidon([n.pk[0], n.pk[1], n.v, n.token, n.r]);
 export const nullifier = (nk: bigint, index: number) => hash2(nk, BigInt(index));
+/** the nullifier a disabled second input emits (revision 5): Poseidon(nk, 2^40 + dummy), dummy < 2^40 */
+export const dummyNullifier = (nk: bigint, dummy: bigint) => hash2(nk, (1n << 40n) + dummy);
 export function newNote(pk: Pt, v: bigint, token: bigint, r = randField()): Note {
   const n = { pk, v, token, r, cm: 0n };
   n.cm = commitment(n);
@@ -162,6 +164,7 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
   const ordered = flip ? [outputs[1], outputs[0]] : outputs;
   const outNotes = ordered.map((o) => newNote(o.pk, o.v, token));
   const esk = outputs.map(() => randScalar());
+  const dummy = randBig(5); // revision 5: the disabled second input's nullifier domain
   const total = ins.reduce((s, i) => s + (i ? i.v : 0n), 0n);
   if (total !== outNotes[0].v + outNotes[1].v + vPub) throw new Error("values do not balance");
   for (const n of outNotes) if (n.v < 0n || n.v >= 1n << 64n) throw new Error("output out of range");
@@ -174,6 +177,7 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
     inIndex: ins.map((i) => S(i ? i.index : 0)),
     inSiblings: ins.map((i) => (i ? tree.path(i.index) : Array(tree.depth).fill(0n)).map(S)),
     enabled1: ins[1] ? "1" : "0",
+    dummy: S(dummy),
     outPk: outNotes.map((n) => [S(n.pk[0]), S(n.pk[1])]),
     outV: outNotes.map((n) => S(n.v)),
     outR: outNotes.map((n) => S(n.r)),
@@ -185,7 +189,7 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
     sender: S(sender),
     A: [S(auditorPk[0]), S(auditorPk[1])],
   };
-  const nf = ins.map((i) => (i ? nullifier(keys.nk, i.index) : 0n));
+  const nf = ins.map((i) => (i ? nullifier(keys.nk, i.index) : dummyNullifier(keys.nk, dummy)));
   const epk = esk.map((e) => mul(G, e));
   const cr = outNotes.map((n, j) => encryptWith(ecdh(esk[j], n.pk), [pack(n.v, n.token), n.r]));
   const ca = outNotes.map((n, j) => encryptWith(ecdh(esk[j], auditorPk), [n.pk[1], pack(n.v, n.token, n.pk[0] & 1n), n.r]));

@@ -19,7 +19,7 @@ in order. Nothing here is done until its line says so.
 | item | who | status |
 |---|---|---|
 | Phase 1 of the ceremony: ≥ 5 contributors, then finalise with an announced beacon block | Paul, contributors | 3 of 5 |
-| Phase 2 for `circuits/shielded/joinsplit.circom` revision 4 on the ceremony site, then finalise; `final/vk.hex` | Paul | not started |
+| Phase 2 for `circuits/shielded/joinsplit.circom` **revision 5** (31,659 constraints) on the ceremony site, then finalise; `final/vk.hex` | Paul | not started |
 | Contract account **`privatexpr`** on mainnet (decided 2026-09-08; explorer.xprnetwork.org/account/privatexpr): created; owner moves to `admin.proton@committee` on launch day (§2a) | Paul | created |
 | Deploy permission: v1 was deployed from the operational key without asking anyone, so none needed; if `setcode` is ever refused, that is the moment to ask | Paul | none needed |
 | RAM: code ≈ 82 KB WASM → ≈ 250 KB; tables: 20-level tree frontier + 1,024-root ring ≈ 70 KB; each note ≈ 300 B (paid by the depositor/spender); keys ≈ 200 B per account (paid by the owner). Buy 800 KB to start | Paul | not bought |
@@ -39,7 +39,7 @@ shasum -a 256 deploy/mainnet/xprshield.contract.wasm
 
 The hash goes in this file and in the announcement, so anyone can compare it with `get_code_hash`.
 
-Built 2026-09-08 (after the third review round and Codex's second pass: owner-paid deposit slot, low-order ephemeral and auditor keys refused, one key per name, keep-semantics backups, balance-row check on payouts, restored accounts blocked from spending until `unrestore`): wasm `63904ba3282a555ab004358d674b6bb7698ed38ef2dfed5c36e752baf037b194`, abi `ede2a46bcb8d083a17f015ca56286d7dfd2cf494d92b4684eacdae6dfa35dae9`. Testnet runs the same source with TESTNET=true, code hash `addac58d…`. Rebuild and re-hash after any contract change.
+Built 2026-09-08 (night) from circuit revision 5 and the merged outputs table (see docs/03 "Privacy and resource pass"): wasm `30e13a759640952da071ce90db3a927cbbfec4f060a3012051ee6f85cbd745fd`, abi `a1dfe5efdfc527f499d62febd7adfbeca418d625a15411f7dbc780cd97656bd8`. Testnet runs the same source with TESTNET=true, code hash `91768790…`, initialised with the revision-5 rehearsal key. Rebuild and re-hash after any contract change.
 
 ## 2a. Secure the account (launch day, after the final contract is deployed and verified; Paul's call, not before)
 

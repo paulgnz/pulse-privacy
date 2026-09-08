@@ -18,12 +18,20 @@ pragma circom 2.1.0;
 //   root vPub tokenPub to sender A[2]                       (public inputs, 7)
 //
 // Input 0 is always a real note. Input 1 may be disabled (enabled1 = 0): then it carries no
-// value, is not checked against the tree, and its nullifier is 0 (the contract skips zeros).
+// value, is not checked against the tree, and its nullifier is a dummy in a reserved domain
+// (revision 5), which the contract records like any other.
 //
 // Revision 4 (after review): `ask` is bound below the subgroup order, otherwise ask + k·L gives
 // the same key with a different nullifier; the two inputs cannot be the same leaf; output keys
 // must lie in the prime-order subgroup; the ephemeral scalar cannot be zero; the parity bit of
 // the receiver key is taken from an alias-free bit decomposition.
+//
+// Revision 5 (privacy and hardening, before the ceremony's phase 2): a disabled second input
+// still emits a nullifier, Poseidon(nk, 2^40 + dummy) with a fresh private `dummy` below 2^40,
+// so the chain cannot tell a one-note payment from a two-note one (real leaf indices are below
+// 2^20, so the domains never meet); and the ephemeral scalars are bound below the subgroup
+// order like `ask`, so esk = k·L cannot make the ephemeral key the identity. Same 27 public
+// signals as revision 4.
 
 include "circomlib/circuits/poseidon.circom";
 include "circomlib/circuits/babyjub.circom";
@@ -111,6 +119,7 @@ template JoinSplit(depth) {
     signal input inIndex[2];
     signal input inSiblings[2][depth];
     signal input enabled1;
+    signal input dummy;
     signal input outPk[2][2];
     signal input outV[2];
     signal input outR[2];
@@ -189,11 +198,20 @@ template JoinSplit(depth) {
         inNf[i] = Poseidon(2);
         inNf[i].inputs[0] <== nk;
         inNf[i].inputs[1] <== inIndex[i];
-        nf[i] <== enabled[i] * inNf[i].out;
 
         inRange[i] = Num2Bits(64);
         inRange[i].in <== inV[i];
     }
+    nf[0] <== inNf[0].out;
+    // a disabled second input still emits a nullifier, from a reserved domain above any leaf index
+    component dummyBits = Num2Bits(40);
+    dummyBits.in <== dummy;
+    component dummyNf = Poseidon(2);
+    dummyNf.inputs[0] <== nk;
+    dummyNf.inputs[1] <== 1099511627776 + dummy;
+    signal nfReal1 <== enabled[1] * inNf[1].out;
+    signal nfDummy1 <== (1 - enabled[1]) * dummyNf.out;
+    nf[1] <== nfReal1 + nfDummy1;
 
     // 3. balance
     component outRange[2];
@@ -222,6 +240,8 @@ template JoinSplit(depth) {
     component x8zero[2];
     component y8one[2];
     component eskZero[2];
+    component eskBits[2];
+    component eskLt[2];
     signal packed[2];
     signal packedA[2];
     for (var j = 0; j < 2; j++) {
@@ -240,10 +260,16 @@ template JoinSplit(depth) {
         y8one[j].in[0] <== dbl[j][2].yout;
         y8one[j].in[1] <== 1;
         x8zero[j].out * y8one[j].out === 0;
-        // a zero ephemeral scalar would publish the plaintext
+        // a zero ephemeral scalar would publish the plaintext; so would a multiple of the subgroup
+        // order (the ephemeral key would be the identity), hence esk < L like ask
         eskZero[j] = IsZero();
         eskZero[j].in <== esk[j];
         eskZero[j].out === 0;
+        eskBits[j] = Num2Bits_strict();
+        eskBits[j].in <== esk[j];
+        eskLt[j] = CompConstant(2736030358979909402780800718157159386076813972158567259200215660948447373040);
+        for (var b = 0; b < 254; b++) eskLt[j].in[b] <== eskBits[j].out[b];
+        eskLt[j].out === 0;
 
         outCm[j] = NoteCommitment();
         outCm[j].pk[0] <== outPk[j][0];

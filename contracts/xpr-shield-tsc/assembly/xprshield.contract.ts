@@ -95,18 +95,6 @@ class BackupRow extends Table {
   }
 }
 
-@table("leaves")
-class Leaf extends Table {
-  constructor(public index: u64 = 0, public cm: u8[] = []) {
-    super();
-  }
-  @primary
-  get primary(): u64 {
-    return this.index;
-  }
-}
-
-/** the incremental tree: one filled node per level, the next leaf index, the current root */
 @table("tree")
 class TreeRow extends Table {
   constructor(
@@ -143,7 +131,7 @@ class RootRow extends Table {
  */
 @table("outputs")
 class OutputRow extends Table {
-  constructor(public index: u64 = 0, public epk: u8[] = [], public cr: u8[] = [], public ca: u8[] = []) {
+  constructor(public index: u64 = 0, public cm: u8[] = [], public epk: u8[] = [], public cr: u8[] = [], public ca: u8[] = []) {
     super();
   }
   @primary
@@ -261,7 +249,6 @@ class XprShield extends Contract {
   keys: TableStore<KeyRow> = new TableStore<KeyRow>(this.receiver);
   backups: TableStore<BackupRow> = new TableStore<BackupRow>(this.receiver);
   restored: TableStore<RestoredRow> = new TableStore<RestoredRow>(this.receiver);
-  leaves: TableStore<Leaf> = new TableStore<Leaf>(this.receiver);
   trees: TableStore<TreeRow> = new TableStore<TreeRow>(this.receiver);
   roots: TableStore<RootRow> = new TableStore<RootRow>(this.receiver);
   nullifiers: TableStore<NullifierRow> = new TableStore<NullifierRow>(this.receiver);
@@ -362,7 +349,6 @@ class XprShield extends Contract {
     const c = this.configs.get(0);
     check(c != null && c!.paused, "pause first");
     let cr = this.credits.first(); while (cr != null) { const n = this.credits.next(cr); this.credits.remove(cr); cr = n; }
-    let l = this.leaves.first(); while (l != null) { const n = this.leaves.next(l); this.leaves.remove(l); l = n; }
     let o = this.outputs.first(); while (o != null) { const n = this.outputs.next(o); this.outputs.remove(o); o = n; }
     let f = this.nullifiers.first(); while (f != null) { const n = this.nullifiers.next(f); this.nullifiers.remove(f); f = n; }
     let r = this.roots.first(); while (r != null) { const n = this.roots.next(r); this.roots.remove(r); r = n; }
@@ -499,8 +485,8 @@ class XprShield extends Contract {
     this.roots.store(new RootRow(t.root_seq, root), this.receiver);
   }
 
-  /** insert (cm1, cm2) as leaves next_leaf and next_leaf + 1 (20 hashes), record the root; `payer` pays the leaf rows */
-  insertPair(cm1: Limbs, cm2: Limbs | null, cm1Bytes: u8[], cm2Bytes: u8[], payer: Name): u64 {
+  /** insert (cm1, cm2) as leaves next_leaf and next_leaf + 1 (20 hashes) and record the root; the caller stores the outputs rows, which carry the commitments */
+  insertPair(cm1: Limbs, cm2: Limbs | null): u64 {
     const t = this.tree();
     const index = t.next_leaf;
     check(index % 2 == 0, "tree corrupt");
@@ -517,8 +503,6 @@ class XprShield extends Contract {
       }
       i >>= 1;
     }
-    this.leaves.store(new Leaf(index, cm1Bytes), payer);
-    if (cm2 != null) this.leaves.store(new Leaf(index + 1, cm2Bytes), payer);
     t.next_leaf = index + 2;
     this.rememberRoot(t, toBytesBE(cur));
     this.trees.update(t, this.receiver);
@@ -605,9 +589,9 @@ class XprShield extends Contract {
     unchecked((inp[4] = fromBytesBE(r, 0)));
     const cm = poseidon(inp);
     const cmBytes = toBytesBE(cm);
-    const index = this.insertPair(cm, null, cmBytes, [], owner);
+    const index = this.insertPair(cm, null);
     // the plaintext note as a receiver would read it: (v + token·2^64, r)
-    this.outputs.store(new OutputRow(index, [], packedWord(v, tok!.token_id).concat(r), []), owner);
+    this.outputs.store(new OutputRow(index, cmBytes, [], packedWord(v, tok!.token_id).concat(r), []), owner);
     print("shield leaf " + index.toString() + " cm " + hex(cmBytes));
   }
 
@@ -636,7 +620,7 @@ class XprShield extends Contract {
     const nf2 = word(publics, 1);
     const cm1 = word(publics, 2);
     const cm2 = word(publics, 3);
-    check(!isZeroWord(nf1), "first input must be a real note");
+    check(!isZeroWord(nf1) && !isZeroWord(nf2), "nullifiers must be non-zero (revision 5 always emits two)");
     check(!bytesEq(nf1, nf2), "the same note twice");
     const rootRow = this.roots.get(root_seq);
     check(rootRow != null, "unknown or stale root");
@@ -661,12 +645,12 @@ class XprShield extends Contract {
 
     this.spendNullifier(nf1, owner);
     this.spendNullifier(nf2, owner);
-    const index = this.insertPair(fromBytesBE(cm1, 0), fromBytesBE(cm2, 0), cm1, cm2, owner);
+    const index = this.insertPair(fromBytesBE(cm1, 0), fromBytesBE(cm2, 0));
     for (let j = 0; j < 2; j++) {
       const epk = word(publics, 4 + j);
       const cr = publics.slice((6 + 2 * j) * 32, (8 + 2 * j) * 32);
       const ca = publics.slice((10 + 3 * j) * 32, (13 + 3 * j) * 32);
-      this.outputs.store(new OutputRow(index + (j as u64), epk, cr, ca), owner);
+      this.outputs.store(new OutputRow(index + (j as u64), j == 0 ? cm1 : cm2, epk, cr, ca), owner);
     }
 
     if (vPub > 0) {

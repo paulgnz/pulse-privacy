@@ -10,8 +10,8 @@ import type { Token } from "../token";
 import { Tree, buildJoinSplit, commitment, decompressPoint, decryptAuditor, hex32, nameToU64, newNote, nullifier, tryDecryptReceiver, unpack, words } from "./notes";
 import type { OwnedNote, ShieldKeys } from "./notes";
 
-const WASM = "/circuit/joinsplit-r4.wasm";
-const ZKEY = "/circuit/joinsplit-r4_final.zkey";
+const WASM = "/circuit/joinsplit-r5.wasm";
+const ZKEY = "/circuit/joinsplit-r5_final.zkey";
 
 // Testnet nodes fall behind each other by minutes at times: order the endpoints by head block,
 // probed once per few minutes, so table reads come from the freshest node.
@@ -196,8 +196,8 @@ export async function chainTree(): Promise<{ tree: Tree; nextLeaf: number; rootS
   let lastErr: unknown = new Error("No node answered.");
   for (const ep of await endpoints()) {
     try {
-      const leaves = await rows<{ index: string | number; cm: string }>("leaves", "index", ep);
-      const byIndex = new Map(leaves.map((l) => [Number(l.index), l.cm.toLowerCase()]));
+      const outs = await rows<{ index: string | number; cm: string }>("outputs", "index", ep);
+      const byIndex = new Map(outs.filter((o) => Number(o.index) < agreed.next).map((o) => [Number(o.index), o.cm.toLowerCase()]));
       const tree = rebuildTo(agreed.next, byIndex);
       if (hex32(tree.root) !== agreed.root) throw new Error("leaves do not hash to the agreed root");
       // callers keep this tree for a proof: hand out a snapshot, so a later scan extending the
@@ -219,27 +219,29 @@ export type NoteKind = "deposit" | "note";
  */
 async function scanTables() {
   const agreed = await agreedTreeRow();
-  // spent status from every node: a nullifier any node lists is spent (a node cannot invent one it
-  // has not seen on chain), and the balance is confirmed only when two nodes answered
+  // spent status from every node. A nullifier counts as spent when two nodes list it; one that a
+  // single node lists while another omits it is disputed: it is treated as spent (the safe side
+  // for spending) and the balance is reported unconfirmed until the nodes agree
   const nfAnswers = await Promise.allSettled([...new Set(ENDPOINTS)].map((ep) => rows<{ key: string | number; nf: string }>("nullifiers", "key", ep)));
-  const nfLists = nfAnswers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
+  const nfLists = nfAnswers.flatMap((a) => (a.status === "fulfilled" ? [new Set(a.value.map((n) => n.nf.toLowerCase()))] : []));
   if (!nfLists.length) throw new Error("No node answered the scan.");
-  const nfs = [...new Map(nfLists.flat().map((n) => [n.nf.toLowerCase(), n])).values()];
-  const nfConfirmed = nfLists.length >= 2;
+  const nfCount = new Map<string, number>();
+  for (const l of nfLists) for (const nf of l) nfCount.set(nf, (nfCount.get(nf) ?? 0) + 1);
+  const disputed = nfLists.length >= 2 && [...nfCount.values()].some((c) => c < 2);
+  const nfs = [...nfCount.keys()].map((nf) => ({ key: 0, nf }));
+  const nfConfirmed = nfLists.length >= 2 && !disputed;
   let lastErr: unknown;
   for (const ep of await endpoints()) {
     try {
-      const [outs, leaves] = await Promise.all([
-        rows<{ index: string | number; epk: string; cr: string; ca: string }>("outputs", "index", ep),
-        rows<{ index: string | number; cm: string }>("leaves", "index", ep),
-      ]);
-      const inTree = leaves.filter((l) => Number(l.index) < agreed.next);
-      const byIndex = new Map(inTree.map((l) => [Number(l.index), l.cm.toLowerCase()]));
-      const tree = rebuildTo(agreed.next, byIndex);
-      if (hex32(tree.root) !== agreed.root) throw new Error("leaves do not hash to the agreed root");
+      const outs = await rows<{ index: string | number; cm: string; epk: string; cr: string; ca: string }>("outputs", "index", ep);
+      // the outputs rows are the leaves: an omitted or altered row changes the rebuilt root, so a
+      // node that hides a note cannot pass this check
       const outsInTree = outs.filter((o) => Number(o.index) < agreed.next);
-      if (outsInTree.some((o) => !byIndex.has(Number(o.index)))) throw new Error("outputs without leaves");
-      return { outs: outsInTree, leaves: inTree, nfs, confirmed: agreed.confirmed && nfConfirmed };
+      const byIndex = new Map(outsInTree.map((o) => [Number(o.index), o.cm.toLowerCase()]));
+      if (byIndex.size !== outsInTree.length) throw new Error("duplicate output rows");
+      const tree = rebuildTo(agreed.next, byIndex);
+      if (hex32(tree.root) !== agreed.root) throw new Error("outputs do not hash to the agreed root");
+      return { outs: outsInTree, leaves: outsInTree.map((o) => ({ index: o.index, cm: o.cm })), nfs, confirmed: agreed.confirmed && nfConfirmed };
     } catch (e) { lastErr = e; treeCache = null; }
   }
   throw lastErr instanceof Error ? lastErr : new Error("No node answered the scan.");
@@ -355,11 +357,11 @@ export async function prepareWithdraw(s: Session, keys: ShieldKeys, cfg: ShieldC
 // ---- wallet-signed actions ----
 
 export interface BackupRow { phrase: string; committee: string }
-/** the account's recovery copies on chain, or null when none */
+/** the account's recovery copies on chain, or null when none (the whole table is read: no request names the account) */
 export async function backupRow(actor: string): Promise<BackupRow | null> {
-  const r = await rpc<{ rows: { owner: string; phrase: string; committee: string }[] }>("get_table_rows", { code: SHIELD.contract, scope: SHIELD.contract, table: "backups", json: true, limit: 1, lower_bound: actor, upper_bound: actor });
-  const row = r.rows[0];
-  return row && row.owner === actor ? { phrase: row.phrase, committee: row.committee } : null;
+  const all = await rows<{ owner: string; phrase: string; committee: string }>("backups", "owner");
+  const row = all.find((r) => r.owner === actor);
+  return row ? { phrase: row.phrase, committee: row.committee } : null;
 }
 /** store, replace or clear the owner's recovery copies; hex without 0x, empty to clear */
 export function setBackupAction(s: Session, phrase: string, committee: string) {
@@ -397,9 +399,9 @@ export async function unfinishedDeposits(actor: string): Promise<{ id: number; a
 }
 /** the account's owner-paid deposit slot: null when the account has none yet (registered before slots existed) */
 export async function depositSlot(actor: string): Promise<{ amount: bigint; sym: string; r: string } | null> {
-  const r = await rpc<{ rows: { owner: string; sym: string | number; amount: string | number; r: string }[] }>("get_table_rows", { code: SHIELD.contract, scope: SHIELD.contract, table: "credits", json: true, limit: 1, lower_bound: actor, upper_bound: actor });
-  const row = r.rows[0];
-  return row && row.owner === actor ? { amount: BigInt(row.amount), sym: String(row.sym), r: row.r } : null;
+  const all = await rows<{ owner: string; sym: string | number; amount: string | number; r: string }>("credits", "owner");
+  const row = all.find((c) => c.owner === actor);
+  return row ? { amount: BigInt(row.amount), sym: String(row.sym), r: row.r } : null;
 }
 /** creates the slot for an account registered before slots existed; idempotent */
 export function openSlotAction(s: Session) {
@@ -504,22 +506,22 @@ async function verifiedSpends(nfOnChain: Set<string>, cmOnChain: Set<string>, re
 /** map commitment → the account that signed the spend creating it (verified against the chain) */
 async function sendersByCommitment(): Promise<Map<string, string>> {
   const out = new Map<string, string>();
-  const [nfs, lv] = await Promise.all([rows<{ key: string | number; nf: string }>("nullifiers", "key"), rows<{ index: string | number; cm: string }>("leaves", "index")]);
+  const [nfs, lv] = await Promise.all([rows<{ key: string | number; nf: string }>("nullifiers", "key"), rows<{ index: string | number; cm: string }>("outputs", "index")]);
   for (const sp of (await verifiedSpends(new Set(nfs.map((n) => n.nf.toLowerCase())), new Set(lv.map((l) => l.cm.toLowerCase())), () => true)) ?? []) for (const cm of sp.cm) out.set(cm, sp.owner);
   return out;
 }
 
-/** the account's own deposits from history: note random value → when */
-async function depositHistory(actor: string): Promise<Map<string, { ts: string; trx: string }>> {
+/** every deposit placement on the contract from history: note random value → when (no request names the account; the match is local) */
+async function depositHistory(): Promise<Map<string, { ts: string; trx: string }>> {
   const out = new Map<string, { ts: string; trx: string }>();
   for (const h of HYPERIONS) {
     try {
       let skip = 0;
-      for (let page = 0; page < 20; page++) {
-        const r = await fetch(`${h}/v2/history/get_actions?account=${actor}&filter=${SHIELD.contract}:deposit&limit=100&skip=${skip}&sort=asc`, { signal: AbortSignal.timeout(15000) });
+      for (let page = 0; page < 50; page++) {
+        const r = await fetch(`${h}/v2/history/get_actions?account=${SHIELD.contract}&filter=${SHIELD.contract}:deposit&limit=100&skip=${skip}&sort=asc`, { signal: AbortSignal.timeout(15000) });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = (await r.json()) as { actions: { timestamp: string; trx_id: string; act: { data: { owner?: string; r?: string } } }[] };
-        for (const a of j.actions) if (a.act.data.owner === actor && a.act.data.r) out.set(a.act.data.r.toLowerCase(), { ts: a.timestamp, trx: a.trx_id });
+        for (const a of j.actions) if (a.act.data.r) out.set(a.act.data.r.toLowerCase(), { ts: a.timestamp, trx: a.trx_id });
         if (j.actions.length < 100) break;
         skip += 100;
       }
@@ -562,7 +564,7 @@ export async function activity(keys: ShieldKeys, actor: string, res: ScanResult)
   const mine = [...res.notes, ...res.spent];
   const byCm = new Map(mine.map((n) => [hex32(n.cm), n]));
   const byNf = new Map(mine.map((n) => [hex32(nullifier(keys.nk, n.index)), n]));
-  const [deposits, leafRows, nfRows] = await Promise.all([depositHistory(actor), rows<{ index: string | number; cm: string }>("leaves", "index"), rows<{ key: string | number; nf: string }>("nullifiers", "key")]);
+  const [deposits, leafRows, nfRows] = await Promise.all([depositHistory(), rows<{ index: string | number; cm: string }>("outputs", "index"), rows<{ key: string | number; nf: string }>("nullifiers", "key")]);
   const onChain = new Set(leafRows.map((l) => l.cm.toLowerCase()));
   // only spends that touch this account's notes are fetched from a chain node and verified
   const spends = await verifiedSpends(new Set(nfRows.map((n) => n.nf.toLowerCase())), onChain, (r) => r.cm.some((c) => byCm.has(c)) || r.nf.some((f) => byNf.has(f)));
@@ -604,7 +606,7 @@ export async function auditorLedger(auditorSecret: string): Promise<ShieldLedger
   const ask = BigInt(auditorSecret.trim().startsWith("0x") ? auditorSecret.trim() : /^[0-9]+$/.test(auditorSecret.trim()) ? auditorSecret.trim() : "0x" + auditorSecret.trim());
   const [outs, leaves, nfs, keys, senders] = await Promise.all([
     rows<{ index: string | number; epk: string; cr: string; ca: string }>("outputs", "index"),
-    rows<{ index: string | number; cm: string }>("leaves", "index"),
+    rows<{ index: string | number; cm: string }>("outputs", "index"),
     rows<{ key: string | number; nf: string }>("nullifiers", "key"),
     registeredKeys(),
     sendersByCommitment(),
@@ -657,6 +659,6 @@ export async function shieldEdges(cfg: ShieldConfig): Promise<ShieldEdges> {
   const credits = await rows<{ sym: string | number; amount: string | number }>("credits", "owner");
   for (const c of credits) {
     if (BigInt(c.amount) === 0n) continue; const entry = cfg.tokens.find((e) => e.token.raw === String(c.sym)); const code = entry?.token.code ?? String(c.sym); unfinished[code] = (unfinished[code] ?? 0n) + BigInt(c.amount); }
-  const [nfs, lv] = await Promise.all([rows<{ key: string | number }>("nullifiers", "key"), rows<{ index: string | number }>("leaves", "index")]);
+  const [nfs, lv] = await Promise.all([rows<{ key: string | number }>("nullifiers", "key"), rows<{ index: string | number }>("outputs", "index")]);
   return { escrow, deposits, withdrawals, unfinished, nullifiers: nfs.length, leaves: lv.length };
 }

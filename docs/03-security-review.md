@@ -214,3 +214,34 @@ Three medium findings in the client, all reproduced with mocked responses; fixed
 | 2 | medium | the tree cache handed out its live object: a background scan could extend it under a prepared payment, changing the root while the action still named the old root sequence, so the proof was rejected | `chainTree` returns a snapshot; the live cache grows on its own |
 | 3 | medium | history verification cached and deduplicated by transaction id, so a second spend in the same transaction returned the first action's data or vanished | identity is the transaction plus the action's first nullifier, which the chain allows exactly once |
 
+## Shielded mode: independent review, fourth pass (Codex, 2026-09-08, at `af6bdbb`)
+
+Two medium findings in the client's balance reporting, fixed together with the privacy and
+resource pass below.
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | medium | spent status counted answering nodes, not agreement: one node listing a nullifier the others did not still produced a "confirmed" balance | a nullifier is spent when two nodes list it; one that a single node lists while another omits is disputed: treated as spent for safety and the balance shown unconfirmed until the nodes agree |
+| 2 | medium | the scan checked that outputs had leaves but not that every leaf had its output, so an omitted output row passed the root check and silently hid a note | the outputs rows now carry the commitments and are the leaves: the tree is rebuilt from them, so an omitted or altered row changes the root and the node is refused |
+
+Dependency advisories (8 dapp, 7 contract tooling, 19 circuits, none a demonstrated application
+vulnerability) are tracked separately; `lodash.set` is a transitive dependency of the tooling.
+
+## Privacy and resource pass (2026-09-08, night)
+
+Assessment in the session record; changes made:
+
+- **Circuit revision 5** (31,659 constraints, same 27 public signals): a disabled second input
+  emits a dummy nullifier `Poseidon(nk, 2^40 + dummy)` with a fresh private `dummy < 2^40`, so the
+  chain no longer shows whether a payment spent one note or two (real leaf indices are below
+  2^20); the ephemeral scalars are bound below the subgroup order like `ask`. New rehearsal key;
+  the ceremony's phase 2 will be run on this revision. Testnet reset and re-initialised with it.
+- **Contract:** the `leaves` table is gone; the outputs rows carry the commitment. One row less
+  per leaf (about 20% of a payment's RAM) and one table read less per scan, and it makes the
+  outputs self-verifying against the root (finding 2 above). Both nullifiers are now always
+  present, so `spend` requires two non-zero words.
+- **Client:** no read names the account (recovery row, deposit slot and deposit history are
+  whole-table or contract-wide reads matched locally); the tree is rebuilt from outputs.
+- **Poseidon:** measured at 155 µs per hash in the local VM, about 300 ns per field
+  multiplication, which is near the floor for 32-bit limbs in wasm; not changed.
+

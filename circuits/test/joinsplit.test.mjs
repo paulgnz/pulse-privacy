@@ -47,8 +47,8 @@ lap("witness ok: two inputs, two outputs");
 // single input (dummy second)
 const js1 = N.buildJoinSplit({ keys: alice, tree, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: a2, index: i2 }], outputs: [{ pk: bob.pk, v: 1_000_000n }, { pk: alice.pk, v: 6_000_000n }] });
 await satisfies(js1.input);
-assert.equal(js1.expected.nf[1], 0n);
-lap("witness ok: one input, dummy second (nf = 0)");
+assert.notEqual(js1.expected.nf[1], 0n, "a dummy input still emits a nullifier (revision 5)");
+lap("witness ok: one input, dummy second (nullifier in the reserved domain)");
 
 // withdrawal of 500 XPR to "bob" (name bound)
 const jw = N.buildJoinSplit({ keys: alice, tree, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: a2, index: i2 }], outputs: [{ pk: alice.pk, v: 0n }, { pk: alice.pk, v: a2.v - 5_000_000n }], vPub: 5_000_000n, tokenPub: N.TOKENS.XPR, to: ALICE });
@@ -114,5 +114,5 @@ assert.equal(await snarkjs.groth16.verify(vk, resigned, pw), false, "proof bound
 const swappedKey = psw.slice(); swappedKey[18] = bob.pk[0].toString(); swappedKey[19] = bob.pk[1].toString();
 assert.equal(await snarkjs.groth16.verify(vk, swappedKey, pw), false, "sender key cannot be substituted");
 lap("redirected destination, other signer and substituted sender key all rejected");
-console.log("join-split (revision 4) passed");
+console.log("join-split (revision 5) passed");
 process.exit(0);
