@@ -64,9 +64,12 @@ export function act(net, contract, name, data, actor, permission = "active") {
 
 // The helper: take the lock (or exit 3 after the timeout), select the chain (exit 4 on failure),
 // read it back (exit 5 if it is not the one asked for), run the action, and restore the default
-// chain on every path. Its stdout is the action's output; its exit status is the action's, or
-// one of the codes above. python3 is preferred, perl is the fallback; both are standard on
-// macOS and Linux.
+// chain, all while holding the lock. Every proton call is an argument array, never a shell, so
+// data from the chain or a node can carry any characters. The locked descriptor is passed to each
+// proton child, so a child inherits the lock and keeps it until it exits even if the helper is
+// killed: the lock lives as long as the last process of the sequence. Its stdout is the action's
+// output; its exit status is the action's, or one of the codes above. python3 is required; it is
+// standard on macOS and Linux.
 const PY_HELPER = `
 import fcntl, subprocess, sys, time, re
 lock, chain, restore, timeout = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
@@ -80,7 +83,7 @@ while True:
         if time.time() - t > timeout: sys.exit(3)
         time.sleep(0.1)
 def run(args):
-    p = subprocess.run(["proton"] + args, capture_output=True, text=True)
+    p = subprocess.run(["proton"] + args, capture_output=True, text=True, pass_fds=[f.fileno()])
     return p.returncode, (p.stdout or "") + "\\n" + (p.stderr or "")
 try:
     rc, out = run(["chain:set", chain])
@@ -93,22 +96,8 @@ try:
 finally:
     run(["chain:set", restore])
 `;
-const PL_HELPER = `
-use Fcntl qw(:flock); my ($lock, $chain, $restore, $timeout, @action) = @ARGV;
-open(my $f, ">>", $lock) or die; my $t = time;
-while (!flock($f, LOCK_EX|LOCK_NB)) { exit 3 if time - $t > $timeout; select(undef, undef, undef, 0.1) }
-sub run { my $out = qx(proton @_ 2>&1); return ($? >> 8, $out) }
-my ($rc, $out);
-END { qx(proton chain:set $restore 2>&1) }
-($rc, $out) = run("chain:set", $chain); if ($rc) { print $out; exit 4 }
-($rc, $out) = run("chain:get"); if ($rc || $out !~ /"chain":\\s*"\\Q$chain\\E"/) { print $out; exit 5 }
-($rc, $out) = run("action", map { "'" . $_ . "'" } @action); print $out; exit $rc;
-`;
 function runLocked(argv) {
-  for (const [cmd, script] of [["python3", PY_HELPER], ["perl", PL_HELPER]]) {
-    const r = spawnSync(cmd, [cmd === "python3" ? "-c" : "-e", script, ...argv], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 180_000 });
-    if ((r.error && r.error.code === "ENOENT") || r.status === 127) continue; // helper interpreter missing: try the next
-    return { status: r.status, text: String(r.stdout ?? "") + "\n" + String(r.stderr ?? "") };
-  }
-  throw new Error("no lock helper found (python3 or perl is needed for signing)");
+  const r = spawnSync("python3", ["-c", PY_HELPER, ...argv], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 180_000 });
+  if ((r.error && r.error.code === "ENOENT") || r.status === 127) throw new Error("python3 is needed for signing (it runs the proton CLI under the signing lock) and was not found");
+  return { status: r.status, text: String(r.stdout ?? "") + "\n" + String(r.stderr ?? "") };
 }

@@ -8,7 +8,7 @@ defences as the app.
 
 ```sh
 npm ci --prefix circuits          # the note library's dependencies (snarkjs, circomlibjs)
-npm i -g @proton/cli              # signing: the account's XPR key lives in the proton CLI keychain (python3 or perl must be present for the signing lock)
+npm i -g @proton/cli              # signing: the account's XPR key lives in the proton CLI keychain (python3 must be present: it runs the CLI under the signing lock)
 proton key:add                    # once per signing key
 node client/privatexpr.mjs        # prints the command list
 ```
@@ -19,10 +19,11 @@ reads notes and builds proofs; it cannot spend without the account's signature) 
 `~/.private-xpr/<network>/<account>.json`, mode 600. `PRIVATEXPR_HOME` moves that directory.
 Recovery phrases are never accepted on the command line, because shells keep history and process
 listings are public on a shared machine; the client asks at a hidden prompt or reads standard input.
-Signing is done by a small helper (python3, or perl as a fallback) that holds an OS lock (`flock` on
-`~/.privatexpr-signing.flock`) while it switches the proton CLI's chain, signs and switches back, because that
-setting is shared by every process of the user. The lock and the operation have one lifetime: two signers never
-interleave, and a helper that dies releases the lock with its process and starts no further step.
+Signing is done by a small python3 helper that holds an OS lock (`flock` on `~/.privatexpr-signing.flock`)
+while it switches the proton CLI's chain, signs and switches back, because that setting is shared by every
+process of the user. Every proton call is an argument array, never a shell. The lock is inherited by each
+proton process, so it lasts exactly as long as the last process of the sequence: two signers never interleave,
+and a helper that dies starts no further step.
 
 ## A first run on testnet
 

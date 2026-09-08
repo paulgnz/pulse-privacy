@@ -327,3 +327,11 @@ Auditor tab and a successor-contract procedure is rehearsed before half capacity
 | 1 | medium | the one-time removal of the earlier directory-format lock could, in a race, remove another client's fresh lock file at the same path | the lock moved to a new path (`~/.privatexpr-signing.flock`) that was never a directory; nothing from earlier versions is touched |
 | 2 | medium | if the lock-holding helper died after acquisition, the parent went on signing and restoring the chain without the lock | the helper now performs the whole select-sign-restore sequence itself while holding the lock, so the lock and the operation share one lifetime: if the helper dies no further step starts, and the parent only reads its result. python3 preferred, perl fallback, both tested |
 
+## Shielded mode: independent review, fifteenth pass (Codex, 2026-09-08, at `fbf7208`)
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | high | the perl fallback built a shell command with action data in single quotes; chain- or node-supplied data with an apostrophe broke the quoting, and crafted data could have run commands locally | the perl fallback is removed; the python3 helper runs every proton call as an argument array, never a shell |
+| 2 | medium | perl's END block restored the chain even after the lock acquisition had timed out | gone with the fallback; the python helper restores only inside the section it entered after taking the lock |
+| 3 | medium | a proton child could outlive the helper's lock if the helper was killed mid-action | the locked descriptor is passed to every proton child, so the lock is inherited and lasts as long as the last process of the sequence. Tested: a helper killed with -9 while its child ran left the lock held until the child exited |
+
