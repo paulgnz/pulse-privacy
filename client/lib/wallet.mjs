@@ -2,7 +2,7 @@
 // ~/.private-xpr/<network>/<account>.json (mode 600). Chain writes are signed by the proton CLI
 // keychain: the account's XPR key never enters this process.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import N from "../../circuits/lib/notes.mjs";
@@ -49,41 +49,63 @@ export function act(net, contract, name, data, actor, permission = "active") {
     return { status: r.status, text };
   };
   // The lock guards the proton CLI's shared chain setting, so it lives with the user, not with the
-  // key directory. It is a file created atomically with the holder's pid as its content (O_EXCL),
-  // so a lock never exists without an owner for more than the instant of its creation. Recovery is
-  // ownership-based only: a lock is stale when its recorded owner is not running, never merely
-  // because of age; an unreadable or empty lock is left alone for ten seconds (a holder still
-  // writing) and reclaimed after that. Reclaiming renames first, so two waiters cannot both take
-  // the same stale lock.
+  // key directory. Acquisition is atomic (a file created O_EXCL with the holder's pid). Recovery
+  // is ownership-based, never by age: a lock whose recorded owner is not running is reclaimed by
+  // renaming it aside and checking that what was renamed is the dead lock that was inspected; if
+  // a fresh lock was renamed by mistake it is linked back (or its owner notices below). The
+  // previous directory format (a directory holding a pid file) is recognised and reclaimed the
+  // same way. Safety does not rest on recovery alone: immediately before signing, the holder
+  // re-reads the lock and must still find its own pid there, otherwise it starts over.
   const lock = join(homedir(), ".privatexpr-signing.lock");
   const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
-  const deadline = Date.now() + 60_000;
-  for (;;) {
-    try { writeFileSync(lock, String(process.pid), { flag: "wx" }); break; } catch (e) {
-      if (e.code !== "EEXIST") throw e;
-      let stale = false;
-      try {
-        const text = readFileSync(lock, "utf8").trim();
-        const pid = Number(text);
-        if (text && Number.isInteger(pid) && pid > 0) stale = pid !== process.pid && !alive(pid);
-        else stale = Date.now() - statSync(lock).mtimeMs > 10_000;
-      } catch { stale = false; }
-      if (stale) { try { renameSync(lock, `${lock}.stale.${process.pid}`); rmSync(`${lock}.stale.${process.pid}`, { force: true }); } catch { /* another waiter reclaimed it */ } continue; }
+  const ownerOf = (path) => {
+    try {
+      const st = statSync(path);
+      const text = st.isDirectory() ? readFileSync(join(path, "pid"), "utf8").trim() : readFileSync(path, "utf8").trim();
+      const pid = Number(text);
+      return { pid: text && Number.isInteger(pid) && pid > 0 ? pid : null, ino: st.ino, dir: st.isDirectory(), age: Date.now() - st.mtimeMs };
+    } catch { return null; }
+  };
+  const acquire = () => {
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      try { writeFileSync(lock, String(process.pid), { flag: "wx" }); return; } catch (e) { if (e.code !== "EEXIST") throw e; }
+      const seen = ownerOf(lock);
+      const stale = seen !== null && (seen.pid !== null ? seen.pid !== process.pid && !alive(seen.pid) : seen.age > 10_000);
+      if (stale) {
+        const aside = `${lock}.reclaim.${process.pid}`;
+        try {
+          renameSync(lock, aside);
+          const got = ownerOf(aside);
+          if (got && got.ino === seen.ino) rmSync(aside, { recursive: true, force: true }); // exactly the dead lock inspected
+          else { try { if (!got?.dir) linkSync(aside, lock); } catch { /* a newer lock already stands; its owner re-checks before signing */ } rmSync(aside, { recursive: true, force: true }); }
+        } catch { /* another waiter got there first */ }
+        continue;
+      }
       if (Date.now() > deadline) throw new Error("another privatexpr invocation is holding the signing lock");
       spawnSync("sleep", ["0.2"]);
     }
-  }
-  const release = () => { try { if (readFileSync(lock, "utf8").trim() === String(process.pid)) rmSync(lock, { force: true }); } catch { /* not ours or gone */ } };
+  };
+  const holding = () => { try { return readFileSync(lock, "utf8").trim() === String(process.pid); } catch { return false; } };
+  const release = () => { if (holding()) rmSync(lock, { force: true }); };
+  acquire();
   let r;
-  try {
-    const sel = run(["chain:set", net.chain]);
-    if (sel.status !== 0) throw new Error(`could not select the ${net.chain} chain in the proton CLI: ${sel.text.trim().slice(0, 200)}`);
-    const cur = run(["chain:get"]);
-    if (cur.status !== 0 || !new RegExp(`"chain":\\s*"${net.chain}"`).test(cur.text)) throw new Error(`the proton CLI is not on the ${net.chain} chain; refusing to sign`);
-    r = run(["action", contract, name, JSON.stringify(data), `${actor}@${permission}`]);
-  } finally {
-    run(["chain:set", "proton"]);
-    release();
+  for (let attempt = 0; ; attempt++) {
+    if (attempt > 0) acquire();
+    let retry = false;
+    try {
+      const sel = run(["chain:set", net.chain]);
+      if (sel.status !== 0) throw new Error(`could not select the ${net.chain} chain in the proton CLI: ${sel.text.trim().slice(0, 200)}`);
+      const cur = run(["chain:get"]);
+      if (cur.status !== 0 || !new RegExp(`"chain":\\s*"${net.chain}"`).test(cur.text)) throw new Error(`the proton CLI is not on the ${net.chain} chain; refusing to sign`);
+      // the lock must still be ours here: a waiter that reclaimed a stale lock could have displaced this one
+      if (!holding()) { if (attempt >= 5) throw new Error("could not keep the signing lock; try again"); retry = true; continue; }
+      r = run(["action", contract, name, JSON.stringify(data), `${actor}@${permission}`]);
+      break;
+    } finally {
+      run(["chain:set", "proton"]);
+      if (!retry) release();
+    }
   }
   if (process.env.PRIVATEXPR_DEBUG) console.error(r.text);
   const id = (r.text.match(/"transaction_id":\s*"([0-9a-f]{64})"/) || r.text.match(/tx\/([0-9a-f]{64})/) || [])[1];
