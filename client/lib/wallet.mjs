@@ -2,7 +2,7 @@
 // ~/.private-xpr/<network>/<account>.json (mode 600). Chain writes are signed by the proton CLI
 // keychain: the account's XPR key never enters this process.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import N from "../../circuits/lib/notes.mjs";
@@ -49,25 +49,31 @@ export function act(net, contract, name, data, actor, permission = "active") {
     return { status: r.status, text };
   };
   // The lock guards the proton CLI's shared chain setting, so it lives with the user, not with the
-  // key directory (two PRIVATEXPR_HOME values must still share it). The holder writes its pid; a
-  // lock whose holder is gone, or older than two minutes, is stale and reclaimed.
+  // key directory. It is a file created atomically with the holder's pid as its content (O_EXCL),
+  // so a lock never exists without an owner for more than the instant of its creation. Recovery is
+  // ownership-based only: a lock is stale when its recorded owner is not running, never merely
+  // because of age; an unreadable or empty lock is left alone for ten seconds (a holder still
+  // writing) and reclaimed after that. Reclaiming renames first, so two waiters cannot both take
+  // the same stale lock.
   const lock = join(homedir(), ".privatexpr-signing.lock");
-  const pidFile = join(lock, "pid");
   const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
   const deadline = Date.now() + 60_000;
   for (;;) {
-    try { mkdirSync(lock); writeFileSync(pidFile, String(process.pid)); break; } catch {
+    try { writeFileSync(lock, String(process.pid), { flag: "wx" }); break; } catch (e) {
+      if (e.code !== "EEXIST") throw e;
       let stale = false;
       try {
-        const st = statSync(lock);
-        const pid = Number(readFileSync(pidFile, "utf8").trim());
-        stale = (Number.isInteger(pid) && pid > 0 && !alive(pid)) || Date.now() - st.mtimeMs > 120_000;
-      } catch { stale = true; }
-      if (stale) { rmSync(lock, { recursive: true, force: true }); continue; }
+        const text = readFileSync(lock, "utf8").trim();
+        const pid = Number(text);
+        if (text && Number.isInteger(pid) && pid > 0) stale = pid !== process.pid && !alive(pid);
+        else stale = Date.now() - statSync(lock).mtimeMs > 10_000;
+      } catch { stale = false; }
+      if (stale) { try { renameSync(lock, `${lock}.stale.${process.pid}`); rmSync(`${lock}.stale.${process.pid}`, { force: true }); } catch { /* another waiter reclaimed it */ } continue; }
       if (Date.now() > deadline) throw new Error("another privatexpr invocation is holding the signing lock");
       spawnSync("sleep", ["0.2"]);
     }
   }
+  const release = () => { try { if (readFileSync(lock, "utf8").trim() === String(process.pid)) rmSync(lock, { force: true }); } catch { /* not ours or gone */ } };
   let r;
   try {
     const sel = run(["chain:set", net.chain]);
@@ -77,7 +83,7 @@ export function act(net, contract, name, data, actor, permission = "active") {
     r = run(["action", contract, name, JSON.stringify(data), `${actor}@${permission}`]);
   } finally {
     run(["chain:set", "proton"]);
-    rmSync(lock, { recursive: true, force: true });
+    release();
   }
   if (process.env.PRIVATEXPR_DEBUG) console.error(r.text);
   const id = (r.text.match(/"transaction_id":\s*"([0-9a-f]{64})"/) || r.text.match(/tx\/([0-9a-f]{64})/) || [])[1];

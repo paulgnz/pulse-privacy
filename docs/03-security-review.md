@@ -301,3 +301,9 @@ Auditor tab and a successor-contract procedure is rehearsed before half capacity
 | 2 | medium | a killed client left its lock behind and later invocations refused to sign | the holder records its pid; a lock whose holder is gone, or older than two minutes, is reclaimed (tested with a planted dead-owner lock) |
 | 3 | low | the client README still showed recovery words as command arguments | the README shows the hidden prompt and explains why |
 
+## Shielded mode: independent review, eleventh pass (Codex, 2026-09-08, at `20de90f`)
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | medium | stale-lock recovery could remove a live signer's lock: by age alone after two minutes, and immediately when the pid file was not yet written | the lock is a file created atomically with the holder's pid as its content, so it never exists without an owner; recovery is ownership-based only (owner not running), never by age; an empty or unreadable lock is left for ten seconds first; reclaiming renames before removing so two waiters cannot both take it; release checks the pid is its own. Tested: a lock held by a live process with an old timestamp made the client wait until that process ended; a dead owner's lock was reclaimed at once |
+

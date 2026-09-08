@@ -20,7 +20,8 @@ reads notes and builds proofs; it cannot spend without the account's signature) 
 Recovery phrases are never accepted on the command line, because shells keep history and process
 listings are public on a shared machine; the client asks at a hidden prompt or reads standard input.
 Signing takes a lock at `~/.privatexpr-signing.lock` while it switches the proton CLI's chain, since
-that setting is shared by every process of the user; a lock left by a killed process is reclaimed.
+that setting is shared by every process of the user. The lock records its owner's process id; a lock
+whose owner is no longer running is reclaimed, and a live owner's lock is never taken, however old.
 
 ## A first run on testnet
 
