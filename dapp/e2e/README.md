@@ -23,6 +23,7 @@ registered with the existing ones). `E2E_OUT` is where screenshots go (default `
 | `shield-blobs.mjs`, `shield-scan-paul.mjs` | recovery copies round-trip; the scan sees a given account's notes |
 | `shield-popup.mjs` | a blocked wallet window fails fast; recipient suggestions |
 | `live-check.mjs` | the deployed sites: brand, heading, header links |
+| `bad-node.mjs` | one node's outputs poisoned (duplicate row, wrong commitment): the scan still completes from the healthy nodes (run against the preview build, port 5179) |
 
 Note: in the Vite dev server, React 19's development-only performance tracing serialises component
 props and throws on BigInt values during slow renders ("Do not know how to serialize a BigInt",
