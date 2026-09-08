@@ -390,5 +390,5 @@ Follow-up at `06b1171`: the offline client regression passes with network access
 
 Verified clean by Codex at `d125e1f`: the rollover series (contract, circuit revision 6, app, headless client, tests) is closed.
 
-Outstanding as before: transitive dependency advisories in the ceremony web app.
+Dependency advisories, state at `5a10567`: `@vercel/node` was only ever imported for its types by the ceremony functions and is now a development dependency, which removes the high advisories (`undici` 5, `path-to-regexp`) from the production audit. What remains in the dapp and the ceremony web app is the wallet SDK's transitive `elliptic`, `uuid` and `@proton/link` set (low and moderate); the only offered "fix" is a downgrade to an older major of the SDK, so they stay tracked. Contract tooling and circuit build advisories are in build-time tools that never run in the browser or on chain.
 
