@@ -230,21 +230,43 @@ async function scanTables() {
   const disputed = nfLists.length >= 2 && [...nfCount.values()].some((c) => c < 2);
   const nfs = [...nfCount.keys()].map((nf) => ({ key: 0, nf }));
   const nfConfirmed = nfLists.length >= 2 && !disputed;
-  let lastErr: unknown;
-  for (const ep of await endpoints()) {
-    try {
-      const outs = await rows<{ index: string | number; cm: string; epk: string; cr: string; ca: string }>("outputs", "index", ep);
-      // the outputs rows are the leaves: an omitted or altered row changes the rebuilt root, so a
-      // node that hides a note cannot pass this check
-      const outsInTree = outs.filter((o) => Number(o.index) < agreed.next);
-      const byIndex = new Map(outsInTree.map((o) => [Number(o.index), o.cm.toLowerCase()]));
-      if (byIndex.size !== outsInTree.length) throw new Error("duplicate output rows");
-      const tree = rebuildTo(agreed.next, byIndex);
-      if (hex32(tree.root) !== agreed.root) throw new Error("outputs do not hash to the agreed root");
-      return { outs: outsInTree, leaves: outsInTree.map((o) => ({ index: o.index, cm: o.cm })), nfs, confirmed: agreed.confirmed && nfConfirmed };
-    } catch (e) { lastErr = e; treeCache = null; }
+  // the outputs rows from every node. The commitments are the leaves and must hash to the agreed
+  // root, which authenticates them; the note data beside them (epk, cr, ca) is not covered by the
+  // root, so it is authenticated by agreement: a row two nodes return identically is agreed, a row
+  // the nodes disagree on is disputed, every variant is tried, and the balance is unconfirmed
+  type Out = { index: string | number; cm: string; epk: string; cr: string; ca: string };
+  const outAnswers = await Promise.allSettled([...new Set(ENDPOINTS)].map((ep) => rows<Out>("outputs", "index", ep)));
+  const lists = outAnswers.flatMap((a) => (a.status === "fulfilled" ? [a.value.filter((o) => Number(o.index) < agreed.next)] : []));
+  if (!lists.length) throw new Error("No node answered the scan.");
+  const key = (o: Out) => `${o.cm}|${o.epk}|${o.cr}|${o.ca}`.toLowerCase();
+  const variants = new Map<number, Map<string, { row: Out; votes: number }>>();
+  for (const l of lists) {
+    const seen = new Set<number>();
+    for (const o of l) {
+      const i = Number(o.index);
+      if (seen.has(i)) throw new Error("duplicate output rows");
+      seen.add(i);
+      const m = variants.get(i) ?? new Map<string, { row: Out; votes: number }>();
+      const k = key(o);
+      const v = m.get(k) ?? { row: o, votes: 0 };
+      v.votes += 1;
+      m.set(k, v);
+      variants.set(i, m);
+    }
   }
-  throw lastErr instanceof Error ? lastErr : new Error("No node answered the scan.");
+  const outs: Out[] = [];
+  const byIndex = new Map<number, string>();
+  let outsDisputed = lists.length < 2;
+  for (const [i, m] of variants) {
+    const vs = [...m.values()].sort((a, b) => b.votes - a.votes);
+    if (vs.length > 1 || vs[0].votes < 2) outsDisputed = true;
+    byIndex.set(i, vs[0].row.cm.toLowerCase());
+    for (const v of vs) outs.push(v.row); // every variant is tried; a note is only ever accepted if it recomputes to its commitment
+  }
+  // a leaf every node omitted would still break the root, so an omission cannot pass either
+  const tree = rebuildTo(agreed.next, byIndex);
+  if (hex32(tree.root) !== agreed.root) { treeCache = null; throw new Error("The outputs read from the chain do not hash to the agreed root; try again."); }
+  return { outs, leaves: [...byIndex].map(([index, cm]) => ({ index, cm })), nfs, confirmed: agreed.confirmed && nfConfirmed && !outsDisputed };
 }
 
 export async function scan(keys: ShieldKeys): Promise<ScanResult> {
@@ -271,6 +293,7 @@ export async function scan(keys: ShieldKeys): Promise<ScanResult> {
     }
     } catch { skipped++; continue; } // one malformed row from a node must not blank the balance
     if (!note || note.v === 0n) continue;
+    if (notes.some((n) => n.index === index) || spent.some((n) => n.index === index)) continue; // a disputed row's other variant already decrypted
     const owned: OwnedNote = { ...note, index, kind: o.epk ? "note" : "deposit" };
     if (spentSet.has(hex32(nullifier(keys.nk, index)))) spent.push(owned);
     else notes.push(owned);
@@ -511,7 +534,7 @@ async function sendersByCommitment(): Promise<Map<string, string>> {
   return out;
 }
 
-/** every deposit placement on the contract from history: note random value → when (no request names the account; the match is local) */
+/** every deposit placement on the contract from history, keyed by owner and note random value → when (no request names the account; the match is local) */
 async function depositHistory(): Promise<Map<string, { ts: string; trx: string }>> {
   const out = new Map<string, { ts: string; trx: string }>();
   for (const h of HYPERIONS) {
@@ -521,7 +544,7 @@ async function depositHistory(): Promise<Map<string, { ts: string; trx: string }
         const r = await fetch(`${h}/v2/history/get_actions?account=${SHIELD.contract}&filter=${SHIELD.contract}:deposit&limit=100&skip=${skip}&sort=asc`, { signal: AbortSignal.timeout(15000) });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = (await r.json()) as { actions: { timestamp: string; trx_id: string; act: { data: { owner?: string; r?: string } } }[] };
-        for (const a of j.actions) if (a.act.data.r) out.set(a.act.data.r.toLowerCase(), { ts: a.timestamp, trx: a.trx_id });
+        for (const a of j.actions) if (a.act.data.r && a.act.data.owner) out.set(`${a.act.data.owner}|${a.act.data.r.toLowerCase()}`, { ts: a.timestamp, trx: a.trx_id });
         if (j.actions.length < 100) break;
         skip += 100;
       }
@@ -572,7 +595,7 @@ export async function activity(keys: ShieldKeys, actor: string, res: ScanResult)
   const events: ActivityEvent[] = [];
   for (const n of mine) {
     if (n.kind !== "deposit") continue;
-    const d = deposits.get(hex32(n.r));
+    const d = deposits.get(`${actor}|${hex32(n.r)}`);
     events.push({ kind: "deposit", ts: d?.ts ?? null, trx: d?.trx ?? null, amount: n.v, token: n.token, counterparty: actor, notes: [n.index] });
   }
   const seen = new Set<number>();

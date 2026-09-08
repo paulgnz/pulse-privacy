@@ -245,3 +245,12 @@ Assessment in the session record; changes made:
 - **Poseidon:** measured at 155 µs per hash in the local VM, about 300 ns per field
   multiplication, which is near the floor for 32-bit limbs in wasm; not changed.
 
+## Shielded mode: independent review, fifth pass (Codex, 2026-09-08, at `3a8791b`)
+
+Two medium findings in the client, fixed the same night.
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | medium | the root authenticates commitments but not the note data beside them: a node returning an altered ciphertext with the true commitment made the note vanish with a confirmed balance | outputs are read from every node; a row two nodes return identically is agreed, a disputed row has every variant tried (a note is only accepted if it recomputes to its authenticated commitment), and any dispute or single-node answer leaves the balance unconfirmed |
+| 2 | medium | contract-wide deposit history was keyed by the random value alone, so another owner's equal value could overwrite the transaction and time | keyed by owner and value; the match stays local |
+
