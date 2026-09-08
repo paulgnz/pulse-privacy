@@ -65,13 +65,19 @@ Then move `privatexpr@active` to the committee (or an msig) as with v1.
 
 ## 4. Dapp
 
-- `dapp/src/config.ts`: mainnet block `SHIELD = { enabled: true, contract: "privatexpr" }` (testnet stays `xprshield`); the
-  circuit files under `public/circuit/` must be the ceremony's final zkey (`joinsplit-r4_final.zkey`
-  replaced by the ceremony output; keep the revision in the name).
+- `dapp/src/config.ts`: mainnet block `SHIELD = { enabled: true, contract: "privatexpr", auditorPk: <pinned> }` (testnet stays `xprshield`); the
+  circuit files under `public/circuit/` must be the ceremony's final revision-5 zkey, shipped under a **fresh file name**
+  (for example `joinsplit-r5c_final.zkey`, with `WASM`/`ZKEY` in `lib/shield/chain.ts` and `debug.ts` updated), because
+  `/circuit/` is cached immutably for a year and the rehearsal key must never be served in its place.
 - `SHIELD_HOME` follows `SHIELD.enabled`, so enabling it on mainnet makes v2 the site and v1 `/old`.
 - Deploy is a push to `main`; the `pulse-privacy` Vercel project builds mainnet.
 
 ## 5. After launch
+
+- Tree capacity: the tree holds 1,048,576 leaves (about 500,000 payments); when it is full no spend is possible, including
+  withdrawals. Watch `tree.next_leaf` (the Auditor tab shows it against the capacity) and, well before it is reached, deploy
+  the successor contract with a fresh tree and move balances by withdraw-and-deposit; the paused-only `restore` is the
+  last resort for anyone who cannot. Rehearse this on testnet before mainnet passes half capacity.
 
 - Announce: contract hash, ceremony transcript, caps, what is hidden and what is not.
 - Watch the first day: `testnet-demo.mjs audit` equivalent for mainnet (auditor CLI) with the

@@ -1,0 +1,12 @@
+{
+  "name": "privatexpr-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private XPR headless client: keys, deposits, private payments, withdrawals, recovery and the committee's audit from a terminal",
+  "type": "module",
+  "bin": { "privatexpr": "./privatexpr.mjs" },
+  "scripts": {
+    "start": "node privatexpr.mjs"
+  },
+  "engines": { "node": ">=20" }
+}

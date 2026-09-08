@@ -269,3 +269,17 @@ and deposit-history checks; production build and the security regressions. This 
 review series before the ceremony's second phase: three internal rounds, seven Codex passes,
 every finding fixed and tested.
 
+## Shielded mode: independent review, eighth pass (Codex, broader, 2026-09-08, at `42c363f`)
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | high | token metadata came from one node: a node relabelling XMD with XPR's id and precision turned "1 XMD" into a note of 100 XPR, accepted with a real proof | the token table's identity (symbol, issuing contract, id) must be agreed by two nodes and must equal the ids and precisions this build was made with, else the app refuses; same in the headless client |
+| 2 | medium | a wallet answer arriving after the account changed installed the previous account's key | unlock and phrase restore capture the session generation before the await and drop a late answer |
+| 3 | medium | the tree agreement compared root and leaf count but not the root sequence, so a confirmed tree could carry a wrong sequence and a payment then fail | the sequence is part of the agreed tuple and every tree row is bounds-checked |
+| 4 | medium | a malformed nullifier in one node's answer aborted the whole scan | nullifiers are validated inside each node's answer; a bad answer is dropped |
+
+Launch items from the same pass, now in docs/07: the final revision-5 key ships under a fresh
+file name (the circuit directory is cached immutably), the auditor key is pinned and committee
+permissions verified before deposits open, tree capacity (1,048,576 leaves) is shown on the
+Auditor tab and a successor-contract procedure is rehearsed before half capacity.
+

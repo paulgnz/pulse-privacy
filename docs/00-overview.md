@@ -13,6 +13,7 @@ stays withdrawable indefinitely.
 | contract | `contracts/xpr-shield-tsc/` (vert tests in `tests/`, testnet demo CLI incl. `audit`, `recover`) | `contracts/xpr-conf-tsc/` |
 | dapp | `dapp/src/lib/shield/*`, `dapp/src/components/Shielded*.tsx`, `ShieldPages.tsx`, `ShieldWalkthrough.tsx` | `dapp/src/lib/{chain,client,keys,privacy}.ts`, `components/{Overview,Send,Deposit,Withdraw,Activity,Auditor,Settings,Onboarding,About}.tsx` |
 | headless checks | `dapp/e2e/` (README there) | `dapp/e2e/live-check.mjs` |
+| headless client | `client/` (`node client/privatexpr.mjs`): keys, register, deposit, balance, send, withdraw, activity, backups, restore, and the committee's audit and recover; same two-node checks as the app; signs through the proton CLI keychain | none |
 | security reviews | [03-security-review.md](03-security-review.md), "Shielded mode" sections; briefs in [04](04-review-briefs.md) | [03](03-security-review.md) earlier sections |
 | mainnet | [07-private-xpr-v2-mainnet.md](07-private-xpr-v2-mainnet.md) (not yet deployed) | [02-mainnet-runbook.md](02-mainnet-runbook.md) (deployed 2026-09-07) |
 | ceremony | `ceremony/` (finalise, verify) and `ceremony-web/` (contribution site); phase 1 universal, phase 2 for the join-split circuit | phase 1 shared; v1 keeps its rehearsal key |

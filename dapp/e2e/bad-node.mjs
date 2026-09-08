@@ -19,7 +19,7 @@ await page.evaluate((ask) => { localStorage.setItem("pulse-privacy/shield/paul12
 await page.goto("http://localhost:5179/?demo=paul123", { waitUntil: "networkidle" });
 await page.waitForSelector("text=Private balance", { timeout: 30000 });
 await page.waitForTimeout(6000);
-const bal = (await page.locator("section.statement").innerText()).match(/Note 3[^\n]*\n[^\n]*/)?.[0] ?? "(no note row)"; const errNote = await page.locator(".note.error, .note").allInnerTexts();
+const bal = (await page.locator("section.statement").innerText()).match(/Note [0-9]+[^\n]*\n[^\n]*/)?.[0] ?? "(no note row)"; const errNote = await page.locator(".note.error, .note").allInnerTexts();
 const unconfirmed = await page.locator("text=unconfirmed").count();
 const reading = await page.locator("text=Reading your notes").count();
 console.log("note row:", bal.replace(/\s+/g, " "), "| unconfirmed notice:", unconfirmed, "| still reading:", reading, "| notes shown:", JSON.stringify(errNote).slice(0, 160));

@@ -7,7 +7,7 @@ import type { Session } from "../chain";
 import type { Pt } from "../crypto/babyjub";
 import { ptHex, w32 } from "../crypto/babyjub";
 import type { Token } from "../token";
-import { Tree, buildJoinSplit, commitment, decompressPoint, decryptAuditor, hex32, nameToU64, newNote, nullifier, tryDecryptReceiver, unpack, words } from "./notes";
+import { TOKEN_IDS, Tree, buildJoinSplit, commitment, decompressPoint, decryptAuditor, hex32, nameToU64, newNote, nullifier, tryDecryptReceiver, unpack, words } from "./notes";
 import type { OwnedNote, ShieldKeys } from "./notes";
 
 const WASM = "/circuit/joinsplit-r5.wasm";
@@ -100,14 +100,32 @@ export async function getConfig(knownTokens: Token[]): Promise<ShieldConfig | nu
   if (!row) return null;
   const c = { rows: [row] };
   const a = words(c.rows[0].auditor_pubkey);
-  const t = await rows<{ sym: string | number; token_contract: string; token_id: string | number; max_pool: string | number; max_deposit: string | number; pool: string | number }>("tokens", "sym");
-  const tokens = t.flatMap((row) => {
+  // the token table's identity fields (symbol, issuing contract, token id) must be agreed by two
+  // nodes and must match the ids this build was made with; a node that relabels a token could
+  // otherwise turn "1 XMD" into a note of a hundred XPR. Caps and pool counters may lag a block
+  // between nodes and are taken from the agreed row's first copy.
+  type TokRow = { sym: string | number; token_contract: string; token_id: string | number; max_pool: string | number; max_deposit: string | number; pool: string | number };
+  const answers = await Promise.allSettled([...new Set(ENDPOINTS)].map((ep) => rows<TokRow>("tokens", "sym", ep)));
+  const lists = answers.flatMap((x) => (x.status === "fulfilled" ? [x.value] : []));
+  if (lists.length < 2) throw new Error("Cannot confirm the contract's token list with two independent servers. Try again shortly.");
+  const identity = (r: TokRow) => `${BigInt(r.sym)}|${r.token_contract}|${BigInt(r.token_id)}`;
+  const agreedRows = new Map<string, TokRow>();
+  for (const l of lists) for (const r of l) {
+    const id = identity(r);
+    if (agreedRows.has(id)) continue;
+    if (lists.filter((o) => o.some((x) => identity(x) === id)).length >= 2) agreedRows.set(id, r);
+  }
+  const tokens = [...agreedRows.values()].flatMap((row) => {
     const raw = BigInt(row.sym);
     const precision = Number(raw & 0xffn);
     let code = "";
     for (let i = 1; i < 8; i++) { const ch = Number((raw >> BigInt(8 * i)) & 0xffn); if (ch) code += String.fromCharCode(ch); }
-    const token = knownTokens.find((k) => k.code === code) ?? ({ code, precision, contract: row.token_contract } as Token);
-    return [{ token, id: BigInt(row.token_id), contract: row.token_contract, maxPool: BigInt(row.max_pool), maxDeposit: BigInt(row.max_deposit), pool: BigInt(row.pool) }];
+    const known = knownTokens.find((k) => k.code === code);
+    const id = BigInt(row.token_id);
+    if (known && (known.precision !== precision || known.contract !== row.token_contract)) throw new Error(`The contract's ${code} does not match this app's ${code}. Refusing to continue.`);
+    if (TOKEN_IDS[code] !== undefined && TOKEN_IDS[code] !== id) throw new Error(`The contract's token id for ${code} is not the one this app was built with. Refusing to continue.`);
+    const token = known ?? ({ code, precision, contract: row.token_contract } as Token);
+    return [{ token, id, contract: row.token_contract, maxPool: BigInt(row.max_pool), maxDeposit: BigInt(row.max_deposit), pool: BigInt(row.pool) }];
   });
   return { auditorPk: [a[0], a[1]], paused: !!c.rows[0].paused, tokens };
 }
@@ -169,7 +187,8 @@ async function agreedTreeRow(): Promise<{ next: number; root: string; rootSeq: b
   const got = answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
   if (!got.length) throw new Error("No node answered.");
   // nodes can be a block apart: take the most advanced state that two nodes share; else the single answer, unconfirmed
-  const same = (a: typeof got[0], b: typeof got[0]) => a.root === b.root && a.next === b.next;
+  const same = (a: typeof got[0], b: typeof got[0]) => a.root === b.root && a.next === b.next && a.rootSeq === b.rootSeq;
+  for (const g of got) if (g.rootSeq < 0n || g.rootSeq > 1n << 40n || g.next < 0 || g.next > 1 << 20 || !/^[0-9a-f]{64}$/.test(g.root)) throw new Error("malformed tree row");
   const shared = got.filter((r) => got.filter((o) => same(o, r)).length >= 2).sort((a, b) => b.next - a.next);
   if (shared.length) return { ...shared[0], confirmed: true };
   return { ...got.sort((a, b) => b.next - a.next)[0], confirmed: got.length >= 2 ? false : false };
@@ -222,8 +241,13 @@ async function scanTables() {
   // spent status from every node. A nullifier counts as spent when two nodes list it; one that a
   // single node lists while another omits it is disputed: it is treated as spent (the safe side
   // for spending) and the balance is reported unconfirmed until the nodes agree
-  const nfAnswers = await Promise.allSettled([...new Set(ENDPOINTS)].map((ep) => rows<{ key: string | number; nf: string }>("nullifiers", "key", ep)));
-  const nfLists = nfAnswers.flatMap((a) => (a.status === "fulfilled" ? [new Set(a.value.map((n) => n.nf.toLowerCase()))] : []));
+  const nfAnswers = await Promise.allSettled([...new Set(ENDPOINTS)].map(async (ep) => {
+    const list = await rows<{ key: string | number; nf: string }>("nullifiers", "key", ep);
+    const set = new Set<string>();
+    for (const n of list) { if (typeof n.nf !== "string" || !/^[0-9a-f]{64}$/i.test(n.nf)) throw new Error("malformed nullifier"); set.add(n.nf.toLowerCase()); }
+    return set;
+  }));
+  const nfLists = nfAnswers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
   if (!nfLists.length) throw new Error("No node answered the scan.");
   const nfCount = new Map<string, number>();
   for (const l of nfLists) for (const nf of l) nfCount.set(nf, (nfCount.get(nf) ?? 0) + 1);

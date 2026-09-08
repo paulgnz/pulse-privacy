@@ -154,8 +154,10 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const unlock = async () => {
     if (!session) return;
     setBusy(true); setNotice(null);
+    const mine = seq.current; // a wallet answer that arrives after the account changed is dropped
     try {
       const ask = await unlockShield(session, SHIELD.contract);
+      if (seq.current !== mine) return;
       if (deterministicSigner(session) || registered) {
         adopt(ask, false); // a registered account: the chain says whether the key is right
       } else if (firstAsk === null) {
@@ -189,7 +191,8 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const restoreFromPhrase = async () => {
     if (!backup?.phrase) return;
     setBusy(true); setNotice(null);
-    try { adoptRestored(await openPhraseCopy(backup.phrase, restorePass)); }
+    const mine = seq.current;
+    try { const ask = await openPhraseCopy(backup.phrase, restorePass); if (seq.current !== mine) return; adoptRestored(ask); }
     catch (e) { setNotice({ ok: false, text: /passphrase/.test((e as Error).message) ? "Those words do not open the recovery copy. Check the order and spelling." : (e as Error).message }); }
     finally { setBusy(false); }
   };

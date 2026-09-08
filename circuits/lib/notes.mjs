@@ -119,7 +119,12 @@ function decryptWith(shared, c) {
 }
 const ecdh = (scalar, point) => pt(bj.mulPointEscalar([F.e(point[0]), F.e(point[1])], BigInt(scalar)));
 
-/** the committee side of a sealed scalar (dapp `sealTo`): epk as a point, c one word */
+/** one field element sealed to a public key with the note scheme (the dapp's `sealTo`): fresh ephemeral key, then plain + Poseidon mask */
+export function sealTo(pk, plain) {
+  const esk = randScalar();
+  return { epk: pt(bj.mulPointEscalar(B8, esk)), c: encryptWith(ecdh(esk, pk), [BigInt(plain)])[0] };
+}
+/** the committee side of a sealed scalar: epk as a point, c one word */
 export const openSealed = (ask, epk, c) => decryptWith(ecdh(ask, epk), [c])[0];
 
 const TWO64 = 1n << 64n, TWO72 = 1n << 72n;
@@ -235,7 +240,7 @@ export const hex32 = (x) => BigInt(x).toString(16).padStart(64, "0");
 
 const api = {
   init, keygen, newNote, commitment, nullifier, Tree, buildJoinSplit, publicSignals, actionPublics, pack, unpack,
-  compressPoint, decompressPoint, xFromY, tryDecryptReceiver, decryptAuditor, openSealed, randField, randScalar, nameToU64, hex32, TOKENS, DEPTH,
+  compressPoint, decompressPoint, xFromY, tryDecryptReceiver, decryptAuditor, sealTo, openSealed, dummyNullifier, randField, randScalar, nameToU64, hex32, TOKENS, DEPTH,
   get F() { return F; }, get bj() { return bj; }, get B8() { return B8; },
 };
 export default api;

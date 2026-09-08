@@ -10,6 +10,7 @@ payments inside continue. <https://testnet.private.protonnz.com> runs version 2 
 v1 at `/old`. Trusted-setup ceremony: <https://ceremony.private.protonnz.com>.
 
 Start with [docs/00-overview.md](docs/00-overview.md): what is where, what is live, what is next.
+A headless client for the whole product lives in [client/](client/README.md).
 
 ---
 
