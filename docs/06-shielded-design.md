@@ -368,16 +368,30 @@ resource plan for the contract account (a code upload needs more NET than the fr
 plans are per account and bought with `resources::buyplan`), both tokens with conservative
 caps and minimum deposits.
 
-### 8.5 Whether `xprconf` is eventually deprecated
+### 8.5 Shielded replaces confidential (decided 2026-09-08)
 
-Not decided, and not needed now. The two modes answer different needs: confidential (parties
-visible, amount hidden) suits payments where both sides should be on record, such as invoices
-and payroll, and it is cheaper, simpler and has no note management; shielded hides the
-receiver and costs a little more per payment. Both keep full auditability. Usage decides. If
-shielded mode absorbs nearly all traffic, the retirement path for `xprconf` is: pause deposits
-(the `paused` flag already refuses them), keep withdrawals and the auditor working
-indefinitely so nobody is ever locked in, and remove it from the app's first screen. Revisit
-after a few months of both running.
+Shielded is the product; `xprconf` retires once shielded has reached feature parity and
+mainnet. The reasons: shielded hides strictly more (the receiver as well as the amount) at the
+same auditability, the cost difference is small (about 15 ms of CPU per payment), and two
+products with two key models and two Settings pages were confusing to build, to review and to
+use. "Why not upgrade `xprconf` in place" was answered in 8.4: the balance model (one ElGamal
+box per account) and the note model share nothing, existing encrypted balances cannot be
+migrated by anyone but their owners, and deployed tables cannot change shape. A new contract
+was the only clean path; what looked like mess was two products coexisting during the
+transition. The transition is kept short and tidy by three rules:
+
+1. **One site per network.** The shielded page lives at `/shielded` on private.protonnz.com
+   (and testnet.private.protonnz.com), with its own tabs and walkthrough at `/shielded/about`.
+   The separate shield site tried on 2026-09-08 was retired the same day: a saved key is
+   bound to the browser *and the site origin*, so a second origin only creates a second place
+   to lose it. When shielded is the default, it moves to `/` and confidential to `/private`.
+2. **Parity before mainnet.** Recovery (seven-word phrase, committee copy, key file; built
+   2026-09-08 with the `backups` table and `setbackup`), the onboarding steps with a progress
+   bar, Activity, Auditor and Settings tabs, the auditor CLI, caps, pause and the runbook.
+3. **Retirement path for `xprconf`.** After shielded mainnet: pause deposits (the `paused`
+   flag already refuses them), keep withdrawals and the auditor working indefinitely so nobody
+   is ever locked in, move confidential off the first screen, and after a quiet period hand the
+   remaining escrow back through the committee's `restore`.
 
 ### 8.6 Review of the shielded mode (2026-09-08)
 
@@ -396,5 +410,5 @@ with a new rehearsal key and a testnet redeploy.
 | S8 | contract revision: signed `transfer`, key check, sender-paid RAM, relay removed; vert tests including "right key, wrong signer" and "wrong key, right signer". **Done 2026-09-08**: `transfer(sender, proof, publics)` with `require_auth`, the verifier input assembled on chain from the 28 action words plus the registered key, the sender name and the auditor key; withdrawals to self only; a testnet-only `reset`. Tests: wrong signer, another account presenting alice's proof, alice signing a proof made with bob's key, foreign auditor key, unregistered sender, redirected withdrawal, reset and re-init | tests green |
 | S9 | testnet redeploy of `xprshield`, demo script signs as the sender, auditor still names both parties. **Done 2026-09-08**: contract redeployed, tables reset and re-initialised with the revision-2 verifying key, the relay permission unlinked and deleted; paul123 deposited 500 XPR (8.4 ms), signed a shielded 123.4 XPR payment to testclient1 (tx `f13cf7f9…`, **14.2 ms CPU**, 28 public words in the action), testclient1 withdrew 100 XPR to itself (tx `28baaa69…`, 14.1 ms); `audit` names the receiver from the auditor key and the sender from the action | a transfer on the explorer shows the sender's authorisation and no receiver |
 | S10 | dapp: wallet-signed send and withdraw, relay key removed, copy updated. **Built 2026-09-08** (lesson: `/circuit/` files are cached for a year, so a new circuit needs a new file name; the first tester hit the old circuit and saw the prover's "Signal sender not found"): `prepareSend` / `prepareWithdraw` build the proof on the device and return the `transfer` action for the wallet; the relay key and the signing library are gone from the bundle; the derived key is memory-only for K1 wallets. Headless check against testnet: the browser's proof verifies against the circuit's key with the 33 words the contract assembles, and fails for another signer; the action carries 28 words and names paul123 as both sender and signer. **Closed 2026-09-08**: a tester's wallet-signed 1 XPR payment from the site reached paul123 (tx `4def499b…`; paul123's scan shows the new note) | a tester pays another tester from a phone |
-| S11 | Codex review (Brief 5) and fixes; circuit frozen; `reset` removed and `restore` added; phase-2 ceremony for the join-split circuit; `setvk`. **Partly built 2026-09-08**: reviews closed and fixes in; `restore` in, `reset` behind the `TESTNET` flag; the shielded product has its own site (testnet.shield.protonnz.com, live 2026-09-08; mainnet will be shield.protonnz.com) with Statement, Activity, Auditor and Settings tabs and its own How it works. The Auditor tab opens every note with the committee key and names the sender from the signed `spend` in history (the contract's tables do not keep the signer). Still open: the phase-2 ceremony and `setvk` | review closed, ceremony verified |
+| S11 | Codex review (Brief 5) and fixes; circuit frozen; `reset` removed and `restore` added; phase-2 ceremony for the join-split circuit; `setvk`. **Partly built 2026-09-08**: reviews closed and fixes in; `restore` in, `reset` behind the `TESTNET` flag; the shielded page has Statement, Activity, Auditor and Settings tabs and its own How it works at `/shielded/about` (a separate shield site was tried and retired the same day, see 8.5); recovery parity built (8.5). The Auditor tab opens every note with the committee key and names the sender from the signed `spend` in history (the contract's tables do not keep the signer). Still open: the phase-2 ceremony and `setvk` | review closed, ceremony verified |
 | S12 | mainnet account `xprshield` under the committee; contract deployed and hashed; tokens and caps set; the mainnet site's Shielded tab enabled; auditor tooling reading both ledgers | a shielded payment on mainnet |

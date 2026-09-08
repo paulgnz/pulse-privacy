@@ -36,26 +36,13 @@ export const HYPERIONS = NET.hyperions;
 export const HYPERION = NET.hyperions[0];
 export const CONTRACT = NET.contract;
 export const EXPLORER = NET.explorer;
-/**
- * Which product this build is: "private" (private.protonnz.com, the confidential token) or
- * "shield" (shield.protonnz.com, the shielded contract as the home page). Same code, one flag.
- */
-export const APP: "private" | "shield" = (import.meta.env.VITE_APP as "shield") === "shield" ? "shield" : "private";
-const SITES = {
-  private: { mainnet: "https://private.protonnz.com/", testnet: "https://testnet.private.protonnz.com/" },
-  shield: { mainnet: "https://shield.protonnz.com/", testnet: "https://testnet.shield.protonnz.com/" },
-};
+/** one site per network; the shielded page lives at /shielded on it */
+const SITES = { mainnet: "https://private.protonnz.com/", testnet: "https://testnet.private.protonnz.com/" };
 /** the other network's site, for the switch in the top bar */
-export const OTHER_NETWORK = NETWORK === "mainnet"
-  ? { label: "Testnet", url: SITES[APP].testnet }
-  : { label: "Mainnet", url: SITES[APP].mainnet };
-/** the sister product's site on the same network */
-export const OTHER_APP = APP === "shield"
-  ? { label: "Confidential", url: SITES.private[NETWORK] }
-  : { label: "Shielded", url: SITES.shield[NETWORK] };
+export const OTHER_NETWORK = NETWORK === "mainnet" ? { label: "Testnet", url: SITES.testnet } : { label: "Mainnet", url: SITES.mainnet };
 /** "XPR Network testnet" | "XPR Network" for copy */
 export const NETWORK_LABEL = NETWORK === "mainnet" ? "XPR Network" : "XPR Network testnet";
-export const APP_NAME = APP === "shield" ? "Shielded XPR" : "Confidential XPR";
+export const APP_NAME = "Confidential XPR";
 
 /** The shielded contract (docs/06 §8): testnet only for now. The sender's wallet signs every spend. */
 export const SHIELD = NETWORK === "testnet" ? { enabled: true, contract: "xprshield" } : { enabled: false, contract: "" };

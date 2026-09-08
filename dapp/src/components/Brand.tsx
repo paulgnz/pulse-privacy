@@ -1,4 +1,3 @@
-import { APP } from "../config";
 import { UNITS } from "../lib/format";
 import { Amount } from "./Amount";
 import { Line } from "./ui";
@@ -15,7 +14,7 @@ export const Brand = ({ href = "/", onNavigate }: { href?: string; onNavigate?: 
     }}
   >
     <img src="/xpr-network.svg" alt="XPR Network" height={22} />
-    <span>{APP === "shield" ? "Shielded" : "Confidential"}</span>
+    <span>Confidential</span>
   </a>
 );
 

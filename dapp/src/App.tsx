@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { APP, CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_APP, OTHER_NETWORK, SHIELD } from "./config";
+import { CONTRACT, CRYPTO_MODE, EXPLORER, NETWORK_LABEL, OTHER_NETWORK, SHIELD } from "./config";
 import { fmtUnits } from "./lib/format";
 import * as chain from "./lib/chain";
 import type { Session } from "./lib/chain";
@@ -32,12 +32,12 @@ type Tab = (typeof TABS)[number][0];
 const backend = selectBackend();
 
 /** path-based routes: "/" is the app, "/about" is How it works */
-type Route = "app" | "about" | "shielded";
+type Route = "app" | "about" | "shielded" | "shielded-about";
 // the shield site serves the shielded page at "/" and the confidential statement at "/private"
 const routeOf = (path: string): Route => {
   const p = path.replace(/\/+$/, "");
   if (p === "/about") return "about";
-  if (APP === "shield") return p === "/private" ? "app" : SHIELD.enabled ? "shielded" : "app";
+  if (p === "/shielded/about" && SHIELD.enabled) return "shielded-about";
   return p === "/shielded" && SHIELD.enabled ? "shielded" : "app";
 };
 
@@ -275,7 +275,7 @@ export default function App() {
       setSession(s);
       setKeypair(loadKeypair(s.auth.actor));
       event("connected");
-      if (route === "about") navigate("/");
+      if (route === "about") navigate("/"); else if (route === "shielded-about") navigate("/shielded");
     } catch (e) {
       setLoginErr((e as Error).message);
     } finally {
@@ -379,9 +379,9 @@ export default function App() {
       <div className="right">
         {session ? (
           <>
-            {inApp && route === "about" ? link("/", "Statement", false) : null}
-            {link("/about", "How it works", route === "about")}
-            {APP === "shield" ? <a className="textbtn quiet" href={OTHER_APP.url}>{OTHER_APP.label}</a> : SHIELD.enabled ? link("/shielded", "Shielded", route === "shielded") : null}
+            {inApp && (route === "about" || route === "shielded-about") ? link("/", "Statement", false) : null}
+            {link(route === "shielded" || route === "shielded-about" ? "/shielded/about" : "/about", "How it works", route === "about" || route === "shielded-about")}
+            {SHIELD.enabled ? link("/shielded", "Shielded", route === "shielded" || route === "shielded-about") : null}
             <a className="textbtn quiet netswitch" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
               Switch to {OTHER_NETWORK.label.toLowerCase()}
             </a>
@@ -395,8 +395,8 @@ export default function App() {
           </>
         ) : (
           <>
-            {link("/about", "How it works", route === "about")}
-            {APP === "shield" ? <a className="textbtn quiet" href={OTHER_APP.url}>{OTHER_APP.label}</a> : SHIELD.enabled ? link("/shielded", "Shielded", route === "shielded") : null}
+            {link(route === "shielded" || route === "shielded-about" ? "/shielded/about" : "/about", "How it works", route === "about" || route === "shielded-about")}
+            {SHIELD.enabled ? link("/shielded", "Shielded", route === "shielded" || route === "shielded-about") : null}
             <a className="textbtn quiet netswitch" href={OTHER_NETWORK.url} title={`Switch to the ${OTHER_NETWORK.label.toLowerCase()} site`}>
               Switch to {OTHER_NETWORK.label.toLowerCase()}
             </a>
@@ -409,7 +409,7 @@ export default function App() {
     </header>
   );
 
-  const footContract = route === "shielded" || (APP === "shield" && route === "about") ? SHIELD.contract : CONTRACT;
+  const footContract = route === "shielded" || route === "shielded-about" ? SHIELD.contract : CONTRACT;
   const foot = (
     <div className="foot">
       <span>
@@ -420,11 +420,11 @@ export default function App() {
     </div>
   );
 
-  if (route === "about") {
+  if (route === "about" || route === "shielded-about") {
     return (
       <div className="page">
         {header}
-        {APP === "shield" ? <ShieldAbout signedIn={!!session} onConnect={session ? undefined : doLogin} /> : <About signedIn={!!session} onConnect={session ? undefined : doLogin} />}
+        {route === "shielded-about" ? <ShieldAbout signedIn={!!session} onConnect={session ? undefined : doLogin} /> : <About signedIn={!!session} onConnect={session ? undefined : doLogin} />}
         {foot}
       </div>
     );
