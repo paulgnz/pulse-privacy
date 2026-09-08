@@ -26,6 +26,7 @@ in order. Nothing here is done until its line says so.
 | Auditor key: the committee's Baby Jubjub keypair for v2, generated offline; only the public key goes on chain (`init`) | Metallicus compliance | reuse v1's? decide |
 | Audit: `circuits/shielded/joinsplit.circom`, `contracts/xpr-shield-tsc/assembly/*.ts` (field, curve, Poseidon, tree, verifier glue), `dapp/src/lib/shield/*` | Metallicus | not scoped |
 | Launch caps: XPR pool 1,000,000 / deposit 10,000 / min 1; XMD pool 100,000 / deposit 100 / min 1 (same as v1's first caps) | product | proposed |
+| Domain: register `privatexpr.com` (free on 2026-09-08; take `.io` too). Switch at launch, not before: passkey users' saved keys are per origin, and v2 has no mainnet users yet. Layout: `privatexpr.com` v2 at `/`, v1 at `/old`; `testnet.privatexpr.com`; `ceremony.privatexpr.com` alongside the current ceremony address; `private.protonnz.com` and its testnet become permanent redirects with the path kept. Code: `SITES` in `dapp/src/config.ts`, Open Graph URLs in `dapp/index.html`, ceremony-web links, README, docs | Paul | not registered |
 
 ## 2. Build the mainnet contract
 
