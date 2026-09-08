@@ -42,6 +42,15 @@ The hash goes in this file and in the announcement, so anyone can compare it wit
 Built 2026-09-08 from the revision-4 contract with `backups`: wasm `078a5275…b299f`, abi `c62c7475…cb022a`
 (full hashes: `078a527525edffb391d2db583a4d7367d26026be16665a31719dbe9bb02b299f`, `c62c747536f08e4a5ab4ec6786908234c4c21641236dba52c76c02528dcb022a`). Rebuild and re-hash after any contract change.
 
+## 2a. Secure the account (one command, once Paul says go)
+
+```sh
+proton chain:set proton
+proton action eosio updateauth '{"account":"privatexpr","permission":"owner","parent":"","auth":{"threshold":1,"keys":[],"accounts":[{"permission":{"actor":"admin.proton","permission":"committee"},"weight":1}],"waits":[]}}' privatexpr@owner
+```
+
+After this only the committee (3 of 6) can change the account's keys; the operational key keeps `active` for deployment and setup, and moves to the committee after launch as with v1.
+
 ## 3. Deploy (day of)
 
 ```sh
@@ -77,3 +86,4 @@ Then move `privatexpr@active` to the committee (or an msig) as with v1.
 |---|---|---|
 | 2026-09-08 | v1 deposits closed on mainnet (`setlimits` 4,XPR and 6,XMD to 1 / 1); pools at closing: 10,361.2141 XPR, 1.000000 XMD | `e12ad6f06a3c…` (XPR), `0bbf1ef1520f…` (XMD) |
 | 2026-09-08 | v1 deposits closed on testnet (4,XPR and 6,XMD) | |
+| 2026-09-08 | mainnet account `privatexpr` created by paul123 with 8 KB RAM; owner and active on the operational key `PUB_K1_7YyTAN9…` (the same key as xprconf's active). Next: owner → `admin.proton@committee` (see below), more RAM before deploy | explorer.xprnetwork.org/account/privatexpr |
