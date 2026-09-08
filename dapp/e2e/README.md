@@ -24,6 +24,7 @@ registered with the existing ones). `E2E_OUT` is where screenshots go (default `
 | `shield-popup.mjs` | a blocked wallet window fails fast; recipient suggestions |
 | `live-check.mjs` | the deployed sites: brand, heading, header links |
 | `bad-node.mjs` | one node's outputs poisoned (duplicate row, wrong commitment): the scan still completes from the healthy nodes (run against the preview build, port 5179) |
+| `lying-node.mjs` | the review series distilled: forged output rows do not change the balance, a forged payer and a forged withdrawal are not shown in Activity, a swapped auditor key stops the app, Forget leaves nothing behind (preview build, port 5179; exits non-zero on any failure) |
 
 Note: in the Vite dev server, React 19's development-only performance tracing serialises component
 props and throws on BigInt values during slow renders ("Do not know how to serialize a BigInt",
