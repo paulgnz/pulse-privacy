@@ -90,6 +90,13 @@ function encryptWith(shared: Pt, plain: bigint[]) { const k = padKey(shared); re
 function decryptWith(shared: Pt, c: bigint[]) { const k = padKey(shared); return c.map((x, m) => fmod(x - hash2(k, BigInt(m)))); }
 const ecdh = (scalar: bigint, point: Pt) => mul(point, scalar);
 
+/** one field element sealed to a public key with the note scheme: a fresh ephemeral key, then plain + Poseidon mask */
+export function sealTo(pk: Pt, plain: bigint): { epk: Pt; c: bigint } {
+  const esk = randScalar();
+  return { epk: mul(G, esk), c: encryptWith(ecdh(esk, pk), [plain])[0] };
+}
+export const openSealed = (ask: bigint, epk: Pt, c: bigint): bigint => decryptWith(ecdh(ask, epk), [c])[0];
+
 const TWO64 = 1n << 64n, TWO72 = 1n << 72n;
 export const pack = (v: bigint, token: bigint, parity = 0n) => v + token * TWO64 + parity * TWO72;
 export const unpack = (w: bigint): [bigint, bigint, bigint] => [w % TWO64, (w / TWO64) % 256n, (w / TWO72) & 1n];

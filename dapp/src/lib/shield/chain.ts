@@ -265,6 +265,18 @@ export async function prepareWithdraw(s: Session, keys: ShieldKeys, cfg: ShieldC
 
 // ---- wallet-signed actions ----
 
+export interface BackupRow { phrase: string; committee: string }
+/** the account's recovery copies on chain, or null when none */
+export async function backupRow(actor: string): Promise<BackupRow | null> {
+  const r = await rpc<{ rows: { owner: string; phrase: string; committee: string }[] }>("get_table_rows", { code: SHIELD.contract, scope: SHIELD.contract, table: "backups", json: true, limit: 1, lower_bound: actor, upper_bound: actor });
+  const row = r.rows[0];
+  return row && row.owner === actor ? { phrase: row.phrase, committee: row.committee } : null;
+}
+/** store, replace or clear the owner's recovery copies; hex without 0x, empty to clear */
+export function setBackupAction(s: Session, phrase: string, committee: string) {
+  return { account: SHIELD.contract, name: "setbackup", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { owner: s.auth.actor, phrase, committee } };
+}
+
 export function registerAction(s: Session, pk: Pt) {
   return { account: SHIELD.contract, name: "register", authorization: [{ actor: s.auth.actor, permission: s.auth.permission }], data: { owner: s.auth.actor, pubkey: ptHex(pk) } };
 }

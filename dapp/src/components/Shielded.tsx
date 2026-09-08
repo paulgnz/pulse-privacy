@@ -6,12 +6,13 @@ import type { Pt } from "../lib/crypto/babyjub";
 import { eq } from "../lib/crypto/babyjub";
 import { amountProblem, fmtUnits, parseUnits } from "../lib/format";
 import { keygen, randScalar } from "../lib/shield/notes";
+import { committeeCopy, openPhraseCopy, parseSecretInput, phraseCopy } from "../lib/shield/backup";
 import type { OwnedNote, ShieldKeys } from "../lib/shield/notes";
 import * as sh from "../lib/shield/chain";
-import type { Prefetched, ShieldConfig } from "../lib/shield/chain";
+import type { BackupRow, Prefetched, ShieldConfig } from "../lib/shield/chain";
 import { unlockShield } from "../lib/unlock";
 import type { Token } from "../lib/token";
-import { ShieldActivity, ShieldAuditor, ShieldSettings } from "./ShieldPages";
+import { ShieldActivity, ShieldAuditor, ShieldRecoveryStep, ShieldSettings } from "./ShieldPages";
 import { Amount } from "./Amount";
 import { AmountInput, Field, Line, Note, Progress, TokenIcon } from "./ui";
 
@@ -64,10 +65,13 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   const [peers, setPeers] = useState<string[]>([]);
   const [unfinished, setUnfinished] = useState<{ id: number; amount: bigint; sym: string; r: string }[]>([]);
   const [firstAsk, setFirstAsk] = useState<bigint | null>(null);
-  const [savedSecret, setSavedSecret] = useState<string | null>(null);
+  const [keyDerived, setKeyDerived] = useState(false);
+  const [backup, setBackup] = useState<BackupRow | null | undefined>(undefined);
+  const [pendingBackup, setPendingBackup] = useState<{ passphrase: string; committee: boolean } | null>(null);
   const [restoreSecret, setRestoreSecret] = useState("");
+  const [restorePass, setRestorePass] = useState("");
+  const [restoreWith, setRestoreWith] = useState<"phrase" | "file">("phrase");
   const [tab, setTab] = useState<ShieldTab>(() => { const t = new URLSearchParams(location.search).get("tab"); return SHIELD_TABS.some(([k]) => k === t) ? (t as ShieldTab) : "statement"; });
-  const [secretCopied, setSecretCopied] = useState(false);
 
   const shieldTokens = useMemo(() => (cfg?.tokens ?? []).map((t) => t.token).sort((a, b) => (a.code === "XPR" ? -1 : b.code === "XPR" ? 1 : a.code.localeCompare(b.code))), [cfg]);
   const token = useMemo(() => shieldTokens.find((t) => t.code === tokenCode) ?? shieldTokens[0] ?? tokens[0], [shieldTokens, tokenCode, tokens]);
@@ -83,19 +87,17 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     seq.current += 1;
     const mine = seq.current;
     setKeys(null); setRegistered(undefined); setNotes(null); setSpent([]); setPub({}); setPeers([]); setShowSpent(false); setNotice(null); setForm(null); setStage(null);
-    setFirstAsk(null); setSavedSecret(null); setSecretCopied(false);
+    setFirstAsk(null); setKeyDerived(false); setBackup(undefined); setPendingBackup(null); setRestoreSecret(""); setRestorePass("");
     pre.current = null;
     if (!actor) return;
     // a saved key from an earlier visit (passkey wallets, or a wallet that signs differently each time);
     // until its secret has been copied once, it is shown again and registration stays gated
     try {
       const saved = localStorage.getItem(SAVED(actor));
-      if (saved) {
-        setKeys(keygen(BigInt(saved)));
-        if (localStorage.getItem(BACKED(actor)) !== "1") setSavedSecret(BigInt(saved).toString(16).padStart(64, "0"));
-      }
+      if (saved) setKeys(keygen(BigInt(saved)));
     } catch { /* ignore */ }
     sh.registeredKey(actor).then((k) => { if (seq.current === mine) setRegistered(k); }).catch(() => { if (seq.current === mine) setRegistered(null); });
+    sh.backupRow(actor).then((b) => { if (seq.current === mine) setBackup(b); }).catch(() => { if (seq.current === mine) setBackup(null); });
   }, [actor, session]);
 
   const refresh = useCallback(async () => {
@@ -130,6 +132,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       throw new Error("This wallet derives a different key from the one registered for this account. If you registered from another device with a saved key, restore that key here, or contact the operator.");
     }
     if (save) { try { localStorage.setItem(SAVED(actor), ask.toString()); } catch { /* ignore */ } }
+    setKeyDerived(!save);
     setKeys(k);
   };
   const unlock = async () => {
@@ -146,7 +149,6 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       } else {
         // signatures differ: this wallet cannot re-derive; keep a generated key in the browser
         const gen = randScalar();
-        setSavedSecret(gen.toString(16).padStart(64, "0"));
         adopt(gen, true);
       }
     } catch (e) {
@@ -154,29 +156,64 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     } finally { setBusy(false); }
   };
 
-  /** a passkey wallet on a new device: the secret copied from Settings on the old one */
-  const restore = () => {
-    if (!session || !registered) return;
+  /** a saved key arriving on a new device: from the key file, or from the phrase copy on chain */
+  const adoptRestored = (ask: bigint) => {
+    if (!registered) return;
+    const k = keygen(ask);
+    if (!eq(k.pk, registered)) throw new Error("That does not open to the key registered for this account.");
+    try { localStorage.setItem(SAVED(actor), ask.toString()); localStorage.setItem(BACKED(actor), "1"); } catch { /* ignore */ }
+    setRestoreSecret(""); setRestorePass("");
+    setKeyDerived(false);
+    setKeys(k);
+  };
+  const restoreFromFile = () => {
     setNotice(null);
-    try {
-      const t = restoreSecret.trim().replace(/^0x/i, "");
-      if (!/^[0-9a-f]{64}$/i.test(t)) throw new Error("A secret is 64 hexadecimal characters.");
-      const ask = BigInt("0x" + t);
-      const k = keygen(ask);
-      if (!eq(k.pk, registered)) throw new Error("That secret does not match the key registered for this account.");
-      try { localStorage.setItem(SAVED(actor), ask.toString()); localStorage.setItem(BACKED(actor), "1"); } catch { /* ignore */ }
-      setRestoreSecret("");
-      setKeys(k);
-    } catch (e) { setNotice({ ok: false, text: (e as Error).message }); }
+    try { adoptRestored(parseSecretInput(restoreSecret)); } catch (e) { setNotice({ ok: false, text: (e as Error).message }); }
+  };
+  const restoreFromPhrase = async () => {
+    if (!backup?.phrase) return;
+    setBusy(true); setNotice(null);
+    try { adoptRestored(await openPhraseCopy(backup.phrase, restorePass)); }
+    catch (e) { setNotice({ ok: false, text: /passphrase/.test((e as Error).message) ? "Those words do not open the recovery copy. Check the order and spelling." : (e as Error).message }); }
+    finally { setBusy(false); }
+  };
+
+  /** re-read the recovery row until the chain shows the change */
+  const refreshBackup = async (changed: (b: BackupRow | null) => boolean) => {
+    for (let i = 0; i < 12; i++) {
+      const b = await sh.backupRow(actor).catch(() => undefined);
+      if (b !== undefined && changed(b)) { setBackup(b); return; }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  };
+  const savePhrase = async (passphrase: string) => {
+    if (!session || !keys) return;
+    const phrase = await phraseCopy(keys.ask, passphrase);
+    await broadcast(session, [sh.setBackupAction(session, phrase, backup?.committee ?? "")]);
+    try { localStorage.setItem(BACKED(actor), "1"); } catch { /* ignore */ }
+    await refreshBackup((b) => b?.phrase === phrase);
+  };
+  const keepCommittee = async () => {
+    if (!session || !keys || !cfg) return;
+    const committee = committeeCopy(keys.ask, cfg.auditorPk);
+    await broadcast(session, [sh.setBackupAction(session, backup?.phrase ?? "", committee)]);
+    await refreshBackup((b) => b?.committee === committee);
   };
 
   const register = async () => {
     if (!session || !keys) return;
     setBusy(true); setNotice(null);
     try {
-      await broadcast(session, [sh.registerAction(session, keys.pk)]);
+      const actions: unknown[] = [sh.registerAction(session, keys.pk)];
+      let row: BackupRow | null = null;
+      if (pendingBackup && cfg) {
+        row = { phrase: await phraseCopy(keys.ask, pendingBackup.passphrase), committee: pendingBackup.committee ? committeeCopy(keys.ask, cfg.auditorPk) : "" };
+        actions.push(sh.setBackupAction(session, row.phrase, row.committee));
+      }
+      await broadcast(session, actions);
       setRegistered(keys.pk);
-      setNotice({ ok: true, text: "Registered. Others can now pay you shielded." });
+      if (row) { setBackup(row); setPendingBackup(null); try { localStorage.setItem(BACKED(actor), "1"); } catch { /* ignore */ } }
+      setNotice({ ok: true, text: row ? "Registered, with your recovery copies stored. Others can now pay you shielded." : "Registered. Others can now pay you shielded." });
     } catch (e) {
       setNotice({ ok: false, text: (e as Error).message });
     } finally { setBusy(false); }
@@ -229,11 +266,16 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   );
 
   // the setup steps for this wallet and account
-  const twoSignatures = !!session && !deterministicSigner(session) && !registered;
-  const setupSteps = ["Connect wallet", registered ? "Unlock your key" : "Create your key", ...(twoSignatures ? ["Confirm your key"] : []), ...(registered ? [] : ["Register"]), "Ready"];
   const hasSaved = (() => { try { return !!localStorage.getItem(SAVED(actor)); } catch { return false; } })();
-  // a passkey wallet cannot re-derive: the key lives where it was made, and moves only as a copied secret
-  const needsSecret = !!session && !!registered && !deterministicSigner(session) && !hasSaved;
+  const passkey = !!session && !deterministicSigner(session);
+  // a passkey wallet cannot re-derive: the key lives where it was made, and moves only as a recovery copy
+  const needsRestore = passkey && !!registered && !hasSaved && !keys;
+  const setupSteps = needsRestore
+    ? ["Connect wallet", "Restore your key", "Ready"]
+    : registered
+      ? ["Connect wallet", "Unlock your key", "Ready"]
+      : ["Connect wallet", "Create your key", ...(passkey ? ["Confirm your key", "Recovery phrase"] : []), "Register", "Ready"];
+  const stepIndex = (label: string) => Math.max(0, setupSteps.indexOf(label));
 
   if (!session) {
     return (
@@ -250,62 +292,80 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
   if (cfg === null) return <section className="statement">{intro}<Note level="error">The shielded contract is not reachable right now.</Note></section>;
 
   if (!keys) {
+    if (needsRestore) {
+      return (
+        <section className="statement">
+          {intro}
+          <SetupProgress steps={setupSteps} current={1} />
+          <h3>Restore your shielded key on this device</h3>
+          <p className="muted">Your wallet uses passkeys, which sign differently each time, so your shielded key is a saved key rather than one derived from a signature. It lives in the browser where you registered and comes to a new device only through a recovery copy.</p>
+          {notice ? <Note level={notice.ok ? "ok" : "error"}>{notice.text}</Note> : null}
+          {backup === undefined ? <div className="empty">Checking your recovery copies</div> : restoreWith === "phrase" && backup?.phrase ? (
+            <>
+              <Field label="Recovery phrase" hint="The seven words, or the passphrase you chose, from when you set up recovery.">
+                <input type="password" value={restorePass} onChange={(e) => setRestorePass(e.target.value)} autoComplete="current-password" autoFocus />
+              </Field>
+              <div className="row" style={{ marginTop: 6 }}>
+                <button className="btn private" onClick={restoreFromPhrase} disabled={busy || !restorePass.trim()}>{busy ? "Restoring" : "Restore"}</button>
+                <button className="textbtn quiet" onClick={() => setRestoreWith("file")}>I have the key file instead</button>
+              </div>
+            </>
+          ) : (
+            <>
+              {!backup?.phrase ? <p className="small muted" style={{ marginBottom: 12 }}>{backup?.committee ? "No recovery phrase was set for this account. The XPR Network committee holds an encrypted copy of the key and can return it after you prove you own the account; otherwise use the key file." : "No recovery phrase and no committee copy were set for this account. Only the key file, or the browser where you registered, can restore the key."}</p> : null}
+              <Field label="Key file, or the secret inside it" hint="Paste the contents of the key file downloaded from Settings on the device where you registered.">
+                <textarea className="mono" rows={3} value={restoreSecret} onChange={(e) => setRestoreSecret(e.target.value)} placeholder="{ … } or 0x…" spellCheck={false} />
+              </Field>
+              <div className="row" style={{ marginTop: 6 }}>
+                <button className="btn private" onClick={restoreFromFile} disabled={busy || !restoreSecret.trim()}>Restore</button>
+                {backup?.phrase ? <button className="textbtn quiet" onClick={() => setRestoreWith("phrase")}>Use the recovery phrase instead</button> : null}
+              </div>
+            </>
+          )}
+          <p className="small muted" style={{ marginTop: 14 }}>The registration cannot be replaced: if no copy of the key exists anywhere, the notes under it cannot be read.</p>
+        </section>
+      );
+    }
     return (
       <section className="statement">
         {intro}
-        <SetupProgress steps={setupSteps} current={firstAsk !== null ? 2 : 1} />
+        <SetupProgress steps={setupSteps} current={firstAsk !== null ? stepIndex("Confirm your key") : registered ? stepIndex("Unlock your key") : stepIndex("Create your key")} />
         <h3>{registered ? `Unlock shielded payments for ${actor}` : `Set up shielded payments for ${actor}`}</h3>
-        {needsSecret ? (
-          <p className="muted">This account is registered, and your wallet uses passkeys, which sign differently each time. So your shielded key was not derived from a signature: it is kept in the browser where you registered. On that device, Settings shows it as a secret. Paste the secret here to use this device too.</p>
-        ) : session && deterministicSigner(session) ? (
+        {!passkey ? (
           <p className="muted">One signature derives your shielded key from your wallet. Nothing is sent to the chain by that signature, and the same wallet derives the same key on any device. The key reads your notes and builds proofs; moving anything still needs your wallet's signature.</p>
         ) : hasSaved ? (
           <p className="muted">Your shielded key is saved in this browser. One wallet signature confirms it is you and unlocks it. The key reads your notes and builds proofs; moving anything still needs your wallet's signature.</p>
         ) : (
-          <p className="muted">Two signatures from your wallet show whether it can derive a shielded key. Wallets with a standard key sign the same way every time, and derive the same key on any device. Passkey wallets sign differently each time, so this browser keeps a generated key instead and shows you its secret once. Nothing is sent to the chain by these signatures.</p>
+          <p className="muted">Two signatures from your wallet show whether it can derive a shielded key. Wallets with a standard key sign the same way every time, and derive the same key on any device. Passkey wallets sign differently each time, so this browser keeps a generated key instead, with a recovery phrase you write down next. Nothing is sent to the chain by these signatures.</p>
         )}
         {notice ? <Note level={notice.ok ? "ok" : "error"}>{notice.text}</Note> : null}
-        {needsSecret ? (
-          <>
-            <Field label="Secret from your other device" hint="64 hexadecimal characters, from Settings on the device where you registered.">
-              <input className="mono" value={restoreSecret} onChange={(e) => setRestoreSecret(e.target.value)} placeholder="0x…" autoComplete="off" spellCheck={false} />
-            </Field>
-            <div className="row" style={{ marginTop: 6 }}>
-              <button className="btn private" onClick={restore} disabled={busy || !restoreSecret.trim()}>Restore key</button>
-              <button className="btn secondary" onClick={unlock} disabled={busy}>{busy ? "Waiting for your wallet" : "Sign to unlock instead"}</button>
-            </div>
-            <p className="small muted" style={{ marginTop: 10 }}>Signing works only in the browser that holds the key. If the secret is lost on every device, the notes under it cannot be read; the registration cannot be replaced.</p>
-          </>
-        ) : (
-          <>
-            <div className="row" style={{ marginTop: 14 }}>
-              <button className="btn private" onClick={unlock} disabled={busy}>{busy ? "Waiting for your wallet" : firstAsk !== null ? "Sign again to confirm" : registered ? "Sign to unlock" : "Sign to create your key"}</button>
-            </div>
-            {firstAsk !== null ? <p className="small muted" style={{ marginTop: 10 }}>Once more: two matching signatures prove this wallet can re-derive the key on any device.</p> : null}
-          </>
-        )}
+        <div className="row" style={{ marginTop: 14 }}>
+          <button className="btn private" onClick={unlock} disabled={busy}>{busy ? "Waiting for your wallet" : firstAsk !== null ? "Sign again to confirm" : registered ? "Sign to unlock" : "Sign to create your key"}</button>
+        </div>
+        {firstAsk !== null ? <p className="small muted" style={{ marginTop: 10 }}>Once more: two matching signatures prove this wallet can re-derive the key on any device.</p> : null}
       </section>
     );
   }
   if (!registered) {
+    if (!keyDerived && !pendingBackup) {
+      return (
+        <section className="statement">
+          {intro}
+          <SetupProgress steps={setupSteps} current={stepIndex("Recovery phrase")} />
+          <ShieldRecoveryStep actor={actor} ask={keys.ask} onContinue={(passphrase, committee) => { setPendingBackup({ passphrase, committee }); }} />
+        </section>
+      );
+    }
     return (
       <section className="statement">
         {intro}
-        <SetupProgress steps={setupSteps} current={setupSteps.length - 2} />
+        <SetupProgress steps={setupSteps} current={stepIndex("Register")} />
         <h3>Register your shielded key</h3>
-        <p className="muted">Publishes the public half of your key under your account name, so people can pay you by name. One wallet signature; it is the only time your account and this key appear together.</p>
-        {savedSecret ? (
-          <Note level="warn">
-            <p>Your wallet signs differently each time, so this browser keeps a generated key instead. It exists nowhere else. Copy this secret and keep it where you keep important things: without it, a lost or cleared browser means these notes are gone.</p>
-            <div className="secret" aria-label="Your shielded secret"><code>{savedSecret}</code></div>
-            <div className="row" style={{ marginTop: 10 }}>
-              <button className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(savedSecret); setSecretCopied(true); try { localStorage.setItem(BACKED(actor), "1"); } catch { /* ignore */ } } catch { /* selectable */ } }}>{secretCopied ? "Copied" : "Copy secret"}</button>
-            </div>
-          </Note>
-        ) : null}
+        <p className="muted">Publishes the public half of your key under your account name, so people can pay you by name. One wallet signature; it is the only time your account and this key appear together.{pendingBackup ? ` The same transaction stores your recovery copies: the phrase copy${pendingBackup.committee ? " and the committee copy" : ""}.` : ""}</p>
         {notice ? <Note level={notice.ok ? "ok" : "error"}>{notice.text}</Note> : null}
         <div className="row" style={{ marginTop: 14 }}>
-          <button className="btn private" onClick={register} disabled={busy || (!!savedSecret && !secretCopied)} title={savedSecret && !secretCopied ? "Copy the secret first" : undefined}>{busy ? "Waiting for your wallet" : "Register"}</button>
+          <button className="btn private" onClick={register} disabled={busy}>{busy ? "Waiting for your wallet" : "Register"}</button>
+          {pendingBackup ? <button className="textbtn quiet" onClick={() => setPendingBackup(null)} disabled={busy}>Back</button> : null}
         </div>
       </section>
     );
@@ -330,11 +390,12 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       ))}
     </nav>
   );
+  const fileSaved = (() => { try { return localStorage.getItem(BACKED(actor)) === "1"; } catch { return false; } })();
   const forget = () => {
     try { localStorage.removeItem(SAVED(actor)); localStorage.removeItem(BACKED(actor)); } catch { /* ignore */ }
-    setKeys(null); setNotes(null); setSpent([]); setSavedSecret(null); setSecretCopied(false); setFirstAsk(null); setTab("statement");
+    setKeys(null); setNotes(null); setSpent([]); setFirstAsk(null); setKeyDerived(false); setPendingBackup(null); setTab("statement");
   };
-  if (tab === "settings") return <>{nav}<section className="statement" aria-label="Shielded settings"><ShieldSettings session={session} keys={keys} registered={registered} savedSecret={savedSecret} onForget={forget} onCopiedSecret={() => { setSecretCopied(true); try { localStorage.setItem(BACKED(actor), "1"); } catch { /* ignore */ } }} /></section></>;
+  if (tab === "settings") return <>{nav}<section className="statement" aria-label="Shielded settings"><ShieldSettings actor={actor} keys={keys} registered={registered} derived={keyDerived} backup={backup} busy={busy} onSavePhrase={async (p) => { setBusy(true); try { await savePhrase(p); } finally { setBusy(false); } }} onKeepCommittee={async () => { setBusy(true); try { await keepCommittee(); } finally { setBusy(false); } }} onForget={forget} /></section></>;
   if (tab === "activity") return <>{nav}<section className="statement" aria-label="Shielded activity"><ShieldActivity cfg={cfg} notes={notes} spent={spent} token={token} revealed={revealed} onReveal={toggleReveal} /></section></>;
   if (tab === "auditor") return <>{nav}<section className="statement" aria-label="Shielded auditor"><ShieldAuditor cfg={cfg} token={token} /></section></>;
 
@@ -363,12 +424,11 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
           </div>
         </Note>
       ) : null}
-      {savedSecret && !secretCopied ? (
+      {!keyDerived && backup !== undefined && !backup?.phrase && !backup?.committee && !fileSaved ? (
         <Note level="warn">
-          <p>This browser keeps a generated shielded key that has never been copied. Without it, a lost or cleared browser means these notes are gone.</p>
-          <div className="secret" aria-label="Your shielded secret"><code>{savedSecret}</code></div>
-          <div className="row" style={{ marginTop: 10 }}>
-            <button className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(savedSecret); setSecretCopied(true); try { localStorage.setItem(BACKED(actor), "1"); } catch { /* ignore */ } } catch { /* selectable */ } }}>{secretCopied ? "Copied" : "Copy secret"}</button>
+          <p>Recovery is not set up. Your shielded key is saved in this browser only: without a recovery copy, a lost or cleared browser means these notes are gone.</p>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="btn secondary" onClick={() => setTab("settings")}>Set up recovery</button>
           </div>
         </Note>
       ) : null}

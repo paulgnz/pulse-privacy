@@ -194,7 +194,20 @@ if (cmd === "reset") {
     const name = (pk) => names.get(hex(pk[0])) ?? `unregistered ${hex(pk[0]).slice(0, 10)}…`;
     console.log(`  leaf ${index}: → ${name(n.pk)} ${n.v} of token ${n.token}${n.valid ? "" : "  (DOES NOT MATCH THE COMMITMENT)"}  (sender: named in the signed action)`);
   }
+} else if (cmd === "recover") {
+  // the committee returns an account's shielded key from its committee copy, after the owner
+  // proves they own the account (out of band); prints the secret for the owner's key file
+  const account = process.argv[3];
+  const b = (await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "backups", json: true, limit: 1, lower_bound: account, upper_bound: account })).rows[0];
+  if (!b || b.owner !== account || !b.committee) { console.log(`${account}: no committee copy on chain`); process.exit(1); }
+  const [w, c] = words(b.committee);
+  const ask = N.openSealed(K.auditor.ask, N.decompressPoint(w), c);
+  const reg = (await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "keys", json: true, limit: 1, lower_bound: account, upper_bound: account })).rows[0];
+  const pk = N.keygen(ask).pk;
+  const matches = reg && reg.pubkey === hex(pk[0]) + hex(pk[1]);
+  console.log(`${account}: committee copy opens to a key that ${matches ? "MATCHES" : "DOES NOT MATCH"} the registration`);
+  if (matches) console.log(JSON.stringify({ format: "pulse-privacy/shieldkey/v1", account, network: "xpr-testnet", secret: "0x" + hex(ask) }, null, 2));
 } else {
-  console.log("commands: keys | setup | reset | deposit <who> <amt> | finish <who> | scan <who> | send <from> <to> <amt> | withdraw <who> <amt> | audit");
+  console.log("commands: keys | setup | reset | deposit <who> <amt> | finish <who> | scan <who> | send <from> <to> <amt> | withdraw <who> <amt> | audit | recover <account>");
 }
 process.exit(0); // snarkjs leaves worker threads alive
