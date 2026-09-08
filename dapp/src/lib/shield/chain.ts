@@ -338,19 +338,22 @@ export interface ShieldLedgerRow {
   valid: boolean;
 }
 
-/** map commitment → the account that signed the spend creating it, from action history where available */
-async function sendersByCommitment(): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
+/** one signed spend from history: who, when, the nullifiers and commitments it carried, the public amount */
+export interface SpendRecord { owner: string; ts: string; trx: string; nf: string[]; cm: string[]; amount: bigint; tokenId: bigint }
+/** every spend on the contract, oldest first, from the first history node that answers; [] when none does */
+async function spendHistory(): Promise<SpendRecord[] | null> {
   for (const h of HYPERIONS) {
     try {
+      const out: SpendRecord[] = [];
       let skip = 0;
-      for (let page = 0; page < 20; page++) {
+      for (let page = 0; page < 50; page++) {
         const r = await fetch(`${h}/v2/history/get_actions?account=${SHIELD.contract}&filter=${SHIELD.contract}:spend&limit=100&skip=${skip}&sort=asc`, { signal: AbortSignal.timeout(15000) });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const j = (await r.json()) as { actions: { act: { data: { owner?: string; publics?: string } } }[] };
+        const j = (await r.json()) as { actions: { timestamp: string; trx_id: string; act: { data: { owner?: string; publics?: string; amount?: string | number; token_id?: string | number } } }[] };
         for (const a of j.actions) {
           const p = (a.act.data.publics ?? "").toLowerCase();
-          if (a.act.data.owner && p.length >= 4 * 64) { out.set(p.slice(2 * 64, 3 * 64), a.act.data.owner); out.set(p.slice(3 * 64, 4 * 64), a.act.data.owner); }
+          if (!a.act.data.owner || p.length < 4 * 64) continue;
+          out.push({ owner: a.act.data.owner, ts: a.timestamp, trx: a.trx_id, nf: [p.slice(0, 64), p.slice(64, 128)], cm: [p.slice(128, 192), p.slice(192, 256)], amount: BigInt(a.act.data.amount ?? 0), tokenId: BigInt(a.act.data.token_id ?? 0) });
         }
         if (j.actions.length < 100) break;
         skip += 100;
@@ -358,7 +361,101 @@ async function sendersByCommitment(): Promise<Map<string, string>> {
       return out;
     } catch { /* next history node */ }
   }
+  return null;
+}
+/** map commitment → the account that signed the spend creating it */
+async function sendersByCommitment(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const sp of (await spendHistory()) ?? []) for (const cm of sp.cm) out.set(cm, sp.owner);
   return out;
+}
+
+/** the account's own deposits from history: note random value → when */
+async function depositHistory(actor: string): Promise<Map<string, { ts: string; trx: string }>> {
+  const out = new Map<string, { ts: string; trx: string }>();
+  for (const h of HYPERIONS) {
+    try {
+      let skip = 0;
+      for (let page = 0; page < 20; page++) {
+        const r = await fetch(`${h}/v2/history/get_actions?account=${actor}&filter=${SHIELD.contract}:deposit&limit=100&skip=${skip}&sort=asc`, { signal: AbortSignal.timeout(15000) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = (await r.json()) as { actions: { timestamp: string; trx_id: string; act: { data: { owner?: string; r?: string } } }[] };
+        for (const a of j.actions) if (a.act.data.owner === actor && a.act.data.r) out.set(a.act.data.r.toLowerCase(), { ts: a.timestamp, trx: a.trx_id });
+        if (j.actions.length < 100) break;
+        skip += 100;
+      }
+      return out;
+    } catch { /* next */ }
+  }
+  return out;
+}
+
+/** what the sender's browser remembered about its own payments: the chain does not hold the receiver */
+const SENDS = (actor: string) => `pulse-privacy/shield/${actor}/sends`;
+export function rememberSend(actor: string, trx: string, to: string) {
+  try {
+    const cur = JSON.parse(localStorage.getItem(SENDS(actor)) ?? "{}") as Record<string, string>;
+    cur[trx] = to;
+    localStorage.setItem(SENDS(actor), JSON.stringify(cur));
+  } catch { /* ignore */ }
+}
+const rememberedSends = (actor: string): Record<string, string> => { try { return JSON.parse(localStorage.getItem(SENDS(actor)) ?? "{}") as Record<string, string>; } catch { return {}; } };
+
+export interface ActivityEvent {
+  kind: "deposit" | "received" | "sent" | "withdrew";
+  ts: string | null; // history time, ISO without zone (UTC); null when history is unavailable
+  trx: string | null;
+  amount: bigint;
+  token: bigint;
+  counterparty: string | null; // who paid (received), whom (sent, if this browser remembers), the account (withdrew)
+  notes: number[]; // the notes involved: created (deposit, received) or spent (sent, withdrew)
+  change?: bigint;
+  changeNote?: number;
+}
+
+/**
+ * The account's activity as events rather than notes: deposits, payments received (the payer
+ * is the account that signed the spend), payments sent (amount from the note arithmetic, the
+ * receiver from this browser's memory), withdrawals. Falls back to notes alone when no history
+ * node answers.
+ */
+export async function activity(keys: ShieldKeys, actor: string, res: ScanResult): Promise<{ events: ActivityEvent[]; history: boolean }> {
+  const mine = [...res.notes, ...res.spent];
+  const [spends, deposits, leafRows] = await Promise.all([spendHistory(), depositHistory(actor), rows<{ index: string | number; cm: string }>("leaves", "index")]);
+  const onChain = new Set(leafRows.map((l) => l.cm.toLowerCase()));
+  const byCm = new Map(mine.map((n) => [hex32(n.cm), n]));
+  const byNf = new Map(mine.map((n) => [hex32(nullifier(keys.nk, n.index)), n]));
+  const sends = rememberedSends(actor);
+  const events: ActivityEvent[] = [];
+  for (const n of mine) {
+    if (n.kind !== "deposit") continue;
+    const d = deposits.get(hex32(n.r));
+    events.push({ kind: "deposit", ts: d?.ts ?? null, trx: d?.trx ?? null, amount: n.v, token: n.token, counterparty: actor, notes: [n.index] });
+  }
+  const seen = new Set<number>();
+  for (const sp of spends ?? []) {
+    // a spend whose outputs are not leaves on the current chain is stale history (a testnet reset)
+    if (!sp.cm.every((c) => onChain.has(c))) continue;
+    const created = sp.cm.map((c) => byCm.get(c)).filter((n): n is OwnedNote => !!n);
+    const spent = sp.nf.map((f) => byNf.get(f)).filter((n): n is OwnedNote => !!n);
+    if (sp.owner !== actor) {
+      for (const n of created) { events.push({ kind: "received", ts: sp.ts, trx: sp.trx, amount: n.v, token: n.token, counterparty: sp.owner, notes: [n.index] }); seen.add(n.index); }
+      continue;
+    }
+    if (!spent.length && !created.length) continue;
+    const sumIn = spent.reduce((a, n) => a + n.v, 0n);
+    const change = created.reduce((a, n) => a + n.v, 0n);
+    const token = spent[0]?.token ?? created[0]?.token ?? 0n;
+    created.forEach((n) => seen.add(n.index));
+    const changeNote = created.find((n) => n.v > 0n)?.index;
+    if (sp.amount > 0n) events.push({ kind: "withdrew", ts: sp.ts, trx: sp.trx, amount: sp.amount, token: sp.tokenId || token, counterparty: actor, notes: spent.map((n) => n.index), change, changeNote });
+    const sent = sumIn - change - sp.amount;
+    if (sent > 0n) events.push({ kind: "sent", ts: sp.ts, trx: sp.trx, amount: sent, token, counterparty: sends[sp.trx] ?? null, notes: spent.map((n) => n.index), change, changeNote });
+  }
+  // sealed notes with no matching spend in history (history behind, or none): show as received from an unknown payer
+  for (const n of mine) if (n.kind !== "deposit" && !seen.has(n.index)) events.push({ kind: "received", ts: null, trx: null, amount: n.v, token: n.token, counterparty: null, notes: [n.index] });
+  events.sort((a, b) => (b.ts ?? "9").localeCompare(a.ts ?? "9") || Math.max(...b.notes) - Math.max(...a.notes));
+  return { events, history: spends !== null };
 }
 
 /** every note in the ledger, opened with the auditor's spending scalar (hex or decimal) */

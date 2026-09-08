@@ -3,7 +3,7 @@ import { EXPLORER, SHIELD } from "../config";
 import type { Pt } from "../lib/crypto/babyjub";
 import { fmtUnits } from "../lib/format";
 import * as sh from "../lib/shield/chain";
-import type { BackupRow, ShieldConfig, ShieldEdges, ShieldLedgerRow } from "../lib/shield/chain";
+import type { ActivityEvent, BackupRow, ShieldConfig, ShieldEdges, ShieldLedgerRow } from "../lib/shield/chain";
 import { shieldKeyFile } from "../lib/shield/backup";
 import { MIN_PASSPHRASE, generatePassphrase, passphraseProblem } from "../lib/keys";
 import type { OwnedNote, ShieldKeys } from "../lib/shield/notes";
@@ -200,35 +200,71 @@ export const ShieldSettings = ({ actor, keys, registered, derived, backup, busy,
 
 // ---------------------------------------------------------------- Activity
 
-export const ShieldActivity = ({ cfg, notes, spent, token, revealed, onReveal }: {
-  cfg: ShieldConfig; notes: OwnedNote[] | null; spent: OwnedNote[]; token: Token; revealed: boolean; onReveal: (v: boolean) => void;
+const when = (ts: string | null) => (ts ? new Date(ts.endsWith("Z") ? ts : ts + "Z").toLocaleString("en-NZ", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
+
+export const ShieldActivity = ({ cfg, keys, actor, notes, spent, token, revealed, onReveal }: {
+  cfg: ShieldConfig; keys: ShieldKeys; actor: string; notes: OwnedNote[] | null; spent: OwnedNote[]; token: Token; revealed: boolean; onReveal: (v: boolean) => void;
 }) => {
+  const [ev, setEv] = useState<{ events: ActivityEvent[]; history: boolean } | null>(null);
+  const [showNotes, setShowNotes] = useState(false);
+  useEffect(() => {
+    if (!notes) return;
+    let live = true;
+    sh.activity(keys, actor, { notes, spent }).then((r) => { if (live) setEv(r); }).catch(() => { if (live) setEv({ events: [], history: false }); });
+    return () => { live = false; };
+  }, [keys, actor, notes, spent]);
   const all = useMemo(() => [...(notes ?? []).map((n) => ({ n, spent: false })), ...spent.map((n) => ({ n, spent: true }))].sort((a, b) => b.n.index - a.n.index), [notes, spent]);
+  const label = (e: ActivityEvent) => e.kind === "deposit" ? "Deposited" : e.kind === "withdrew" ? `Withdrew to ${e.counterparty}` : e.kind === "received" ? (e.counterparty ? `Received from ${e.counterparty}` : "Received") : e.counterparty ? `Sent to ${e.counterparty}` : "Sent";
+  const sub = (e: ActivityEvent) => e.kind === "deposit" ? "public" : e.kind === "withdrew" ? "public" : e.kind === "sent" ? (e.change && e.change > 0n ? `sealed; change ${fmtUnits(e.change, tokenOf(cfg, e.token, token))} kept as note ${e.changeNote}` : "sealed") : e.counterparty ? "sealed; the payer is named by the signed transaction" : "sealed; payer not yet in history";
   return (
     <section className="section">
       <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
         <h2>Activity</h2>
         <button className="textbtn" onClick={() => onReveal(!revealed)} aria-pressed={revealed}>{revealed ? "Hide" : "Reveal"}</button>
       </div>
-      <p className="lede">Every note of yours, newest first. Deposits are public on chain; the others are sealed, and only you, the sender and the auditor can read them.</p>
-      {notes === null ? <div className="empty">Reading your notes</div> : all.length === 0 ? <p className="muted">Nothing yet.</p> : (
+      <p className="lede">What happened, newest first. Deposits and withdrawals are public on chain; payments are sealed, and only you, the other party and the auditor can read them.</p>
+      {notes === null || ev === null ? <div className="empty">Reading your notes</div> : ev.events.length === 0 ? <p className="muted">Nothing yet.</p> : (
         <table className="ledger">
-          <thead><tr><th>Note</th><th>What</th><th>Status</th><th className="amount">Amount</th></tr></thead>
+          <thead><tr><th>When</th><th>What</th><th className="amount">Amount</th></tr></thead>
           <tbody>
-            {all.map(({ n, spent: sp }) => {
-              const t = tokenOf(cfg, n.token, token);
+            {ev.events.map((e, i) => {
+              const t = tokenOf(cfg, e.token, token);
+              const out = e.kind === "sent" || e.kind === "withdrew";
+              const pub = e.kind === "deposit" || e.kind === "withdrew";
               return (
-                <tr key={n.index}>
-                  <td className="mono">{n.index}</td>
-                  <td>{n.kind === "deposit" ? "Deposit, public" : "Sealed note"}</td>
-                  <td>{sp ? "spent" : "unspent"}</td>
-                  <td className="amount"><span className="tok"><TokenIcon code={t.code} size={16} /></span> <Amount value={n.v} hidden={n.kind !== "deposit"} revealed={revealed} size="plain" token={t} /></td>
+                <tr key={`${e.trx ?? "x"}-${e.kind}-${i}`}>
+                  <td className="mono">{e.trx ? <a href={sh.txLink(e.trx)} target="_blank" rel="noreferrer">{when(e.ts)}</a> : <span className="muted">not in history</span>}</td>
+                  <td>{label(e)}<span className="small muted" style={{ display: "block" }}>{sub(e)}</span></td>
+                  <td className="amount"><span className="tok"><TokenIcon code={t.code} size={16} /></span> {out ? "−" : "+"}<Amount value={e.amount} hidden={!pub} revealed={revealed} size="plain" token={t} /></td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       )}
+      {ev && !ev.history ? <p className="small muted" style={{ marginTop: 10 }}>No history node answered, so times and payers are missing; the notes below are read from the contract directly.</p> : null}
+      {all.length ? (
+        <details style={{ marginTop: 22 }} open={showNotes} onToggle={(e) => setShowNotes((e.target as HTMLDetailsElement).open)}>
+          <summary>The notes behind this ({all.length})</summary>
+          <p className="small muted">Money inside is held as sealed notes. A payment spends whole notes and returns the change as a new note, so one payment can touch several rows here.</p>
+          <table className="ledger">
+            <thead><tr><th>Note</th><th>What</th><th>Status</th><th className="amount">Amount</th></tr></thead>
+            <tbody>
+              {all.map(({ n, spent: sp }) => {
+                const t = tokenOf(cfg, n.token, token);
+                return (
+                  <tr key={n.index}>
+                    <td className="mono">{n.index}</td>
+                    <td>{n.kind === "deposit" ? "Deposit, public" : "Sealed note"}</td>
+                    <td>{sp ? "spent" : "unspent"}</td>
+                    <td className="amount"><span className="tok"><TokenIcon code={t.code} size={16} /></span> <Amount value={n.v} hidden={n.kind !== "deposit"} revealed={revealed} size="plain" token={t} /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </details>
+      ) : null}
     </section>
   );
 };

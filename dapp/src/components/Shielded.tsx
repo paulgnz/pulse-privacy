@@ -407,7 +407,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     setKeys(null); setNotes(null); setSpent([]); setFirstAsk(null); setKeyDerived(false); setPendingBackup(null); setTab("statement");
   };
   if (tab === "settings") return <>{nav}<section className="statement" aria-label="Shielded settings"><ShieldSettings actor={actor} keys={keys} registered={registered} derived={keyDerived} backup={backup} busy={busy} onSavePhrase={async (p) => { setBusy(true); try { await savePhrase(p); } finally { setBusy(false); } }} onKeepCommittee={async () => { setBusy(true); try { await keepCommittee(); } finally { setBusy(false); } }} onForget={forget} /></section></>;
-  if (tab === "activity") return <>{nav}<section className="statement" aria-label="Shielded activity"><ShieldActivity cfg={cfg} notes={notes} spent={spent} token={token} revealed={revealed} onReveal={toggleReveal} /></section></>;
+  if (tab === "activity") return <>{nav}<section className="statement" aria-label="Shielded activity"><ShieldActivity cfg={cfg} keys={keys} actor={actor} notes={notes} spent={spent} token={token} revealed={revealed} onReveal={toggleReveal} /></section></>;
   if (tab === "auditor") return <>{nav}<section className="statement" aria-label="Shielded auditor"><ShieldAuditor cfg={cfg} token={token} /></section></>;
 
   return (
@@ -465,7 +465,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
       {form === "send" ? (
         <SendForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} spendable={balance(token.code)} busy={busy} stage={stage} parsed={parsedAmount} onClose={() => setForm(null)}
           peers={peers}
-          onSend={(to, amount) => run(`Sent ${fmtUnits(amount, token)} ${token.code} to ${to}. The chain shows that you paid, not whom or how much.`, async (p) => { const prep = await sh.prepareSend(session, keys, cfg, token, to, amount, p, pre.current); const txid = await broadcast(session, [prep.action]); p(1, "Done"); return { txid }; })} />
+          onSend={(to, amount) => run(`Sent ${fmtUnits(amount, token)} ${token.code} to ${to}. The chain shows that you paid, not whom or how much.`, async (p) => { const prep = await sh.prepareSend(session, keys, cfg, token, to, amount, p, pre.current); const txid = await broadcast(session, [prep.action]); sh.rememberSend(actor, txid, to); p(1, "Done"); return { txid }; })} />
       ) : null}
       {form === "deposit" ? (
         <DepositForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} publicBalance={pub[token.code] ?? null} busy={busy} parsed={parsedAmount} onClose={() => setForm(null)}
