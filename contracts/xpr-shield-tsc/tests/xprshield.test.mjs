@@ -59,6 +59,22 @@ await expectToThrow(sh.actions.register(["bob", ptHex(bob.pk)]).send("bob@active
 await expectToThrow(sh.actions.register(["carol", hex(alice.pk[0]) + hex(alice.pk[1] + 1n)]).send("carol@active"), "eosio_assert: pubkey not on curve");
 await expectToThrow(sh.actions.register(["carol", hex(0n) + hex(1n)]).send("carol@active"), "eosio_assert: pubkey is the identity or has low order");
 await expectToThrow(sh.actions.register(["carol", hex(0n) + hex(N.F.p - 1n)]).send("carol@active"), "eosio_assert: pubkey is the identity or has low order");
+// --- backups: phrase copy 60..160 bytes, committee copy exactly 64, empties clear the row ---
+{
+  const phrase = "ab".repeat(96), committee = "cd".repeat(64);
+  await sh.actions.setbackup(["alice", phrase, committee]).send("alice@active");
+  let row = sh.tables.backups(nameToBigInt("xprshield")).getTableRow(nameToBigInt("alice"));
+  assert.equal(row.phrase, phrase); assert.equal(row.committee, committee);
+  await sh.actions.setbackup(["alice", "", committee]).send("alice@active");
+  row = sh.tables.backups(nameToBigInt("xprshield")).getTableRow(nameToBigInt("alice"));
+  assert.equal(row.phrase, ""); assert.equal(row.committee, committee);
+  await expectToThrow(sh.actions.setbackup(["alice", "ab".repeat(10), ""]).send("alice@active"), "eosio_assert: phrase copy must be 60 to 160 bytes");
+  await expectToThrow(sh.actions.setbackup(["alice", "", "cd".repeat(63)]).send("alice@active"), "eosio_assert: committee copy must be 64 bytes");
+  await expectToThrow(sh.actions.setbackup(["alice", phrase, ""]).send("bob@active"), "missing required authority alice");
+  await sh.actions.setbackup(["alice", "", ""]).send("alice@active");
+  assert.equal(sh.tables.backups(nameToBigInt("xprshield")).getTableRow(nameToBigInt("alice")), undefined);
+  console.log("ok  backups: store, replace, refuse bad sizes, clear");
+}
 const local = new N.Tree();
 assert.equal(treeRow().root, hex(local.root), "empty root matches");
 lap("init + register; empty root matches the library");

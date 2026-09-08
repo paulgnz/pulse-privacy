@@ -77,6 +77,24 @@ class KeyRow extends Table {
   }
 }
 
+/**
+ * Recovery copies of an account's shielded key, both optional, written by the owner:
+ *  - `phrase`: the key under a passphrase (AES-GCM, PBKDF2) that only the owner knows;
+ *  - `committee`: the key sealed to the auditor's public key with the note scheme
+ *    (compressed ephemeral point, then the key plus a Poseidon mask), which the committee
+ *    can open to return the key after the owner proves they own the account.
+ */
+@table("backups")
+class BackupRow extends Table {
+  constructor(public owner: Name = new Name(), public phrase: u8[] = [], public committee: u8[] = []) {
+    super();
+  }
+  @primary
+  get primary(): u64 {
+    return this.owner.N;
+  }
+}
+
 @table("leaves")
 class Leaf extends Table {
   constructor(public index: u64 = 0, public cm: u8[] = []) {
@@ -216,6 +234,7 @@ class XprShield extends Contract {
   configs: TableStore<Config> = new TableStore<Config>(this.receiver);
   tokens: TableStore<TokenRow> = new TableStore<TokenRow>(this.receiver);
   keys: TableStore<KeyRow> = new TableStore<KeyRow>(this.receiver);
+  backups: TableStore<BackupRow> = new TableStore<BackupRow>(this.receiver);
   leaves: TableStore<Leaf> = new TableStore<Leaf>(this.receiver);
   trees: TableStore<TreeRow> = new TableStore<TreeRow>(this.receiver);
   roots: TableStore<RootRow> = new TableStore<RootRow>(this.receiver);
@@ -320,6 +339,7 @@ class XprShield extends Contract {
     let f = this.nullifiers.first(); while (f != null) { const n = this.nullifiers.next(f); this.nullifiers.remove(f); f = n; }
     let r = this.roots.first(); while (r != null) { const n = this.roots.next(r); this.roots.remove(r); r = n; }
     let k = this.keys.first(); while (k != null) { const n = this.keys.next(k); this.keys.remove(k); k = n; }
+    let b = this.backups.first(); while (b != null) { const n = this.backups.next(b); this.backups.remove(b); b = n; }
     let t = this.tokens.first(); while (t != null) { const n = this.tokens.next(t); this.tokens.remove(t); t = n; }
     const tr = this.trees.get(0); if (tr != null) this.trees.remove(tr);
     this.configs.remove(c!);
@@ -373,6 +393,25 @@ class XprShield extends Contract {
     check(inPrimeSubgroup(pubkey), "pubkey is the identity or has low order");
     check(this.keys.get(owner.N) == null, "already registered");
     this.keys.store(new KeyRow(owner, pubkey), owner);
+  }
+
+  /** store, replace or clear (empty) the owner's recovery copies; the owner pays the row */
+  @action("setbackup")
+  setbackup(owner: Name, phrase: u8[], committee: u8[]): void {
+    requireAuth(owner);
+    check(phrase.length == 0 || (phrase.length >= 60 && phrase.length <= 160), "phrase copy must be 60 to 160 bytes");
+    check(committee.length == 0 || committee.length == 64, "committee copy must be 64 bytes");
+    const b = this.backups.get(owner.N);
+    if (phrase.length == 0 && committee.length == 0) {
+      if (b != null) this.backups.remove(b);
+      return;
+    }
+    if (b == null) this.backups.store(new BackupRow(owner, phrase, committee), owner);
+    else {
+      b.phrase = phrase;
+      b.committee = committee;
+      this.backups.update(b, owner);
+    }
   }
 
   // ---------------------------------------------------------------- tree
