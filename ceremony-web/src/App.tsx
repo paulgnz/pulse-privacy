@@ -14,6 +14,8 @@ const AFTER_SIGN: Step[] = ["uploading", "recording"];
 const AFTER_COMPUTE: Step[] = ["sign", "signing", ...AFTER_SIGN];
 
 const short = (h: string, n = 12) => (h ? h.slice(0, n) + "…" : "");
+/** browser uploads are content-addressed (`p1/04-actor-<sha256>.ptau`); the hash is shown beside the link, not inside it */
+const fileLabel = (file: string) => file.replace(/-[0-9a-f]{64}(\.[a-z]+)$/, "$1");
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 export function App() {
@@ -356,7 +358,7 @@ export function App() {
       <section>
         <h2>Transcript</h2>
         {state && state.contributions.length ? (
-          <table className="ledger">
+          <div className="scroll"><table className="ledger">
             <thead><tr><th>#</th><th>Phase</th><th>Account</th><th>When</th><th>Output</th><th>Signed by</th></tr></thead>
             <tbody>
               {state.contributions.map((c) => (
@@ -364,13 +366,13 @@ export function App() {
                   <td>{c.index}</td>
                   <td>{c.phase}</td>
                   <td>{c.actor}</td>
-                  <td>{when(c.timestamp)}</td>
-                  <td><a href={`/files/${c.output.file}`}>{c.output.file}</a> <span className="mono">{short(c.output.sha256, 16)}</span></td>
-                  <td className="mono">{short(c.signerKey, 18)}</td>
+                  <td className="when">{when(c.timestamp)}</td>
+                  <td className="output"><a href={`/files/${c.output.file}`} title={c.output.file}>{fileLabel(c.output.file)}</a> <span className="mono" title={c.output.sha256}>{short(c.output.sha256, 16)}</span></td>
+                  <td className="mono" title={c.signerKey}>{short(c.signerKey, 18)}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         ) : (
           <p className="muted">No contributions yet.</p>
         )}

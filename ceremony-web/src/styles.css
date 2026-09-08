@@ -49,6 +49,10 @@ input { font: inherit; padding: 11px 12px; border: 1px solid var(--rule); border
 .ledger { width: 100%; border-collapse: collapse; font-size: 14px; }
 .ledger th { text-align: left; font-weight: 500; color: var(--graphite); padding: 8px 8px 8px 0; border-bottom: 1px solid var(--rule); }
 .ledger td { padding: 10px 8px 10px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+.ledger td.when { white-space: nowrap; }
+.ledger td.output { word-break: break-all; }
+.ledger td.output a { white-space: nowrap; }
+.scroll { overflow-x: auto; }
 .foot { margin-top: 56px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--graphite); display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .foot a { color: inherit; }
 @media (max-width: 640px) {
