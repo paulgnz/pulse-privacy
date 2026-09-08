@@ -58,7 +58,11 @@ await page.unroute("**/v1/chain/get_table_rows");
 // 2. forged history: a payer that never paid, and an invented withdrawal by the account itself
 const sc = await net.scan(alice);
 const recv = sc.notes.concat(sc.spent).find((n) => n.kind === "note"); const sp = sc.spent[0];
-const info = { cm: recv ? N.hex32(recv.cm) : "0".repeat(64), nf: sp ? N.hex32(N.nullifier(alice.nk, sp.index)) : "0".repeat(64) };
+// the forgeries reuse a real received note's commitment and a real spent note's tag, so both must exist:
+// without them the forged rows would carry zero identifiers and prove nothing about the filter
+check(!!recv && !!sp, `the account has a received note and a spent note to forge around (${sc.notes.length + sc.spent.length} notes, ${sc.spent.length} spent)`);
+if (!recv || !sp) { await browser.close(); console.log("no fixtures: send this account a payment and spend one note first"); process.exit(1); }
+const info = { cm: N.hex32(recv.cm), nf: N.hex32(N.nullifier(alice.nk, sp.index)) };
 const Z = "0".repeat(64);
 const forged = [
   { timestamp: "2026-09-08T01:00:00.000", block_num: 1, trx_id: "f".repeat(64), act: { account: "xprshield", name: "spend", authorization: [{ actor: "evilnode1", permission: "active" }], data: { owner: "evilnode1", publics: Z + Z + info.cm + info.cm, amount: "0", token_id: 0, root_seq: "0" } } },

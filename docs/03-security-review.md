@@ -386,5 +386,7 @@ Codex reviewed the rollover series (`35341a0` to `7e6d944`): the fund-locking fi
 | 2 | low | The browser regression compared "?" with "?" when the balance could not be read. | The baseline must be a numeric non-zero balance and the honest history rows must be present, else the run fails. |
 | 3 | low | The runbook's dapp step still named revision-5 proving artifacts. | Revision 6, with the client's `REV` set to the same suffix. |
 
+Follow-up at `06b1171`: the offline client regression passes with network access blocked; one low item, the browser regression's forged history accepted a deposit-only account (zero identifiers). It now requires a real received note and a real spent note before forging, and fails without them.
+
 Outstanding as before: transitive dependency advisories in the ceremony web app.
 
