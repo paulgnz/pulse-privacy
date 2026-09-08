@@ -23,3 +23,11 @@ registered with the existing ones). `E2E_OUT` is where screenshots go (default `
 | `shield-blobs.mjs`, `shield-scan-paul.mjs` | recovery copies round-trip; the scan sees a given account's notes |
 | `shield-popup.mjs` | a blocked wallet window fails fast; recipient suggestions |
 | `live-check.mjs` | the deployed sites: brand, heading, header links |
+
+Note: in the Vite dev server, React 19's development-only performance tracing serialises component
+props and throws on BigInt values during slow renders ("Do not know how to serialize a BigInt",
+then "Should not already be working"). Production builds do not include that tracing. For the
+Activity and Auditor checks, run against a preview of a mock build instead:
+`VITE_CRYPTO=mock VITE_NETWORK=testnet npx vite build --outDir dist-mock && npx vite preview --outDir dist-mock --port 5179`,
+and point the script at port 5179.
+

@@ -200,7 +200,9 @@ export async function chainTree(): Promise<{ tree: Tree; nextLeaf: number; rootS
       const byIndex = new Map(leaves.map((l) => [Number(l.index), l.cm.toLowerCase()]));
       const tree = rebuildTo(agreed.next, byIndex);
       if (hex32(tree.root) !== agreed.root) throw new Error("leaves do not hash to the agreed root");
-      return { tree, nextLeaf: agreed.next, rootSeq: agreed.rootSeq, confirmed: agreed.confirmed };
+      // callers keep this tree for a proof: hand out a snapshot, so a later scan extending the
+      // cache cannot change its root under a payment that already named its root sequence
+      return { tree: tree.snapshot(), nextLeaf: agreed.next, rootSeq: agreed.rootSeq, confirmed: agreed.confirmed };
     } catch (e) { lastErr = e; treeCache = null; }
   }
   throw new Error(`The tree read from the chain does not match the contract's root (${(lastErr as Error).message}); try again.`);
@@ -217,13 +219,19 @@ export type NoteKind = "deposit" | "note";
  */
 async function scanTables() {
   const agreed = await agreedTreeRow();
+  // spent status from every node: a nullifier any node lists is spent (a node cannot invent one it
+  // has not seen on chain), and the balance is confirmed only when two nodes answered
+  const nfAnswers = await Promise.allSettled([...new Set(ENDPOINTS)].map((ep) => rows<{ key: string | number; nf: string }>("nullifiers", "key", ep)));
+  const nfLists = nfAnswers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
+  if (!nfLists.length) throw new Error("No node answered the scan.");
+  const nfs = [...new Map(nfLists.flat().map((n) => [n.nf.toLowerCase(), n])).values()];
+  const nfConfirmed = nfLists.length >= 2;
   let lastErr: unknown;
   for (const ep of await endpoints()) {
     try {
-      const [outs, leaves, nfs] = await Promise.all([
+      const [outs, leaves] = await Promise.all([
         rows<{ index: string | number; epk: string; cr: string; ca: string }>("outputs", "index", ep),
         rows<{ index: string | number; cm: string }>("leaves", "index", ep),
-        rows<{ key: string | number; nf: string }>("nullifiers", "key", ep),
       ]);
       const inTree = leaves.filter((l) => Number(l.index) < agreed.next);
       const byIndex = new Map(inTree.map((l) => [Number(l.index), l.cm.toLowerCase()]));
@@ -231,7 +239,7 @@ async function scanTables() {
       if (hex32(tree.root) !== agreed.root) throw new Error("leaves do not hash to the agreed root");
       const outsInTree = outs.filter((o) => Number(o.index) < agreed.next);
       if (outsInTree.some((o) => !byIndex.has(Number(o.index)))) throw new Error("outputs without leaves");
-      return { outs: outsInTree, leaves: inTree, nfs, confirmed: agreed.confirmed };
+      return { outs: outsInTree, leaves: inTree, nfs, confirmed: agreed.confirmed && nfConfirmed };
     } catch (e) { lastErr = e; treeCache = null; }
   }
   throw lastErr instanceof Error ? lastErr : new Error("No node answered the scan.");
@@ -240,7 +248,7 @@ async function scanTables() {
 export async function scan(keys: ShieldKeys): Promise<ScanResult> {
   const { outs, leaves, nfs, confirmed } = await scanTables();
   const cmOf = new Map(leaves.map((l) => [Number(l.index), BigInt("0x" + l.cm)]));
-  const spentSet = new Set(nfs.map((n) => n.nf));
+  const spentSet = new Set(nfs.map((n) => n.nf.toLowerCase()));
   const notes: OwnedNote[] = [];
   const spent: OwnedNote[] = [];
   let skipped = 0;
@@ -457,7 +465,8 @@ export async function verifySpend(rec: SpendRecord): Promise<SpendRecord | null>
     if (!owner || !publics) return null;
     return { ...rec, owner, publics, block: Number(block), ts, nf: [publics.slice(0, 64), publics.slice(64, 128)], cm: [publics.slice(128, 192), publics.slice(192, 256)], amount: BigInt(amount), tokenId: BigInt(tokenId) };
   };
-  if (cache[rec.trx]) return fromFp(cache[rec.trx]);
+  const ckey = `${rec.trx}|${rec.publics.slice(0, 64)}`; // transaction plus first nullifier: one entry per spend action
+  if (cache[ckey]) return fromFp(cache[ckey]);
   try {
     const b = await rpc<{ timestamp: string; transactions: { trx: { id?: string; transaction?: { actions: { account: string; name: string; authorization: { actor: string }[]; data: Record<string, unknown> }[] } } | string }[] }>("get_block", { block_num_or_id: rec.block });
     const t = b.transactions.find((x) => typeof x.trx === "object" && x.trx.id?.toLowerCase() === rec.trx);
@@ -467,7 +476,7 @@ export async function verifySpend(rec: SpendRecord): Promise<SpendRecord | null>
     const owner = String(a.data.owner ?? "");
     if (!owner || !a.authorization.some((z) => z.actor === owner)) return null;
     const fp = [owner, rec.publics, String(a.data.amount ?? 0), String(a.data.token_id ?? 0), String(rec.block), b.timestamp].join("|");
-    cache[rec.trx] = fp;
+    cache[ckey] = fp;
     try { localStorage.setItem(VERIFIED, JSON.stringify(cache)); } catch { /* ignore */ }
     return fromFp(fp);
   } catch { return null; }
@@ -480,14 +489,14 @@ export async function verifySpend(rec: SpendRecord): Promise<SpendRecord | null>
 async function verifiedSpends(nfOnChain: Set<string>, cmOnChain: Set<string>, relevant: (r: SpendRecord) => boolean): Promise<SpendRecord[] | null> {
   const all = await spendHistory();
   if (all === null) return null;
-  const seenTrx = new Set<string>(), seenNf = new Set<string>();
+  const seenNf = new Set<string>(); // a spend is identified by its first nullifier, which the chain allows once
   const out: SpendRecord[] = [];
   for (const r of all) {
-    if (seenTrx.has(r.trx) || seenNf.has(r.nf[0]) || !nfOnChain.has(r.nf[0]) || !r.cm.every((c) => cmOnChain.has(c))) continue;
+    if (seenNf.has(r.nf[0]) || !nfOnChain.has(r.nf[0]) || !r.cm.every((c) => cmOnChain.has(c))) continue;
     if (!relevant(r)) continue;
     const v = await verifySpend(r);
     if (!v) continue;
-    seenTrx.add(v.trx); seenNf.add(v.nf[0]);
+    seenNf.add(v.nf[0]);
     out.push(v);
   }
   return out;

@@ -20,12 +20,12 @@ in order. Nothing here is done until its line says so.
 |---|---|---|
 | Phase 1 of the ceremony: ≥ 5 contributors, then finalise with an announced beacon block | Paul, contributors | 3 of 5 |
 | Phase 2 for `circuits/shielded/joinsplit.circom` revision 4 on the ceremony site, then finalise; `final/vk.hex` | Paul | not started |
-| Contract account **`privatexpr`** on mainnet (decided 2026-09-08; explorer.xprnetwork.org/account/privatexpr): create, owner `admin.proton@committee`, active on the operational key until launch is settled | Paul / Metallicus | see §6 |
-| Deploy permission for `privatexpr` (mainnet gates `setcode`) | Metallicus | ask |
+| Contract account **`privatexpr`** on mainnet (decided 2026-09-08; explorer.xprnetwork.org/account/privatexpr): created; owner moves to `admin.proton@committee` on launch day (§2a) | Paul | created |
+| Deploy permission: v1 was deployed from the operational key without asking anyone, so none needed; if `setcode` is ever refused, that is the moment to ask | Paul | none needed |
 | RAM: code ≈ 82 KB WASM → ≈ 250 KB; tables: 20-level tree frontier + 1,024-root ring ≈ 70 KB; each note ≈ 300 B (paid by the depositor/spender); keys ≈ 200 B per account (paid by the owner). Buy 800 KB to start | Paul | not bought |
 | Resource plan for the account (NET for the code upload, CPU for nothing: users pay their own) via `resources::buyplan` | Paul | not bought |
-| Auditor key: the committee's Baby Jubjub keypair for v2, generated offline; only the public key goes on chain (`init`) | Metallicus compliance | reuse v1's? decide |
-| Audit: `circuits/shielded/joinsplit.circom`, `contracts/xpr-shield-tsc/assembly/*.ts` (field, curve, Poseidon, tree, verifier glue), `dapp/src/lib/shield/*` | Metallicus | not scoped |
+| Auditor key: reuse v1's mainnet viewing key (the file Paul holds) or generate a fresh pair the same way; only the public key goes on chain (`init`) and gets pinned in `dapp/src/config.ts` | Paul | decide |
+| External audit, if wanted (scope: `circuits/shielded/joinsplit.circom`, `contracts/xpr-shield-tsc/assembly/*.ts`, `dapp/src/lib/shield/*`); three internal rounds and three Codex passes are in docs/03 | Paul | optional |
 | Launch caps: XPR pool 1,000,000 / deposit 10,000 / min 1; XMD pool 100,000 / deposit 100 / min 1 (same as v1's first caps) | product | proposed |
 | Domain: register `privatexpr.com` (free on 2026-09-08; take `.io` too). Switch at launch, not before: passkey users' saved keys are per origin, and v2 has no mainnet users yet. Layout: `privatexpr.com` v2 at `/`, v1 at `/old`; `testnet.privatexpr.com`; `ceremony.privatexpr.com` alongside the current ceremony address; `private.protonnz.com` and its testnet become permanent redirects with the path kept. Code: `SITES` in `dapp/src/config.ts`, Open Graph URLs in `dapp/index.html`, ceremony-web links, README, docs | Paul | not registered |
 

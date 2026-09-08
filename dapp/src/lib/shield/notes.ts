@@ -75,6 +75,12 @@ export class Tree {
     return index;
   }
   get root() { return this.node(this.depth, 0); }
+  /** an independent copy: a payment prepared against it keeps its root while the live tree grows */
+  snapshot(): Tree {
+    const t = new Tree(this.depth);
+    for (let l = 0; l <= this.depth; l++) t.levels[l] = this.levels[l].slice();
+    return t;
+  }
   path(index: number) {
     const siblings: bigint[] = [];
     let i = index;

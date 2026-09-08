@@ -204,3 +204,13 @@ by that round, two are new and fixed here.
 | 3 | medium | the phrase-replacement copy said the old phrase "stops working"; copies in chain history still open with it and the key does not change | the wording now says exactly that, and what to do if the old phrase may have leaked |
 | 4 | medium | `build-mainnet.sh` did not create `deploy/mainnet/` on a clean checkout | `mkdir -p` |
 
+## Shielded mode: independent review, third pass (Codex, 2026-09-08, at `a6c47f4`)
+
+Three medium findings in the client, all reproduced with mocked responses; fixed the same night.
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | medium | a "confirmed" balance still took spent status from one node: missing nullifier rows made spent notes look available | nullifiers are read from every node and a note is spent if any node lists its nullifier (a node cannot invent one it has not seen on chain); the balance is confirmed only when two nodes answered |
+| 2 | medium | the tree cache handed out its live object: a background scan could extend it under a prepared payment, changing the root while the action still named the old root sequence, so the proof was rejected | `chainTree` returns a snapshot; the live cache grows on its own |
+| 3 | medium | history verification cached and deduplicated by transaction id, so a second spend in the same transaction returned the first action's data or vanished | identity is the transaction plus the action's first nullifier, which the chain allows exactly once |
+
