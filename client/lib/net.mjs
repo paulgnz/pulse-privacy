@@ -251,7 +251,7 @@ export class Net {
           const r = await fetch(`${h}/v2/history/get_actions?account=${this.contract}&filter=${this.contract}:deposit&limit=100&skip=${skip}&sort=asc`, { signal: AbortSignal.timeout(15000) });
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const j = await r.json();
-          for (const a of j.actions) if (a.act.data.r && a.act.data.owner) out.set(`${a.act.data.owner}|${lower(a.act.data.r)}`, { ts: a.timestamp, trx: a.trx_id });
+          for (const a of j.actions) if (a.act.data.r && a.act.data.owner) out.set(`${a.act.data.owner}|${lower(a.act.data.r)}`, { ts: a.timestamp, trx: a.trx_id, block: Number(a.block_num) });
           if (j.actions.length < 100) break;
         }
         return out;

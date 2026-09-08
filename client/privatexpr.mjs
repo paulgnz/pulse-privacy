@@ -230,15 +230,24 @@ try {
     } else {
       const names = new Map([...(await net.registeredKeys())].map(([n, pk]) => [hex(pk[0]) + hex(pk[1]), n]));
       const t = await net.scanTables();
-      const senders = new Map();
-      for (const sp of (await net.verifiedSpends(() => true, new Set(t.outs.map((o) => o.cm.toLowerCase())))) ?? []) for (const c of sp.cm) senders.set(c, sp.owner);
+      // when and where: spends from history confirmed against their blocks, deposits from the contract's deposit actions
+      const spendsBy = new Map();
+      for (const sp of (await net.verifiedSpends(() => true, new Set(t.outs.map((o) => o.cm.toLowerCase())))) ?? []) for (const c of sp.cm) spendsBy.set(c, sp);
+      const deposits = await net.depositHistory();
+      const when = (rec) => (rec ? `${rec.ts.replace("T", " ").slice(0, 19)} UTC  block ${rec.block}  tx ${rec.trx.slice(0, 12)}…` : "time and block not in history yet");
       say(`${net.contract} on ${network}: ${t.nextLeaf} leaves, ${t.spent.size} spend tags${t.confirmed ? "" : " (UNCONFIRMED: " + t.reasons.join("; ") + ")"}`);
       for (const o of t.outs.sort((a, b) => Number(a.index) - Number(b.index))) {
         const cm = BigInt("0x" + o.cm);
-        if (!o.epk) { const [packed, r] = words(o.cr); const [v, token] = N.unpack(packed); let to = "unknown"; for (const [pkHex, n] of names) { const pk = words(pkHex); if (N.commitment({ pk, v, token, r }) === cm) { to = n; break; } } say(`  leaf ${o.index}: deposit by ${to}: ${fmt(v, tokenById(token))}`); continue; }
+        if (!o.epk) {
+          const [packed, r] = words(o.cr); const [v, token] = N.unpack(packed);
+          let to = "unknown"; for (const [pkHex, n] of names) { const pk = words(pkHex); if (N.commitment({ pk, v, token, r }) === cm) { to = n; break; } }
+          say(`  leaf ${o.index}: deposit by ${to}: ${fmt(v, tokenById(token))}\n           ${when(deposits.get(`${to}|${hex(r)}`))}`);
+          continue;
+        }
         const n = N.decryptAuditor(auditorAsk, N.decompressPoint(words(o.epk)[0]), words(o.ca), cm);
         const to = n ? (names.get(hex(n.pk[0]) + hex(n.pk[1])) ?? `unregistered ${fingerprint(n.pk)}`) : "unreadable";
-        say(`  leaf ${o.index}: ${senders.get(o.cm.toLowerCase()) ?? "unknown"} → ${to}: ${n ? fmt(n.v, tokenById(n.token)) : "?"}${n && !n.valid ? "  (DOES NOT MATCH THE COMMITMENT)" : ""}`);
+        const sp = spendsBy.get(o.cm.toLowerCase());
+        say(`  leaf ${o.index}: ${sp?.owner ?? "unknown"} → ${to}: ${n ? fmt(n.v, tokenById(n.token)) : "?"}${n && !n.valid ? "  (DOES NOT MATCH THE COMMITMENT)" : ""}${sp && sp.amount > 0n ? `  (with a withdrawal of ${fmt(sp.amount, tokenById(sp.tokenId))} to ${sp.owner})` : ""}\n           ${when(sp)}`);
       }
     }
   } else {
