@@ -28,7 +28,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const next = await writeState({ ...s, lock: null }, s.version);
       return res.status(200).json({ ok: true, state: { ...next, lock: null } });
     }
-    if (lockActive(s) && s.lock!.actor !== actor) return res.status(409).json({ error: `it is ${s.lock!.actor}'s turn until ${s.lock!.until}`, lock: { actor: s.lock!.actor, until: s.lock!.until } });
+    // Replaying the same signed request must not rotate an active holder's secret token.
+    if (lockActive(s)) return res.status(409).json({ error: `it is ${s.lock!.actor}'s turn until ${s.lock!.until}`, lock: { actor: s.lock!.actor, until: s.lock!.until } });
     if (s.contributions.some((c) => c.phase === s.phase && c.actor === actor)) return res.status(409).json({ error: `${actor} already contributed to phase ${s.phase}` });
     const ts = Number(b.ts);
     if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > SKEW_MS) return res.status(400).json({ error: "stale request; try again" });

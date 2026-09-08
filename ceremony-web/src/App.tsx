@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
+import { contributionPath } from "../shared/files";
 import { collectMotion, osRandomHex } from "./lib/entropy";
 import { sha256Hex } from "./lib/hash";
 import { lockNoteFor, login, noteFor, signAttestation, type Session } from "./lib/wallet";
@@ -169,20 +170,20 @@ export function App() {
       // 6. upload straight to storage, then record
       setStep("uploading");
       setUploadPct(0);
-      const pathname = `p${phase}/${String(index).padStart(2, "0")}-${actor}.${phase === 1 ? "ptau" : "zkey"}`;
+      const pathname = contributionPath(phase, index, actor, outputSha);
       await upload(pathname, new Blob([out as BlobPart], { type: "application/octet-stream" }), {
         access: "public",
         handleUploadUrl: "/api/upload-token",
         multipart: true,
         contentType: "application/octet-stream",
-        clientPayload: JSON.stringify({ actor, token: lockToken.current }),
+        clientPayload: JSON.stringify({ actor, token: lockToken.current, outputSha256: outputSha }),
         onUploadProgress: (p) => setUploadPct(p.percentage),
       });
       setStep("recording");
       const cr = await fetch("/api/contribute", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ actor, permission: session.auth.permission, phase, index, inputSha256: inputSha, outputSha256: outputSha, contributionHash: ready.current?.contributionHash ?? null, signature }),
+        body: JSON.stringify({ actor, token: lockToken.current, permission: session.auth.permission, phase, index, inputSha256: inputSha, outputSha256: outputSha, contributionHash: ready.current?.contributionHash ?? null, signature }),
       });
       const cj = (await cr.json()) as { error?: string; attestation?: { contributionHash?: string | null } };
       if (!cr.ok) throw new Error(cj.error ?? "the coordinator rejected the contribution");

@@ -1,10 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { head as blobHead } from "@vercel/blob";
 import { lockActive, readState, writeState, type Attestation } from "./_lib/state.js";
 import { noteFor, verifyAttestation, attestationTransaction } from "./_lib/verify.js";
 import { extendsChain, fetchToTmp, ptauContributions, verifyFile, zkeyContributions } from "./_lib/chain.js";
+import { contributionPath } from "../shared/files.js";
 
 export const config = { maxDuration: 300, memory: 2048 };
 
@@ -26,11 +27,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const s = await readState();
     if (!s.head) return res.status(409).json({ error: "ceremony not started" });
     if (!lockActive(s) || s.lock!.actor !== actor) return res.status(409).json({ error: "it is not your turn (lock expired?)" });
+    const token = String(b.token ?? "");
+    const supplied = new Uint8Array(Buffer.from(createHash("sha256").update(token).digest("hex")));
+    const expected = new Uint8Array(Buffer.from(s.lock!.tokenHash ?? ""));
+    if (!token || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return res.status(403).json({ error: "missing or wrong lock token" });
     if (phase !== s.phase || index !== s.head.index + 1) return res.status(409).json({ error: `expected phase ${s.phase} index ${s.head.index + 1}` });
     if (inputSha !== s.head.sha256) return res.status(409).json({ error: "your input is not the current head; download again" });
 
     const ext = phase === 1 ? "ptau" : "zkey";
-    const pathname = `p${phase}/${String(index).padStart(2, "0")}-${actor}.${ext}`;
+    const pathname = contributionPath(phase, index, actor, outputSha);
+    // Authenticate before downloading or parsing attacker-controlled proving files.
+    const note = noteFor(phase, index, outputSha);
+    const signerKey = await verifyAttestation(actor, permission, note, signature);
     const meta = await blobHead(pathname).catch(() => null);
     if (!meta) return res.status(409).json({ error: `file ${pathname} not uploaded` });
     const outPath = await fetchToTmp(meta.url, `out.${ext}`);
@@ -57,9 +65,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       valid = await verifyFile(2, outPath, initPath, ptauPath);
     }
     if (!valid) return res.status(409).json({ error: "rejected: the uploaded file does not verify" });
-
-    const note = noteFor(phase, index, outputSha);
-    const signerKey = await verifyAttestation(actor, permission, note, signature);
 
     const att: Attestation = {
       phase: phase as 1 | 2,
