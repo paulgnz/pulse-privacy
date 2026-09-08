@@ -233,7 +233,7 @@ export function App() {
         {stateErr ? <p className="error">Could not reach the coordinator: {stateErr}</p> : null}
         {state ? (
           <dl className="facts">
-            <div><dt>Phase</dt><dd>{state.phase === 1 ? "1 of 2, universal setup" : "2 of 2, the shielded join-split circuit"}{state.finished ? ", closed" : ""}</dd></div>
+            <div><dt>Phase</dt><dd>{state.phase === 1 ? "1 of 2, universal setup" : "2 of 2, the join-split circuit, revision 6"}{state.finished ? ", closed" : ""}</dd></div>
             <div><dt>Contributions so far</dt><dd>{state.contributions.filter((c) => c.phase === state.phase).length}</dd></div>
             <div><dt>Current file</dt><dd>{state.head ? <>{state.head.file} <span className="mono">{short(state.head.sha256, 16)}</span></> : "not started"}</dd></div>
             <div><dt>Whose turn</dt><dd>{lockHeld ? `${lockHeld.actor}, until ${when(lockHeld.until)}` : "free"}</dd></div>

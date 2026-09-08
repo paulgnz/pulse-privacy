@@ -302,7 +302,7 @@ export const ShieldAuditor = ({ cfg, token }: { cfg: ShieldConfig; token: Token 
             ];
           })}
           <span className="k">Notes</span>
-          <span>{edges.leaves} placed; {edges.slotsUsed.toLocaleString()} of {edges.capacity.toLocaleString()} tree slots used ({(100 * edges.slotsUsed / edges.capacity).toFixed(2)}%; a deposit takes two); {edges.nullifiers} spend tags (every payment leaves two, one of them a decoy when a single note was spent)</span>
+          <span>{edges.leaves} placed; tree {edges.activeTree} of {edges.trees} in use, {edges.slotsUsed.toLocaleString()} of {edges.capacity.toLocaleString()} slots ({(100 * edges.slotsUsed / edges.capacity).toFixed(2)}%; a full tree rolls over to a fresh one on its own); {edges.nullifiers} spend tags (every payment leaves two, one of them a decoy when a single note was spent)</span>
         </div>
       ) : null}
       <Field label="Auditor viewing key" hint="The committee's spending scalar for the shielded contract, as hex or decimal." error={err ?? undefined}>

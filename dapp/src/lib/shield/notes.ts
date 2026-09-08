@@ -31,7 +31,11 @@ export function keygen(ask: bigint): ShieldKeys {
 export const commitment = (n: { pk: Pt; v: bigint; token: bigint; r: bigint }) => poseidon([n.pk[0], n.pk[1], n.v, n.token, n.r]);
 export const nullifier = (nk: bigint, index: number) => hash2(nk, BigInt(index));
 /** the nullifier a disabled second input emits (revision 5): Poseidon(nk, 2^40 + dummy), dummy < 2^40 */
-export const dummyNullifier = (nk: bigint, dummy: bigint) => hash2(nk, (1n << 40n) + dummy);
+export const dummyNullifier = (nk: bigint, dummy: bigint) => hash2(nk, (1n << 60n) + dummy);
+/** leaf indices are global: tree · 2^DEPTH + position */
+export const treeOf = (index: number) => Math.floor(index / 2 ** DEPTH);
+export const posOf = (index: number) => index % 2 ** DEPTH;
+export const globalIndex = (tree: number, pos: number) => tree * 2 ** DEPTH + pos;
 export function newNote(pk: Pt, v: bigint, token: bigint, r = randField()): Note {
   const n = { pk, v, token, r, cm: 0n };
   n.cm = commitment(n);
@@ -59,14 +63,15 @@ export function decompressPoint(w: bigint): Pt {
 export class Tree {
   readonly zeros: bigint[] = [0n];
   readonly levels: bigint[][];
-  constructor(readonly depth = DEPTH) {
+  /** `id` names the tree; indices handed out are global, id · 2^depth + position */
+  constructor(readonly depth = DEPTH, readonly id = 0) {
     for (let i = 0; i < depth; i++) this.zeros.push(hash2(this.zeros[i], this.zeros[i]));
     this.levels = Array.from({ length: depth + 1 }, () => []);
   }
   get size() { return this.levels[0].length; }
   node(level: number, i: number) { return i < this.levels[level].length ? this.levels[level][i] : this.zeros[level]; }
   append(cm: bigint) {
-    const index = this.levels[0].length;
+    const index = this.levels[0].length; // position; the global index is returned
     this.levels[0].push(cm);
     let i = index;
     for (let l = 0; l < this.depth; l++) {
@@ -74,18 +79,18 @@ export class Tree {
       this.levels[l + 1][pi] = hash2(this.node(l, pi * 2), this.node(l, pi * 2 + 1));
       i = pi;
     }
-    return index;
+    return globalIndex(this.id, index);
   }
   get root() { return this.node(this.depth, 0); }
   /** an independent copy: a payment prepared against it keeps its root while the live tree grows */
   snapshot(): Tree {
-    const t = new Tree(this.depth);
+    const t = new Tree(this.depth, this.id);
     for (let l = 0; l <= this.depth; l++) t.levels[l] = this.levels[l].slice();
     return t;
   }
   path(index: number) {
     const siblings: bigint[] = [];
-    let i = index;
+    let i = posOf(index); // a global or a local index; only the position matters here
     for (let l = 0; l < this.depth; l++) { siblings.push(this.node(l, i ^ 1)); i >>= 1; }
     return siblings;
   }
@@ -159,6 +164,7 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
   if (outputs.length !== 2) throw new Error("exactly 2 outputs");
   const token = inputs[0].token;
   const ins: (OwnedNote | null)[] = [inputs[0], inputs[1] ?? null];
+  for (const i of ins) if (i && treeOf(i.index) !== tree.id) throw new Error(`note ${i.index} is not in tree ${tree.id}`);
   // the two outputs go on chain in random order, so position does not say which is the change
   const flip = crypto.getRandomValues(new Uint8Array(1))[0] & 1;
   const ordered = flip ? [outputs[1], outputs[0]] : outputs;
@@ -183,6 +189,7 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
     outR: outNotes.map((n) => S(n.r)),
     esk: esk.map(S),
     root: S(tree.root),
+    tree: S(tree.id),
     vPub: S(vPub),
     tokenPub: S(tokenPub),
     to: S(to),
@@ -195,7 +202,7 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
   const ca = outNotes.map((n, j) => encryptWith(ecdh(esk[j], auditorPk), [n.pk[1], pack(n.v, n.token, n.pk[0] & 1n), n.r]));
   const cms = outNotes.map((n) => n.cm);
   const actionPublics = [...nf, ...cms, ...epk.map(compressPoint), ...cr.flat(), ...ca.flat()];
-  const publicSignals = [...nf, ...cms, ...epk.flat(), ...cr.flat(), ...ca.flat(), keys.pk[0], keys.pk[1], tree.root, vPub, tokenPub, to, sender, auditorPk[0], auditorPk[1]];
+  const publicSignals = [...nf, ...cms, ...epk.flat(), ...cr.flat(), ...ca.flat(), keys.pk[0], keys.pk[1], tree.root, BigInt(tree.id), vPub, tokenPub, to, sender, auditorPk[0], auditorPk[1]];
   return { input, outNotes, nf, actionPublics, publicSignals, vPub, tokenPub };
 }
 

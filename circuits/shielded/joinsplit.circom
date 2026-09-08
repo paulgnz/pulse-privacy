@@ -15,7 +15,7 @@ pragma circom 2.1.0;
 //
 // Public signals, in snarkjs order (outputs first, then public inputs):
 //   nf[2] cm[2] epk[2][2] cr[2][2] ca[2][3] senderPk[2]     (outputs, 20)
-//   root vPub tokenPub to sender A[2]                       (public inputs, 7)
+//   root tree vPub tokenPub to sender A[2]                  (public inputs, 8)
 //
 // Input 0 is always a real note. Input 1 may be disabled (enabled1 = 0): then it carries no
 // value, is not checked against the tree, and its nullifier is a dummy in a reserved domain
@@ -27,11 +27,17 @@ pragma circom 2.1.0;
 // the receiver key is taken from an alias-free bit decomposition.
 //
 // Revision 5 (privacy and hardening, before the ceremony's phase 2): a disabled second input
-// still emits a nullifier, Poseidon(nk, 2^40 + dummy) with a fresh private `dummy` below 2^40,
-// so the chain cannot tell a one-note payment from a two-note one (real leaf indices are below
-// 2^20, so the domains never meet); and the ephemeral scalars are bound below the subgroup
-// order like `ask`, so esk = k·L cannot make the ephemeral key the identity. Same 27 public
-// signals as revision 4.
+// still emits a nullifier, Poseidon(nk, 2^60 + dummy) with a fresh private `dummy` below 2^40,
+// so the chain cannot tell a one-note payment from a two-note one (leaf indices are below
+// 2^44, so the domains never meet); and the ephemeral scalars are bound below the subgroup
+// order like `ask`, so esk = k·L cannot make the ephemeral key the identity.
+//
+// Revision 6 (capacity): the contract keeps several trees and rolls over to a fresh one when the
+// active one is full, so spending can never be blocked. A leaf index is global,
+// tree · 2^20 + position: the low 20 bits are the Merkle path, the high bits name the tree, and
+// the nullifier is over the global index so notes in different trees never share one. The tree
+// is a public input the contract takes from the root it looked up, and both inputs of a payment
+// must sit in that tree (one root per proof). 28 public signals: `tree` follows `root`.
 
 include "circomlib/circuits/poseidon.circom";
 include "circomlib/circuits/babyjub.circom";
@@ -127,6 +133,7 @@ template JoinSplit(depth) {
 
     // ---- public inputs ----
     signal input root;
+    signal input tree;
     signal input vPub;
     signal input tokenPub;
     signal input to;
@@ -183,7 +190,8 @@ template JoinSplit(depth) {
         inCm[i].token <== inToken[i];
         inCm[i].r <== inR[i];
 
-        inBits[i] = Num2Bits(depth);
+        // global index: low `depth` bits are the path, the rest name the tree, which must be the public one
+        inBits[i] = Num2Bits(depth + 24);
         inBits[i].in <== inIndex[i];
 
         inRoot[i] = MerkleRoot(depth);
@@ -194,6 +202,9 @@ template JoinSplit(depth) {
         }
         enabled[i] * (inRoot[i].root - root) === 0;
         (1 - enabled[i]) * inV[i] === 0;
+        var treeOf = 0;
+        for (var b = 0; b < 24; b++) treeOf += inBits[i].out[depth + b] * (1 << b);
+        enabled[i] * (treeOf - tree) === 0;
 
         inNf[i] = Poseidon(2);
         inNf[i].inputs[0] <== nk;
@@ -208,7 +219,7 @@ template JoinSplit(depth) {
     dummyBits.in <== dummy;
     component dummyNf = Poseidon(2);
     dummyNf.inputs[0] <== nk;
-    dummyNf.inputs[1] <== 1099511627776 + dummy;
+    dummyNf.inputs[1] <== 1152921504606846976 + dummy;
     signal nfReal1 <== enabled[1] * inNf[1].out;
     signal nfDummy1 <== (1 - enabled[1]) * dummyNf.out;
     nf[1] <== nfReal1 + nfDummy1;
@@ -314,4 +325,4 @@ template JoinSplit(depth) {
     }
 }
 
-component main {public [root, vPub, tokenPub, to, sender, A]} = JoinSplit(20);
+component main {public [root, tree, vPub, tokenPub, to, sender, A]} = JoinSplit(20);

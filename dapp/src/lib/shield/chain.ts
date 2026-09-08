@@ -7,11 +7,11 @@ import type { Session } from "../chain";
 import type { Pt } from "../crypto/babyjub";
 import { ptHex, w32 } from "../crypto/babyjub";
 import type { Token } from "../token";
-import { TOKEN_IDS, Tree, buildJoinSplit, commitment, decompressPoint, decryptAuditor, hex32, nameToU64, newNote, nullifier, tryDecryptReceiver, unpack, words } from "./notes";
+import { TOKEN_IDS, Tree, buildJoinSplit, commitment, decompressPoint, decryptAuditor, hex32, nameToU64, newNote, nullifier, treeOf, tryDecryptReceiver, unpack, words } from "./notes";
 import type { OwnedNote, ShieldKeys } from "./notes";
 
-const WASM = "/circuit/joinsplit-r5.wasm";
-const ZKEY = "/circuit/joinsplit-r5_final.zkey";
+const WASM = "/circuit/joinsplit-r6.wasm";
+const ZKEY = "/circuit/joinsplit-r6_final.zkey";
 
 // Testnet nodes fall behind each other by minutes at times: order the endpoints by head block,
 // probed once per few minutes, so table reads come from the freshest node.
@@ -181,56 +181,84 @@ export async function registeredKey(actor: string): Promise<Pt | null> {
 export const keyFingerprint = (pk: Pt) => hex32(pk[1]).slice(0, 4) + "·" + hex32(pk[1]).slice(-4);
 
 /** the tree row (root, next_leaf, root_seq) that at least two nodes agree on; `confirmed` false when only one answered */
-async function agreedTreeRow(): Promise<{ next: number; root: string; rootSeq: bigint; confirmed: boolean }> {
+export interface TreeRowAgreed { id: number; next: number; root: string; rootSeq: bigint }
+/**
+ * Every tree row (root, next_leaf, root_seq per tree) as two nodes agree on them, plus the
+ * active tree from the config row; `confirmed` false when only one node answered. Each node's
+ * answer is validated on its own before agreement.
+ */
+async function agreedTrees(): Promise<{ trees: TreeRowAgreed[]; active: number; confirmed: boolean }> {
   const answers = await Promise.allSettled([...new Set(ENDPOINTS)].map(async (ep) => {
-    const res = await fetch(`${ep}/v1/chain/get_table_rows`, { method: "POST", body: JSON.stringify({ code: SHIELD.contract, scope: SHIELD.contract, table: "tree", json: true, limit: 1 }), signal: AbortSignal.timeout(15000) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const j = (await res.json()) as { rows: { next_leaf: string | number; root: string; root_seq: string | number }[] };
-    const r = j.rows[0];
-    const row = r ? { next: Number(r.next_leaf), root: String(r.root).toLowerCase(), rootSeq: BigInt(r.root_seq) } : { next: 0, root: hex32(new Tree().root), rootSeq: 0n };
-    if (row.rootSeq < 0n || row.rootSeq > 1n << 40n || !Number.isInteger(row.next) || row.next < 0 || row.next > 1 << 20 || !/^[0-9a-f]{64}$/.test(row.root)) throw new Error("malformed tree row");
-    return row;
+    const list = await rows<{ id: string | number; next_leaf: string | number; root: string; root_seq: string | number }>("tree", "id", ep);
+    const trees = list.map((r) => ({ id: Number(r.id), next: Number(r.next_leaf), root: String(r.root).toLowerCase(), rootSeq: BigInt(r.root_seq) }));
+    for (const t of trees) if (!Number.isInteger(t.id) || t.id < 0 || t.id >= 1 << 24 || t.rootSeq < 0n || t.rootSeq > 1n << 40n || !Number.isInteger(t.next) || t.next < 0 || t.next > 1 << 20 || !/^[0-9a-f]{64}$/.test(t.root)) throw new Error("malformed tree row");
+    if (new Set(trees.map((t) => t.id)).size !== trees.length) throw new Error("duplicate tree rows");
+    const cres = await fetch(`${ep}/v1/chain/get_table_rows`, { method: "POST", body: JSON.stringify({ code: SHIELD.contract, scope: SHIELD.contract, table: "config", json: true, limit: 1 }), signal: AbortSignal.timeout(15000) });
+    if (!cres.ok) throw new Error(`HTTP ${cres.status}`);
+    const cj = (await cres.json()) as { rows: { active_tree?: string | number }[] };
+    const active = Number(cj.rows[0]?.active_tree ?? 0);
+    if (!trees.length) trees.push({ id: 0, next: 0, root: hex32(new Tree().root), rootSeq: 0n });
+    return { trees: trees.sort((a, b) => a.id - b.id), active, key: trees.map((t) => `${t.id}:${t.next}:${t.root}:${t.rootSeq}`).join("|") + `#${active}` };
   }));
   const got = answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
   if (!got.length) throw new Error("No node answered.");
   // nodes can be a block apart: take the most advanced state that two nodes share; else the single answer, unconfirmed
-  const same = (a: typeof got[0], b: typeof got[0]) => a.root === b.root && a.next === b.next && a.rootSeq === b.rootSeq;
-  const shared = got.filter((r) => got.filter((o) => same(o, r)).length >= 2).sort((a, b) => b.next - a.next);
-  if (shared.length) return { ...shared[0], confirmed: true };
-  return { ...got.sort((a, b) => b.next - a.next)[0], confirmed: got.length >= 2 ? false : false };
+  const total = (g: typeof got[0]) => g.trees.reduce((n, t) => n + t.next, 0);
+  const shared = got.filter((r) => got.filter((o) => o.key === r.key).length >= 2).sort((a, b) => total(b) - total(a));
+  if (shared.length) return { trees: shared[0].trees, active: shared[0].active, confirmed: true };
+  const best = got.sort((a, b) => total(b) - total(a))[0];
+  return { trees: best.trees, active: best.active, confirmed: false };
 }
 
-// the rebuilt tree is cached and extended: leaves are append-only, so a later scan hashes only
-// what is new; a leaf that changes under the cache means a lying or inconsistent node, and the
-// cache is thrown away
-let treeCache: { tree: Tree; cms: string[] } | null = null;
-function rebuildTo(next: number, byIndex: Map<number, string>): Tree {
-  let cache = treeCache;
+// each rebuilt tree is cached and extended: leaves are append-only, so a later scan hashes only
+// what is new; a leaf that changes under the cache means a lying or inconsistent node, and that
+// tree's cache is thrown away
+const treeCaches = new Map<number, { tree: Tree; cms: string[] }>();
+function rebuildTo(id: number, next: number, byIndex: Map<number, string>): Tree {
+  let cache = treeCaches.get(id) ?? null;
   if (cache) {
     for (let i = 0; i < Math.min(cache.cms.length, next); i++) if ((byIndex.get(i) ?? "0".repeat(64)) !== cache.cms[i]) { cache = null; break; }
   }
-  if (!cache || cache.cms.length > next) cache = { tree: new Tree(), cms: [] };
+  if (!cache || cache.cms.length > next) cache = { tree: new Tree(undefined, id), cms: [] };
   for (let i = cache.cms.length; i < next; i++) { const cm = byIndex.get(i) ?? "0".repeat(64); cache.tree.append(BigInt("0x" + cm)); cache.cms.push(cm); }
-  treeCache = cache;
+  treeCaches.set(id, cache);
   return cache.tree;
 }
+/** the outputs of one node grouped by tree and checked against the agreed roots; returns the rebuilt trees or throws */
+function rebuildAll(agreed: TreeRowAgreed[], outs: { index: string | number; cm: string }[]): Map<number, Tree> {
+  const result = new Map<number, Tree>();
+  for (const t of agreed) {
+    const byIndex = new Map<number, string>();
+    for (const o of outs) {
+      const g = Number(o.index);
+      if (treeOf(g) !== t.id) continue;
+      const pos = g - t.id * 2 ** 20;
+      if (pos >= t.next) continue;
+      if (!Number.isInteger(pos) || pos < 0 || byIndex.has(pos) || !/^[0-9a-f]{64}$/i.test(o.cm)) throw new Error("malformed outputs");
+      byIndex.set(pos, o.cm.toLowerCase());
+    }
+    const tree = rebuildTo(t.id, t.next, byIndex);
+    if (hex32(tree.root) !== t.root) { treeCaches.delete(t.id); throw new Error(`outputs of tree ${t.id} do not hash to the agreed root`); }
+    result.set(t.id, tree);
+  }
+  return result;
+}
 
-/** the tree rebuilt from the leaves table and checked against the root two nodes agree on */
-export async function chainTree(): Promise<{ tree: Tree; nextLeaf: number; rootSeq: bigint; confirmed: boolean }> {
-  const agreed = await agreedTreeRow();
+/** every tree rebuilt from the outputs table and checked against the roots two nodes agree on; snapshots, so a payment keeps its root */
+export interface ChainTrees { trees: Map<number, { tree: Tree; rootSeq: bigint; next: number }>; active: number; confirmed: boolean }
+export async function chainTree(): Promise<ChainTrees> {
+  const agreed = await agreedTrees();
   let lastErr: unknown = new Error("No node answered.");
   for (const ep of await endpoints()) {
     try {
       const outs = await rows<{ index: string | number; cm: string }>("outputs", "index", ep);
-      const byIndex = new Map(outs.filter((o) => Number(o.index) < agreed.next).map((o) => [Number(o.index), o.cm.toLowerCase()]));
-      const tree = rebuildTo(agreed.next, byIndex);
-      if (hex32(tree.root) !== agreed.root) throw new Error("leaves do not hash to the agreed root");
-      // callers keep this tree for a proof: hand out a snapshot, so a later scan extending the
-      // cache cannot change its root under a payment that already named its root sequence
-      return { tree: tree.snapshot(), nextLeaf: agreed.next, rootSeq: agreed.rootSeq, confirmed: agreed.confirmed };
-    } catch (e) { lastErr = e; treeCache = null; }
+      const built = rebuildAll(agreed.trees, outs);
+      const trees = new Map<number, { tree: Tree; rootSeq: bigint; next: number }>();
+      for (const t of agreed.trees) trees.set(t.id, { tree: built.get(t.id)!.snapshot(), rootSeq: t.rootSeq, next: t.next });
+      return { trees, active: agreed.active, confirmed: agreed.confirmed };
+    } catch (e) { lastErr = e; }
   }
-  throw new Error(`The tree read from the chain does not match the contract's root (${(lastErr as Error).message}); try again.`);
+  throw new Error(`The trees read from the chain do not match the contract's roots (${(lastErr as Error).message}); try again.`);
 }
 
 export interface ScanResult { notes: OwnedNote[]; spent: OwnedNote[]; confirmed?: boolean }
@@ -243,7 +271,8 @@ export type NoteKind = "deposit" | "note";
  * cannot invent a note or a balance. `confirmed` is false when only one node answered.
  */
 async function scanTables() {
-  const agreed = await agreedTreeRow();
+  const agreedAll = await agreedTrees();
+  const agreed = { next: agreedAll.trees.reduce((n, t) => n + t.next, 0), confirmed: agreedAll.confirmed };
   // spent status from every node. A nullifier counts as spent when two nodes list it; one that a
   // single node lists while another omits it is disputed: it is treated as spent (the safe side
   // for spending) and the balance is reported unconfirmed until the nodes agree
@@ -266,26 +295,17 @@ async function scanTables() {
   // the nodes disagree on is disputed, every variant is tried, and the balance is unconfirmed
   type Out = { index: string | number; cm: string; epk: string; cr: string; ca: string };
   const outAnswers = await Promise.allSettled([...new Set(ENDPOINTS)].map((ep) => rows<Out>("outputs", "index", ep)));
-  // each node's answer is validated on its own before anything is merged: unique indices inside the
-  // agreed tree, well-formed words, and commitments that hash to the agreed root. A node that fails
-  // is simply dropped, so one bad answer cannot abort a scan two healthy nodes can complete
+  const inTree = (o: Out) => { const g = Number(o.index); const t = agreedAll.trees.find((x) => x.id === treeOf(g)); return !!t && g - t.id * 2 ** 20 < t.next; };
   const valid: Out[][] = [];
   for (const a of outAnswers) {
     if (a.status !== "fulfilled") continue;
     try {
-      const list = a.value.filter((o) => Number(o.index) < agreed.next);
-      const byIndex = new Map<number, string>();
-      for (const o of list) {
-        const i = Number(o.index);
-        if (!Number.isInteger(i) || i < 0 || byIndex.has(i) || !/^[0-9a-f]{64}$/i.test(o.cm)) throw new Error("malformed outputs");
-        byIndex.set(i, o.cm.toLowerCase());
-      }
-      const tree = rebuildTo(agreed.next, byIndex);
-      if (hex32(tree.root) !== agreed.root) { treeCache = null; throw new Error("outputs do not hash to the agreed root"); }
+      const list = a.value.filter(inTree);
+      rebuildAll(agreedAll.trees, list); // throws on a duplicate, a malformed row, or a root mismatch in any tree
       valid.push(list);
     } catch { /* this node's answer is discarded */ }
   }
-  if (!valid.length) throw new Error("No node returned outputs that match the agreed root; try again.");
+  if (!valid.length) throw new Error("No node returned outputs that match the agreed roots; try again.");
   // the commitments are authenticated by the root; the note data beside them (epk, cr, ca) is not,
   // so it is authenticated by agreement: a row two nodes return identically is agreed, a disputed
   // row has every variant tried, and any dispute or single-node answer leaves the balance unconfirmed
@@ -309,7 +329,7 @@ async function scanTables() {
     cms.set(i, vs[0].row.cm.toLowerCase());
     for (const v of vs) outs.push(v.row); // every variant is tried; a note is only ever accepted if it recomputes to its commitment
   }
-  return { outs, leaves: [...cms].map(([index, cm]) => ({ index, cm })), nfs, confirmed: agreed.confirmed && nfConfirmed && !outsDisputed };
+  return { outs, leaves: [...cms].map(([index, cm]) => ({ index, cm })), nfs, confirmed: agreed.confirmed && nfConfirmed && !outsDisputed, next: agreed.next };
 }
 
 export async function scan(keys: ShieldKeys): Promise<ScanResult> {
@@ -345,6 +365,20 @@ export async function scan(keys: ShieldKeys): Promise<ScanResult> {
   return { notes, spent, confirmed };
 }
 
+/** a payment spends notes from one tree (one root per proof): the tree holding the most of the token is tried first */
+export function pickInTree(p: Prefetched, tokenId: bigint, amount: bigint): { inputs: OwnedNote[]; tree: Tree; rootSeq: bigint } {
+  const byTree = new Map<number, OwnedNote[]>();
+  for (const n of p.notes) if (n.token === tokenId) { const id = treeOf(n.index); byTree.set(id, [...(byTree.get(id) ?? []), n]); }
+  const order = [...byTree.entries()].sort((a, b) => (b[1].reduce((s, n) => s + n.v, 0n) > a[1].reduce((s, n) => s + n.v, 0n) ? 1 : -1));
+  let lastErr: Error | null = null;
+  for (const [id, notes] of order) {
+    const t = p.trees.trees.get(id);
+    if (!t) continue;
+    try { return { inputs: pick(notes, tokenId, amount), tree: t.tree, rootSeq: t.rootSeq }; } catch (e) { lastErr = e as Error; }
+  }
+  if (order.length > 1) throw new Error("This amount spans notes in more than one tree. Send yourself the total from each tree first to combine them.");
+  throw lastErr ?? new Error("Not enough in your shielded balance.");
+}
 export function pick(notes: OwnedNote[], tokenId: bigint, amount: bigint): OwnedNote[] {
   const same = notes.filter((n) => n.token === tokenId).sort((a, b) => (a.v > b.v ? -1 : 1));
   const chosen: OwnedNote[] = [];
@@ -369,10 +403,10 @@ export interface Prepared { action: Record<string, unknown>; outputs: { cm: bigi
  * between the user and the wallet window (browsers only allow that window within a few
  * seconds of a click). Valid for a short while; a root a few seconds old is still in the ring.
  */
-export interface Prefetched { notes: OwnedNote[]; tree: Tree; rootSeq: bigint; at: number }
+export interface Prefetched { notes: OwnedNote[]; trees: ChainTrees; at: number }
 export async function prefetch(keys: ShieldKeys): Promise<Prefetched> {
-  const [{ notes }, { tree, rootSeq }] = await Promise.all([scan(keys), chainTree()]);
-  return { notes, tree, rootSeq, at: Date.now() };
+  const [{ notes }, trees] = await Promise.all([scan(keys), chainTree()]);
+  return { notes, trees, at: Date.now() };
 }
 const fresh = (p?: Prefetched | null) => (p && Date.now() - p.at < 45000 ? p : null);
 
@@ -399,8 +433,7 @@ export async function prepareSend(s: Session, keys: ShieldKeys, cfg: ShieldConfi
   const toPk = await registeredKey(to);
   if (!toPk) throw new Error(`${to} has not set up shielded payments yet.`);
   const p = fresh(pre) ?? (await prefetch(keys));
-  const inputs = pick(p.notes, entry.id, amount);
-  const { tree, rootSeq } = p;
+  const { inputs, tree, rootSeq } = pickInTree(p, entry.id, amount);
   const change = inputs.reduce((sum, n) => sum + n.v, 0n) - amount;
   const built = buildJoinSplit({ keys, inputs, outputs: [{ pk: toPk, v: amount }, { pk: keys.pk, v: change }], tree, auditorPk: cfg.auditorPk, sender: nameToU64(s.auth.actor) });
   return prove(s, built, rootSeq, entry.id, onProgress);
@@ -412,8 +445,7 @@ export async function prepareWithdraw(s: Session, keys: ShieldKeys, cfg: ShieldC
   if (!entry) throw new Error(`${token.code} is not enabled in the shielded contract.`);
   onProgress?.(0.02, "Reading your notes");
   const p = fresh(pre) ?? (await prefetch(keys));
-  const inputs = pick(p.notes, entry.id, amount);
-  const { tree, rootSeq } = p;
+  const { inputs, tree, rootSeq } = pickInTree(p, entry.id, amount);
   const change = inputs.reduce((sum, n) => sum + n.v, 0n) - amount;
   const me = nameToU64(s.auth.actor);
   const built = buildJoinSplit({ keys, inputs, outputs: [{ pk: keys.pk, v: 0n }, { pk: keys.pk, v: change }], tree, auditorPk: cfg.auditorPk, sender: me, vPub: amount, tokenPub: entry.id, to: me });
@@ -716,7 +748,7 @@ export async function auditorLedger(auditorSecret: string): Promise<ShieldLedger
   return result;
 }
 
-export interface ShieldEdges { escrow: Record<string, bigint>; deposits: Record<string, bigint>; withdrawals: Record<string, bigint>; unfinished: Record<string, bigint>; nullifiers: number; leaves: number; slotsUsed: number; capacity: number }
+export interface ShieldEdges { escrow: Record<string, bigint>; deposits: Record<string, bigint>; withdrawals: Record<string, bigint>; unfinished: Record<string, bigint>; nullifiers: number; leaves: number; slotsUsed: number; capacity: number; trees: number; activeTree: number }
 
 /** escrow against the contract's own counters, per token */
 export async function shieldEdges(cfg: ShieldConfig): Promise<ShieldEdges> {
@@ -735,6 +767,7 @@ export async function shieldEdges(cfg: ShieldConfig): Promise<ShieldEdges> {
     if (BigInt(c.amount) === 0n) continue; const entry = cfg.tokens.find((e) => e.token.raw === String(c.sym)); const code = entry?.token.code ?? String(c.sym); unfinished[code] = (unfinished[code] ?? 0n) + BigInt(c.amount); }
   const [nfs, lv] = await Promise.all([rows<{ key: string | number }>("nullifiers", "key"), rows<{ index: string | number }>("outputs", "index")]);
   // capacity is measured in tree slots (the agreed next_leaf): a deposit stores one output row but takes two slots
-  const agreed = await agreedTreeRow();
-  return { escrow, deposits, withdrawals, unfinished, nullifiers: nfs.length, leaves: lv.length, slotsUsed: agreed.next, capacity: 1 << 20 };
+  const agreed = await agreedTrees();
+  const active = agreed.trees.find((t) => t.id === agreed.active) ?? agreed.trees[agreed.trees.length - 1];
+  return { escrow, deposits, withdrawals, unfinished, nullifiers: nfs.length, leaves: lv.length, slotsUsed: active?.next ?? 0, capacity: 1 << 20, trees: agreed.trees.length, activeTree: agreed.active };
 }

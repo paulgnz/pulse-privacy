@@ -276,6 +276,37 @@ local.append(jsRestored.outNotes[0].cm); local.append(jsRestored.outNotes[1].cm)
 await sh.actions.pause([true]).send("xprshield@active");
 lap("a restored account cannot spend until the committee lifts the mark");
 
+// --- rollover: a second tree; its notes carry global indices and prove against its own root ---
+await sh.actions.pause([false]).send("xprshield@active");
+await sh.actions.newtree([]).send("xprshield@active");
+assert.equal(Number(sh.tables.config(scope).getTableRows()[0].active_tree), 1, "tree 1 is active");
+const local1 = new N.Tree(20, 1);
+const aT = N.newNote(alice.pk, units(3), N.TOKENS.XPR);
+await token.actions.transfer(["alice", "xprshield", "3.0000 XPR", `shield:${hex(aT.r)}`]).send("alice@active");
+await sh.actions.deposit(["alice", hex(aT.r)]).send("alice@active");
+const gT = local1.append(aT.cm); local1.append(0n);
+assert.equal(gT, 2 ** 20, "the first leaf of tree 1 has global index 2^20");
+// a second deposit, so the first note's Merkle path has a non-zero sibling above the leaf level
+const aT2 = N.newNote(alice.pk, units(4), N.TOKENS.XPR);
+await token.actions.transfer(["alice", "xprshield", "4.0000 XPR", `shield:${hex(aT2.r)}`]).send("alice@active");
+await sh.actions.deposit(["alice", hex(aT2.r)]).send("alice@active");
+local1.append(aT2.cm); local1.append(0n);
+const row1 = sh.tables.tree(scope).getTableRow(1n);
+assert.equal(row1.root, hex(local1.root), "tree 1 root matches the library");
+assert.notEqual(local1.path(gT).siblings[1], 0n, "the path of the first note has a real sibling at level 1");
+assert.ok(sh.tables.outputs(scope).getTableRows().some((o) => Number(o.index) === gT), "the output row is keyed by the global index");
+assert.notEqual(hex(N.nullifier(alice.nk, gT)), hex(N.nullifier(alice.nk, 0)), "same position, different tree, different nullifier");
+const jsT = N.buildJoinSplit({ keys: alice, tree: local1, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: aT, index: gT }], outputs: [{ pk: bob.pk, v: units(1) }, { pk: alice.pk, v: units(2) }] });
+const pT = await prove(jsT, { seq: Number(row1.root_seq) });
+await expectToThrow(spend("alice", pT, { seq: seq() }).send("alice@active"), "eosio_assert: invalid proof"); // tree 0's root and tree word
+await spend("alice", pT).send("alice@active");
+local1.append(jsT.outNotes[0].cm); local1.append(jsT.outNotes[1].cm);
+assert.equal(sh.tables.tree(scope).getTableRow(1n).root, hex(local1.root), "tree 1 root after the spend matches");
+assert.throws(() => N.buildJoinSplit({ keys: alice, tree: local1, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: aT, index: gT }, { note: a4, index: i4 }], outputs: [{ pk: bob.pk, v: 1n }, { pk: alice.pk, v: aT.v + a4.v - 1n }] }), /not in tree 1/, "inputs must share one tree");
+lap("rollover: newtree, a deposit and a payment in tree 1 (global indices), tree 0 root refused for it, inputs cannot span trees");
+await sh.actions.pause([true]).send("xprshield@active");
+
+
 // --- testnet reset wipes everything and allows a fresh init ---
 await expectToThrow(sh.actions.reset([]).send("bob@active"), "missing required authority xprshield");
 await sh.actions.reset([]).send("xprshield@active");
@@ -283,5 +314,5 @@ assert.equal(sh.tables.outputs(scope).getTableRows().length, 0); assert.equal(nu
 await sh.actions.init([ptHex(auditor.pk), encodeVk(VK)]).send("xprshield@active");
 assert.equal(treeRow().root, hex(new N.Tree().root), "fresh tree after reset");
 lap("reset: tables wiped, re-initialised");
-console.log("xprshield (revision 5) passed");
+console.log("xprshield (revision 6) passed");
 process.exit(0);

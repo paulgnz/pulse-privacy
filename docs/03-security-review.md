@@ -344,3 +344,13 @@ check stop signing safely; the security regressions pass. This closes the review
 headless client as well: three internal rounds and sixteen Codex passes across contract, circuit,
 app and client, every finding fixed and tested.
 
+## Capacity: tree rollover (2026-09-09, before the first mainnet deploy)
+
+Codex's standing priority, continued withdrawals at tree capacity, is closed by construction:
+the contract keeps several trees and opens a fresh one when the active tree is full (or on the
+committee's `newtree`), leaf indices are global (tree · 2^20 + position) so nullifiers never
+collide across trees, and the circuit (revision 6) takes the tree as a public input that the
+contract binds to the root it looked up, with both inputs of a payment in that tree. The vert
+suite exercises a rollover end to end; the app and the client rebuild and verify every tree and
+pick a payment's notes within one. A full tree can no longer block anyone's exit.
+

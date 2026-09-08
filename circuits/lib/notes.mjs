@@ -40,7 +40,12 @@ export function keygen(ask = randScalar()) {
 export const commitment = (n) => H(n.pk[0], n.pk[1], n.v, n.token, n.r);
 export const nullifier = (nk, index) => H(nk, BigInt(index));
 /** the nullifier a disabled second input emits: Poseidon(nk, 2^40 + dummy), dummy < 2^40 */
-export const dummyNullifier = (nk, dummy) => H(nk, (1n << 40n) + BigInt(dummy));
+export const dummyNullifier = (nk, dummy) => H(nk, (1n << 60n) + BigInt(dummy));
+/** leaf indices are global: tree · 2^DEPTH + position (plain numbers; they stay far below 2^53) */
+export const POS_MASK = (1n << 20n) - 1n;
+export const treeOf = (index) => Math.floor(Number(index) / 2 ** 20);
+export const posOf = (index) => Number(index) % 2 ** 20;
+export const globalIndex = (tree, pos) => Number(tree) * 2 ** 20 + Number(pos);
 
 /** a fresh note to `pk` */
 export function newNote(pk, v, token, r = randField()) {
@@ -74,8 +79,10 @@ export function decompressPoint(w) {
 
 // ---- Merkle tree of commitments, depth DEPTH, Poseidon(2) nodes, zero chain leaves ----
 export class Tree {
-  constructor(depth = DEPTH) {
+  /** `id` names the tree; leaf indices handed out are global, id · 2^depth + position */
+  constructor(depth = DEPTH, id = 0) {
     this.depth = depth;
+    this.id = id;
     this.zeros = [0n];
     for (let i = 0; i < depth; i++) this.zeros.push(H(this.zeros[i], this.zeros[i]));
     this.levels = Array.from({ length: depth + 1 }, () => []);
@@ -83,7 +90,7 @@ export class Tree {
   get size() { return this.levels[0].length; }
   node(level, i) { return i < this.levels[level].length ? this.levels[level][i] : this.zeros[level]; }
   append(cm) {
-    const index = this.levels[0].length;
+    const index = this.levels[0].length; // position; the global index is returned
     this.levels[0].push(BigInt(cm));
     let i = index;
     for (let l = 0; l < this.depth; l++) {
@@ -92,12 +99,12 @@ export class Tree {
       this.levels[l + 1][pi] = H(left, right);
       i = pi;
     }
-    return index;
+    return globalIndex(this.id, index);
   }
   get root() { return this.node(this.depth, 0); }
   path(index) {
     const siblings = [], bits = [];
-    let i = index;
+    let i = posOf(index); // a global or a local index; only the position matters here
     for (let l = 0; l < this.depth; l++) {
       bits.push(i & 1);
       siblings.push(this.node(l, i ^ 1));
@@ -168,7 +175,8 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
   const inV = ins.map((i) => (i ? i.note.v : 0n));
   const inToken = ins.map((i) => (i ? i.note.token : token));
   const inR = ins.map((i) => (i ? i.note.r : 0n));
-  const inIndex = ins.map((i) => (i ? BigInt(i.index) : 0n));
+  const inIndex = ins.map((i) => (i ? BigInt(i.index) : 0n)); // global indices
+  for (const i of ins) if (i && treeOf(i.index) !== tree.id) throw new Error(`note ${i.index} is not in tree ${tree.id}`);
   const inSiblings = ins.map((i) => (i ? tree.path(i.index).siblings : Array(tree.depth).fill(0n)));
   const enabled1 = ins[1] ? 1n : 0n;
   // revision 5: a disabled second input carries a fresh dummy nullifier in a reserved domain
@@ -187,6 +195,7 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
     outR: outNotes.map((n) => n.r),
     esk,
     root: tree.root,
+    tree: BigInt(tree.id),
     vPub: BigInt(vPub),
     tokenPub: BigInt(tokenPub),
     to: BigInt(to),
@@ -205,11 +214,11 @@ export function buildJoinSplit({ keys, inputs, outputs, tree, auditorPk, sender,
   return { input, expected, outNotes };
 }
 
-/** public signals in the circuit's order: nf[2] cm[2] epk[2][2] cr[2][2] ca[2][3] senderPk[2] root vPub tokenPub to sender A[2] */
-export function publicSignals(expected, { root, vPub = 0n, tokenPub = 0n, to = 0n, sender, A }) {
+/** public signals in the circuit's order: nf[2] cm[2] epk[2][2] cr[2][2] ca[2][3] senderPk[2] root tree vPub tokenPub to sender A[2] */
+export function publicSignals(expected, { root, tree = 0n, vPub = 0n, tokenPub = 0n, to = 0n, sender, A }) {
   return [
     ...expected.nf, ...expected.cm, ...expected.epk.flat(), ...expected.cr.flat(), ...expected.ca.flat(), ...expected.senderPk,
-    root, BigInt(vPub), BigInt(tokenPub), BigInt(to), BigInt(sender), ...A,
+    root, BigInt(tree), BigInt(vPub), BigInt(tokenPub), BigInt(to), BigInt(sender), ...A,
   ].map((x) => BigInt(x));
 }
 
@@ -241,6 +250,7 @@ export const hex32 = (x) => BigInt(x).toString(16).padStart(64, "0");
 const api = {
   init, keygen, newNote, commitment, nullifier, Tree, buildJoinSplit, publicSignals, actionPublics, pack, unpack,
   compressPoint, decompressPoint, xFromY, tryDecryptReceiver, decryptAuditor, sealTo, openSealed, dummyNullifier, randField, randScalar, nameToU64, hex32, TOKENS, DEPTH,
+  treeOf, posOf, globalIndex, POS_MASK,
   get F() { return F; }, get bj() { return bj; }, get B8() { return B8; },
 };
 export default api;

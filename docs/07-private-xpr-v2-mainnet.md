@@ -19,7 +19,7 @@ in order. Nothing here is done until its line says so.
 | item | who | status |
 |---|---|---|
 | Phase 1 of the ceremony: ≥ 5 contributors, then finalise with an announced beacon block | Paul, contributors | 3 of 5 |
-| Phase 2 for `circuits/shielded/joinsplit.circom` **revision 5** (31,659 constraints) on the ceremony site, then finalise; `final/vk.hex` | Paul | not started |
+| Phase 2 for `circuits/shielded/joinsplit.circom` **revision 6** (31,708 constraints, 28 public signals) on the ceremony site, then finalise; `final/vk.hex` | Paul | not started |
 | Contract account **`privatexpr`** on mainnet (decided 2026-09-08; explorer.xprnetwork.org/account/privatexpr): created; owner moves to `admin.proton@committee` on launch day (§2a) | Paul | created |
 | Deploy permission: v1 was deployed from the operational key without asking anyone, so none needed; if `setcode` is ever refused, that is the moment to ask | Paul | none needed |
 | RAM: code ≈ 82 KB WASM → ≈ 250 KB; tables: 20-level tree frontier + 1,024-root ring ≈ 70 KB; each note ≈ 300 B (paid by the depositor/spender); keys ≈ 200 B per account (paid by the owner). Buy 800 KB to start | Paul | not bought |
@@ -39,7 +39,7 @@ shasum -a 256 deploy/mainnet/xprshield.contract.wasm
 
 The hash goes in this file and in the announcement, so anyone can compare it with `get_code_hash`.
 
-Built 2026-09-08 (night) from circuit revision 5 and the merged outputs table (see docs/03 "Privacy and resource pass"): wasm `30e13a759640952da071ce90db3a927cbbfec4f060a3012051ee6f85cbd745fd`, abi `a1dfe5efdfc527f499d62febd7adfbeca418d625a15411f7dbc780cd97656bd8`. Testnet runs the same source with TESTNET=true, code hash `91768790…`, initialised with the revision-5 rehearsal key. Rebuild and re-hash after any contract change.
+Built 2026-09-09 from circuit revision 6 (several trees with automatic rollover; global leaf indices; `tree` public input) and the merged outputs table: wasm `69ccead8a06756c7f1b374dfae6a8b705f49013e0d6560070ae02f4a3b1fbfca`, abi `a67f932e2365cbc5253f0fe8e67ee7d7876e032ffe039399746a882c14747a5c`. Testnet runs the same source with TESTNET=true, initialised with the revision-6 rehearsal key. Rebuild and re-hash after any contract change.
 
 ## 2a. Secure the account (launch day, after the final contract is deployed and verified; Paul's call, not before)
 
@@ -84,10 +84,9 @@ Then move `privatexpr@active` to the committee (or an msig) as with v1.
 
 ## 5. After launch
 
-- Tree capacity: the tree holds 1,048,576 leaves (about 500,000 payments); when it is full no spend is possible, including
-  withdrawals. Watch `tree.next_leaf` (the Auditor tab shows it against the capacity) and, well before it is reached, deploy
-  the successor contract with a fresh tree and move balances by withdraw-and-deposit; the paused-only `restore` is the
-  last resort for anyone who cannot. Rehearse this on testnet before mainnet passes half capacity.
+- Tree capacity: each tree holds 1,048,576 leaves and the contract rolls over to a fresh tree on its own when the active one
+  is full (revision 6), so spending and withdrawals are never blocked; `newtree` can also open the next tree early. The
+  Auditor tab shows the active tree's fill. A successor contract is no longer needed for capacity.
 
 - Announce: contract hash, ceremony transcript, caps, what is hidden and what is not.
 - Watch the first day: `testnet-demo.mjs audit` equivalent for mainnet (auditor CLI) with the

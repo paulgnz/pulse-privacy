@@ -35,7 +35,7 @@ jobs:
 
   contract-v2:
     # the shielded contract: build, Poseidon conformance, differential fuzz, and the end-to-end vert
-    # suite with real proofs against the tracked revision-5 proving key
+    # suite with real proofs against the tracked revision-6 proving key
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,8 +50,8 @@ jobs:
       - name: proving key from the dapp's tracked circuit files
         run: |
           mkdir -p circuits/build/joinsplit_js
-          cp dapp/public/circuit/joinsplit-r5.wasm circuits/build/joinsplit_js/joinsplit.wasm
-          cp dapp/public/circuit/joinsplit-r5_final.zkey circuits/build/joinsplit_final.zkey
+          cp dapp/public/circuit/joinsplit-r6.wasm circuits/build/joinsplit_js/joinsplit.wasm
+          cp dapp/public/circuit/joinsplit-r6_final.zkey circuits/build/joinsplit_final.zkey
           cd circuits && npx snarkjs zkey export verificationkey build/joinsplit_final.zkey build/joinsplit_vk.json
       - run: node tests/poseidon.test.mjs
         working-directory: contracts/xpr-shield-tsc

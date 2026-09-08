@@ -23,7 +23,8 @@ import { decompress, inPrimeSubgroup, onCurve } from "./curve";
 /** true for testnet builds only: enables `reset`. Set to false for any mainnet build. */
 const TESTNET: bool = true;
 const DEPTH: i32 = 20;
-const N_PUB: i32 = 27;
+const N_PUB: i32 = 28; // revision 6: `tree` follows `root`
+const TREE_MAX: u64 = 1 << 24; // trees are numbered below 2^24 (the circuit decomposes 24 tree bits)
 const N_ACTION: i32 = 16;
 const ACTION_LEN: i32 = N_ACTION * 32;
 const PROOF_LEN: i32 = 256;
@@ -35,7 +36,9 @@ class Config extends Table {
     public id: u64 = 0,
     public auditor_pubkey: u8[] = [], // 64 bytes, x ‖ y
     public vk: u8[] = [],
-    public paused: bool = false
+    public paused: bool = false,
+    public root_seq: u64 = 0, // the root ring's sequence, global across trees
+    public active_tree: u64 = 0
   ) {
     super();
   }
@@ -115,7 +118,7 @@ class TreeRow extends Table {
 /** the last RING roots, keyed by sequence number, so a proof can name its root in 8 bytes */
 @table("roots")
 class RootRow extends Table {
-  constructor(public seq: u64 = 0, public root: u8[] = []) {
+  constructor(public seq: u64 = 0, public tree: u64 = 0, public root: u8[] = []) {
     super();
   }
   @primary
@@ -260,10 +263,25 @@ class XprShield extends Contract {
     check(c != null, "not initialised");
     return c!;
   }
+  /** the tree new leaves go into */
   tree(): TreeRow {
-    const t = this.trees.get(0);
+    const t = this.trees.get(this.config().active_tree);
     check(t != null, "not initialised");
     return t!;
+  }
+  /** a fresh, empty tree with the next id, made active */
+  openTree(c: Config): TreeRow {
+    const id = this.trees.get(c.active_tree) == null ? c.active_tree : c.active_tree + 1;
+    check(id < TREE_MAX, "no more trees");
+    const filled = new Array<u8>(DEPTH * 32);
+    for (let i = 0; i < filled.length; i++) filled[i] = 0;
+    const t = new TreeRow(id, 0, filled, toBytesBE(zeroAt(DEPTH)), 0);
+    this.trees.store(t, this.receiver);
+    c.active_tree = id;
+    this.configs.update(c, this.receiver);
+    this.rememberRoot(t, t.root);
+    this.trees.update(t, this.receiver);
+    return t;
   }
   tokenById(id: u64): TokenRow {
     let t = this.tokens.first();
@@ -283,15 +301,21 @@ class XprShield extends Contract {
     check(this.configs.get(0) == null, "already initialised");
     check(onCurve(auditor_pubkey), "auditor pubkey not on curve");
     check(inPrimeSubgroup(auditor_pubkey), "auditor pubkey is the identity or has low order");
-    check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 27 public inputs");
-    this.configs.store(new Config(0, auditor_pubkey, vk, false), this.receiver);
-    const filled = new Array<u8>(DEPTH * 32);
-    for (let i = 0; i < filled.length; i++) filled[i] = 0;
-    const root = toBytesBE(zeroAt(DEPTH));
-    const t = new TreeRow(0, 0, filled, root, 0);
-    this.trees.store(t, this.receiver);
-    this.rememberRoot(t, root);
-    this.trees.update(t, this.receiver);
+    check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 28 public inputs");
+    const c = new Config(0, auditor_pubkey, vk, false, 0, 0);
+    this.configs.store(c, this.receiver);
+    this.openTree(this.config());
+  }
+
+  /** start the next tree now (the contract also rolls over on its own when the active tree is full) */
+  @action("newtree")
+  newtree(): void {
+    requireAuth(this.receiver);
+    const c = this.config();
+    check(this.trees.get(c.active_tree) != null, "not initialised");
+    c.active_tree += 1;
+    this.configs.update(c, this.receiver);
+    this.openTree(this.config());
   }
 
   @action("addtoken")
@@ -322,7 +346,7 @@ class XprShield extends Contract {
   setvk(vk: u8[]): void {
     requireAuth(this.receiver);
     const c = this.config();
-    check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 27 public inputs");
+    check(vk.length == 64 + 3 * 128 + 64 * (N_PUB + 1), "vk length must match 28 public inputs");
     c.vk = vk;
     this.configs.update(c, this.receiver);
   }
@@ -356,7 +380,7 @@ class XprShield extends Contract {
     let b = this.backups.first(); while (b != null) { const n = this.backups.next(b); this.backups.remove(b); b = n; }
     let rs = this.restored.first(); while (rs != null) { const n = this.restored.next(rs); this.restored.remove(rs); rs = n; }
     let t = this.tokens.first(); while (t != null) { const n = this.tokens.next(t); this.tokens.remove(t); t = n; }
-    const tr = this.trees.get(0); if (tr != null) this.trees.remove(tr);
+    let tr = this.trees.first(); while (tr != null) { const n = this.trees.next(tr); this.trees.remove(tr); tr = n; }
     this.configs.remove(c!);
   }
 
@@ -475,22 +499,30 @@ class XprShield extends Contract {
 
   // ---------------------------------------------------------------- tree
 
+  /** record a tree's new root in the ring; the sequence is global across trees */
   rememberRoot(t: TreeRow, root: u8[]): void {
+    const c = this.config();
     t.root = root;
-    t.root_seq += 1;
-    if (t.root_seq > RING) {
-      const old = this.roots.get(t.root_seq - RING);
+    c.root_seq += 1;
+    t.root_seq = c.root_seq;
+    if (c.root_seq > RING) {
+      const old = this.roots.get(c.root_seq - RING);
       if (old != null) this.roots.remove(old); // free the slot first, so a full account still turns the ring
     }
-    this.roots.store(new RootRow(t.root_seq, root), this.receiver);
+    this.roots.store(new RootRow(c.root_seq, t.id, root), this.receiver);
+    this.configs.update(c, this.receiver);
   }
 
-  /** insert (cm1, cm2) as leaves next_leaf and next_leaf + 1 (20 hashes) and record the root; the caller stores the outputs rows, which carry the commitments */
+  /**
+   * Insert (cm1, cm2) as the next two leaves of the active tree (20 hashes) and record the root;
+   * returns the global index tree · 2^DEPTH + position. A full tree rolls over to a fresh one,
+   * so spending is never blocked. The caller stores the outputs rows, which carry the commitments.
+   */
   insertPair(cm1: Limbs, cm2: Limbs | null): u64 {
-    const t = this.tree();
+    let t = this.tree();
+    if (t.next_leaf + 2 > ((1 as u64) << (DEPTH as u64))) t = this.openTree(this.config());
     const index = t.next_leaf;
     check(index % 2 == 0, "tree corrupt");
-    check(index + 2 <= ((1 as u64) << (DEPTH as u64)), "tree full");
     let cur = hash2(cm1, cm2 == null ? zeroAt(0) : cm2!);
     let i = index >> 1;
     for (let level = 1; level < DEPTH; level++) {
@@ -506,7 +538,7 @@ class XprShield extends Contract {
     t.next_leaf = index + 2;
     this.rememberRoot(t, toBytesBE(cur));
     this.trees.update(t, this.receiver);
-    return index;
+    return (t.id << (DEPTH as u64)) + index;
   }
 
   spendNullifier(nf: u8[], payer: Name): void {
@@ -601,7 +633,8 @@ class XprShield extends Contract {
    * Signed by `owner`, who pays CPU and RAM. The proof is bound to `owner`, to the key
    * registered for `owner`, and to the withdrawal destination, which is `owner` itself.
    * `amount` > 0 makes it a withdrawal of `token_id`; `root_seq` names the tree root the
-   * proof was built against (one of the last RING).
+   * proof was built against (one of the last RING, in whichever tree); the contract supplies
+   * that root and its tree to the verifier.
    */
   @action("spend")
   spend(owner: Name, proof: u8[], publics: u8[], amount: u64, token_id: u8, root_seq: u64): void {
@@ -639,6 +672,7 @@ class XprShield extends Contract {
       .concat(publics.slice(6 * 32, 16 * 32))
       .concat(key!.pubkey)
       .concat(rootRow!.root)
+      .concat(u64Word(rootRow!.tree))
       .concat(u64Word(vPub)).concat(u64Word(tokenPub)).concat(u64Word(to)).concat(u64Word(owner.N))
       .concat(c.auditor_pubkey);
     check(groth16Verify(c.vk, proof, inputs), "invalid proof");

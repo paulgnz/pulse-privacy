@@ -114,5 +114,5 @@ assert.equal(await snarkjs.groth16.verify(vk, resigned, pw), false, "proof bound
 const swappedKey = psw.slice(); swappedKey[18] = bob.pk[0].toString(); swappedKey[19] = bob.pk[1].toString();
 assert.equal(await snarkjs.groth16.verify(vk, swappedKey, pw), false, "sender key cannot be substituted");
 lap("redirected destination, other signer and substituted sender key all rejected");
-console.log("join-split (revision 5) passed");
+console.log("join-split (revision 6) passed");
 process.exit(0);

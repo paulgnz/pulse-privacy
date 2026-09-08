@@ -158,12 +158,12 @@ try {
     if (cfg.paused) throw new Error("the contract is paused");
     const sc = await balanceOf(name, k);
     if (!sc.confirmed && !force) throw new Error("refusing to spend on an unconfirmed balance (use --force to override)");
-    const inputs = pick(sc.notes, t.id, v, (u) => fmt(u, t));
+    const { inputs, tree } = pick(sc.notes, t.id, v, (u) => fmt(u, t), sc.trees);
     const sum = inputs.reduce((s, n) => s + n.v, 0n);
     const outputs = isSend ? [{ pk: toPk, v }, { pk: k.pk, v: sum - v }] : [{ pk: k.pk, v: 0n }, { pk: k.pk, v: sum - v }];
     if (!isSend && !(await hasBalanceRow(name, t))) { await act(net, t.contract, "open", { owner: name, symbol: `${t.precision},${t.code}`, ram_payer: name }, name); say(`opened a ${t.code} balance row for ${name}`); }
     say(`proving (${inputs.length} note${inputs.length > 1 ? "s" : ""} in, change ${fmt(sum - v, t)})…`);
-    const { data, ms } = await proveSpend({ keys: k, tree: sc.tree, rootSeq: sc.rootSeq, auditorPk: cfg.auditorPk, owner: name, inputs, outputs, vPub: isSend ? 0n : v, tokenPub: isSend ? 0n : t.id, to: isSend ? 0n : N.nameToU64(name) });
+    const { data, ms } = await proveSpend({ keys: k, tree, auditorPk: cfg.auditorPk, owner: name, inputs, outputs, vPub: isSend ? 0n : v, tokenPub: isSend ? 0n : t.id, to: isSend ? 0n : N.nameToU64(name) });
     say(`proof in ${(ms / 1000).toFixed(1)} s`);
     const r = await act(net, net.contract, "spend", data, name);
     say(isSend ? `paid ${to} ${fmt(v, t)} (the chain shows only that ${name} paid): ${link(r.id)} (${r.cpu ?? "?"} µs)` : `withdrew ${fmt(v, t)} to ${name}: ${link(r.id)} (${r.cpu ?? "?"} µs)`);
@@ -255,7 +255,7 @@ try {
       for (const sp of (await net.verifiedSpends(() => true, new Set(t.outs.map((o) => o.cm.toLowerCase())))) ?? []) for (const c of sp.cm) spendsBy.set(c, sp);
       const deposits = await net.depositHistory();
       const when = (rec) => (rec ? `${rec.ts.replace("T", " ").slice(0, 19)} UTC  block ${rec.block}  tx ${rec.trx.slice(0, 12)}…` : "time and block not in history yet");
-      say(`${net.contract} on ${network}: ${t.nextLeaf} leaves, ${t.spent.size} spend tags${t.confirmed ? "" : " (UNCONFIRMED: " + t.reasons.join("; ") + ")"}`);
+      say(`${net.contract} on ${network}: ${t.nextLeaf} leaves in ${t.treeRows.length} tree${t.treeRows.length > 1 ? "s" : ""} (active ${t.active}), ${t.spent.size} spend tags${t.confirmed ? "" : " (UNCONFIRMED: " + t.reasons.join("; ") + ")"}`);
       for (const o of t.outs.sort((a, b) => Number(a.index) - Number(b.index))) {
         const cm = BigInt("0x" + o.cm);
         if (!o.epk) {

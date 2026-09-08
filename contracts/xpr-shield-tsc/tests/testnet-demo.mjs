@@ -70,17 +70,21 @@ if (cmd === "keys" || !keys) {
 }
 const K = Object.fromEntries(Object.entries(keys ?? {}).map(([w, s]) => [w, N.keygen(BigInt(s))]));
 
-async function chainTree() {
-  const tree = await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "tree", json: true, limit: 1 });
-  const next = Number(tree.rows[0].next_leaf);
-  const rootSeq = Number(tree.rows[0].root_seq);
+/** every tree, rebuilt from the outputs table (global indices) and checked against the contract's roots; each carries its root_seq */
+async function chainTrees() {
+  const rowsT = (await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "tree", json: true, limit: 100 })).rows;
   const outs = await rows("outputs");
-  const byIndex = new Map(outs.map((o) => [Number(o.index), BigInt("0x" + o.cm)]));
-  const t = new N.Tree();
-  for (let i = 0; i < next; i++) t.append(byIndex.get(i) ?? 0n);
-  if (hex(t.root) !== tree.rows[0].root) throw new Error(`local root ${hex(t.root)} != chain root ${tree.rows[0].root}`);
-  t.rootSeq = rootSeq;
-  return t;
+  const trees = new Map();
+  for (const r of rowsT) {
+    const id = Number(r.id), next = Number(r.next_leaf);
+    const byPos = new Map(outs.filter((o) => N.treeOf(Number(o.index)) === id).map((o) => [N.posOf(Number(o.index)), BigInt("0x" + o.cm)]));
+    const t = new N.Tree(N.DEPTH, id);
+    for (let i = 0; i < next; i++) t.append(byPos.get(i) ?? 0n);
+    if (hex(t.root) !== r.root) throw new Error(`tree ${id}: local root ${hex(t.root)} != chain root ${r.root}`);
+    t.rootSeq = Number(r.root_seq);
+    trees.set(id, t);
+  }
+  return trees;
 }
 
 /** every unspent note of `who`, from the outputs, leaves and nullifiers tables */
@@ -112,7 +116,11 @@ async function scan(who) {
 }
 
 function pick(notes, amount) {
-  const same = notes.filter((n) => n.token === TOKEN_ID).sort((a, b) => (a.v > b.v ? -1 : 1));
+  // one root per proof: choose within the tree holding the most of the token
+  const byTree = new Map();
+  for (const n of notes) if (n.token === TOKEN_ID) byTree.set(N.treeOf(n.index), [...(byTree.get(N.treeOf(n.index)) ?? []), n]);
+  const best = [...byTree.values()].sort((a, b) => (b.reduce((s, n) => s + n.v, 0n) > a.reduce((s, n) => s + n.v, 0n) ? 1 : -1))[0] ?? [];
+  const same = best.sort((a, b) => (a.v > b.v ? -1 : 1));
   const chosen = [];
   let sum = 0n;
   for (const n of same) { if (sum >= amount || chosen.length === 2) break; chosen.push(n); sum += n.v; }
@@ -165,8 +173,9 @@ if (cmd === "reset") {
   const amount = units(amt);
   const notes = pick(await scan(from), amount);
   console.log(`spending ${notes.map((n) => `leaf ${n.index} (${asset(n.v)})`).join(", ")}`);
-  const tree = await chainTree();
-  console.log(`tree rebuilt from ${tree.size} leaves, root ${hex(tree.root).slice(0, 12)}…`);
+  const trees = await chainTrees();
+  const tree = trees.get(N.treeOf(notes[0].index)); // one root per proof: the notes' own tree (pick keeps them in one)
+  console.log(`tree ${tree.id} rebuilt from ${tree.size} leaves, root ${hex(tree.root).slice(0, 12)}…`);
   const toKey = (await rows("keys")).find((r) => r.owner === ACCOUNTS[to]);
   if (!toKey) throw new Error(`${to} has not registered`);
   const auditor = (await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "config", json: true, limit: 1 })).rows[0].auditor_pubkey;
@@ -177,7 +186,8 @@ if (cmd === "reset") {
   const [who, amt] = args;
   const amount = units(amt);
   const notes = pick(await scan(who), amount);
-  const tree = await chainTree();
+  const trees = await chainTrees();
+  const tree = trees.get(N.treeOf(notes[0].index));
   const auditor = (await post("get_table_rows", { code: CONTRACT, scope: CONTRACT, table: "config", json: true, limit: 1 })).rows[0].auditor_pubkey;
   const change = notes.reduce((s, n) => s + n.v, 0n) - amount;
   const pub = { vPub: amount, tokenPub: TOKEN_ID, to: N.nameToU64(ACCOUNTS[who]) };

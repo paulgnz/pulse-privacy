@@ -102,24 +102,50 @@ export class Net {
     return { auditorPk: words(agreed.auditor_pubkey), paused: rowsGot.some((r) => r.paused), tokens };
   }
 
-  /** the tree row (root, next_leaf, root_seq) two nodes agree on */
-  async treeRow() {
+  /** every tree row and the active tree, as two nodes agree on them; each node's answer validated alone */
+  async treeRows() {
     const got = await this.fromAll(async (ep) => {
-      const j = await this.post(ep, "get_table_rows", { code: this.contract, scope: this.contract, table: "tree", json: true, limit: 1 });
-      const r = j.rows[0];
-      const row = r ? { next: Number(r.next_leaf), root: lower(r.root), rootSeq: BigInt(r.root_seq) } : { next: 0, root: hex(new N.Tree().root), rootSeq: 0n };
-      if (row.rootSeq < 0n || row.rootSeq > 1n << 40n || !Number.isInteger(row.next) || row.next < 0 || row.next > 1 << 20 || !/^[0-9a-f]{64}$/.test(row.root)) throw new Error("malformed tree row");
-      return row;
+      const list = (await this.table(ep, "tree")).map((r) => ({ id: Number(r.id), next: Number(r.next_leaf), root: lower(r.root), rootSeq: BigInt(r.root_seq) }));
+      for (const t of list) if (!Number.isInteger(t.id) || t.id < 0 || t.id >= 1 << 24 || t.rootSeq < 0n || t.rootSeq > 1n << 40n || !Number.isInteger(t.next) || t.next < 0 || t.next > 1 << 20 || !/^[0-9a-f]{64}$/.test(t.root)) throw new Error("malformed tree row");
+      if (new Set(list.map((t) => t.id)).size !== list.length) throw new Error("duplicate tree rows");
+      const cj = await this.post(ep, "get_table_rows", { code: this.contract, scope: this.contract, table: "config", json: true, limit: 1 });
+      const active = Number(cj.rows[0]?.active_tree ?? 0);
+      if (!list.length) list.push({ id: 0, next: 0, root: hex(new N.Tree().root), rootSeq: 0n });
+      list.sort((a, b) => a.id - b.id);
+      return { trees: list, active, key: list.map((t) => `${t.id}:${t.next}:${t.root}:${t.rootSeq}`).join("|") + `#${active}` };
     });
     if (!got.length) throw new Error("no node answered");
-    const shared = got.filter((r) => got.filter((o) => o.root === r.root && o.next === r.next && o.rootSeq === r.rootSeq).length >= 2).sort((a, b) => b.next - a.next);
+    const total = (g) => g.trees.reduce((n, t) => n + t.next, 0);
+    const shared = got.filter((r) => got.filter((o) => o.key === r.key).length >= 2).sort((a, b) => total(b) - total(a));
     if (shared.length) return { ...shared[0], confirmed: true };
-    return { ...got.sort((a, b) => b.next - a.next)[0], confirmed: false };
+    return { ...got.sort((a, b) => total(b) - total(a))[0], confirmed: false };
+  }
+  /** rebuild every agreed tree from one node's outputs; throws on a duplicate, a malformed row or a root mismatch */
+  rebuildAll(agreed, outs) {
+    const result = new Map();
+    for (const t of agreed) {
+      const tree = new N.Tree(N.DEPTH, t.id);
+      const byPos = new Map();
+      for (const o of outs) {
+        const g = Number(o.index);
+        if (N.treeOf(g) !== t.id) continue;
+        const pos = N.posOf(g);
+        if (pos >= t.next) continue;
+        if (byPos.has(pos) || !/^[0-9a-f]{64}$/i.test(o.cm)) throw new Error("malformed outputs");
+        byPos.set(pos, BigInt("0x" + o.cm));
+      }
+      for (let i = 0; i < t.next; i++) tree.append(byPos.get(i) ?? 0n);
+      if (hex(tree.root) !== t.root) throw new Error(`outputs of tree ${t.id} do not hash to the agreed root`);
+      tree.rootSeq = t.rootSeq;
+      result.set(t.id, tree);
+    }
+    return result;
   }
 
   /** outputs validated per node against the agreed root, note data agreed by vote, nullifiers agreed by vote */
   async scanTables() {
-    const agreed = await this.treeRow();
+    const agreedAll = await this.treeRows();
+    const inTree = (o) => { const g = Number(o.index); const t = agreedAll.trees.find((x) => x.id === N.treeOf(g)); return !!t && N.posOf(g) < t.next; };
     const nfLists = await this.fromAll(async (ep) => { const set = new Set(); for (const n of await this.table(ep, "nullifiers")) { if (typeof n.nf !== "string" || !/^[0-9a-f]{64}$/i.test(n.nf)) throw new Error("malformed nullifier"); set.add(lower(n.nf)); } return set; });
     if (!nfLists.length) throw new Error("no node answered");
     const nfCount = new Map();
@@ -129,24 +155,16 @@ export class Net {
 
     const answers = await this.fromAll((ep) => this.table(ep, "outputs"));
     const valid = [];
-    let tree = null;
+    let trees = null;
     for (const list0 of answers) {
       try {
-        const list = list0.filter((o) => Number(o.index) < agreed.next);
-        const byIndex = new Map();
-        for (const o of list) {
-          const i = Number(o.index);
-          if (!Number.isInteger(i) || i < 0 || byIndex.has(i) || !/^[0-9a-f]{64}$/i.test(o.cm)) throw new Error("malformed outputs");
-          byIndex.set(i, BigInt("0x" + o.cm));
-        }
-        const t = new N.Tree();
-        for (let i = 0; i < agreed.next; i++) t.append(byIndex.get(i) ?? 0n);
-        if (hex(t.root) !== agreed.root) throw new Error("outputs do not hash to the agreed root");
+        const list = list0.filter(inTree);
+        const built = this.rebuildAll(agreedAll.trees, list);
         valid.push(list);
-        tree = tree ?? t;
+        trees = trees ?? built;
       } catch { /* this node's answer is discarded */ }
     }
-    if (!valid.length) throw new Error("no node returned outputs that match the agreed root; try again");
+    if (!valid.length) throw new Error("no node returned outputs that match the agreed roots; try again");
     const variants = new Map();
     for (const l of valid) for (const o of l) {
       const i = Number(o.index);
@@ -162,12 +180,11 @@ export class Net {
       if (vs.length > 1 || vs[0].votes < 2) outsDisputed = true;
       for (const v of vs) outs.push(v.row);
     }
-    tree.rootSeq = agreed.rootSeq;
     const reasons = [];
-    if (!agreed.confirmed) reasons.push("tree row not agreed by two nodes");
+    if (!agreedAll.confirmed) reasons.push("tree rows not agreed by two nodes");
     if (nfLists.length < 2) reasons.push("nullifiers from one node only"); else if (nfDisputed) reasons.push("nodes disagree on spent status");
     if (valid.length < 2) reasons.push("outputs from one node only"); else if (outsDisputed) reasons.push("nodes disagree on note data");
-    return { outs, spent, tree, nextLeaf: agreed.next, rootSeq: agreed.rootSeq, confirmed: reasons.length === 0, reasons };
+    return { outs, spent, trees, active: agreedAll.active, nextLeaf: agreedAll.trees.reduce((n, t) => n + t.next, 0), treeRows: agreedAll.trees, confirmed: reasons.length === 0, reasons };
   }
 
   /** the account's notes: unspent and spent, from the agreed tables */
@@ -191,7 +208,7 @@ export class Net {
       const owned = { ...note, index, kind: o.epk ? "note" : "deposit" };
       (t.spent.has(hex(N.nullifier(keys.nk, index))) ? spentNotes : notes).push(owned);
     }
-    return { notes, spent: spentNotes, outs: t.outs, tree: t.tree, rootSeq: t.rootSeq, confirmed: t.confirmed, reasons: t.reasons };
+    return { notes, spent: spentNotes, outs: t.outs, trees: t.trees, active: t.active, confirmed: t.confirmed, reasons: t.reasons };
   }
 
   /** one account's row of a table as two nodes agree on it; null when agreed absent */

@@ -33,14 +33,15 @@ const res = await page.evaluate(async ({ aliceAsk, bobAsk, vk }) => {
   const wb = d.publics.match(/.{64}/g).map((x) => BigInt("0x" + x));
   const w = wb.map((x) => x.toString());
   const reg = await S.registeredKey("paul123");
-  const { tree } = await S.chainTree();
+  // the tree the payment was proved against is the one whose root sequence the action names
+  const { trees } = await S.chainTree(); const t = [...trees.values()].find((x) => x.rootSeq.toString() === String(d.root_seq)); const tree = t.tree;
   const epk = [S.decompressPoint(wb[4]), S.decompressPoint(wb[5])];
-  const signals = [...w.slice(0, 4), ...epk.flat().map(String), ...w.slice(6, 16), reg[0].toString(), reg[1].toString(), tree.root.toString(), d.amount, "0", "0", S.nameToU64("paul123").toString(), cfg.auditorPk[0].toString(), cfg.auditorPk[1].toString()];
+  const signals = [...w.slice(0, 4), ...epk.flat().map(String), ...w.slice(6, 16), reg[0].toString(), reg[1].toString(), tree.root.toString(), String(tree.id), d.amount, "0", "0", S.nameToU64("paul123").toString(), cfg.auditorPk[0].toString(), cfg.auditorPk[1].toString()];
   const proofObj = { pi_a: [BigInt("0x" + d.proof.slice(0, 64)).toString(), BigInt("0x" + d.proof.slice(64, 128)).toString(), "1"],
     pi_b: [[BigInt("0x" + d.proof.slice(192, 256)).toString(), BigInt("0x" + d.proof.slice(128, 192)).toString()], [BigInt("0x" + d.proof.slice(320, 384)).toString(), BigInt("0x" + d.proof.slice(256, 320)).toString()], ["1", "0"]],
     pi_c: [BigInt("0x" + d.proof.slice(384, 448)).toString(), BigInt("0x" + d.proof.slice(448, 512)).toString(), "1"], protocol: "groth16", curve: "bn128" };
   out.verifiesAsContractWould = await S.verify(vk, signals, proofObj);
-  const wrongSigner = signals.slice(); wrongSigner[24] = S.nameToU64("testclient1").toString();
+  const wrongSigner = signals.slice(); wrongSigner[25] = S.nameToU64("testclient1").toString();
   out.rejectsOtherSigner = !(await S.verify(vk, wrongSigner, proofObj));
   return out;
 }, { aliceAsk: keys.alice, bobAsk: keys.bob, vk });
