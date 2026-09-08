@@ -7,6 +7,7 @@ grep -q '^const TESTNET: bool = true;' assembly/xprshield.contract.ts || { echo 
 sed 's/^const TESTNET: bool = true;/const TESTNET: bool = false;/' assembly/xprshield.contract.ts > assembly/xprshield.mainnet.contract.ts
 trap 'rm -f assembly/xprshield.mainnet.contract.ts' EXIT
 npx proton-asc ./assembly/xprshield.mainnet.contract.ts --target release >/dev/null 2>&1
+mkdir -p deploy/mainnet
 cp assembly/target/xprshield.mainnet.contract.wasm deploy/mainnet/xprshield.contract.wasm
 cp assembly/target/xprshield.mainnet.contract.abi deploy/mainnet/xprshield.contract.abi
 rm -f assembly/target/xprshield.mainnet.contract.*

@@ -177,6 +177,23 @@ class Credit extends Table {
   }
 }
 
+/**
+ * Accounts whose balance the committee returned from escrow with `restore`. Their notes cannot
+ * be cancelled (the nullifiers need the key), but every spend is signed by its owner, so a
+ * restored account is refused at `spend` until the committee lifts the mark with `unrestore`.
+ * Without this a key recovered after a restore could spend notes the pool has already paid out.
+ */
+@table("restored")
+class RestoredRow extends Table {
+  constructor(public owner: Name = new Name(), public sym: u64 = 0, public amount: u64 = 0) {
+    super();
+  }
+  @primary
+  get primary(): u64 {
+    return this.owner.N;
+  }
+}
+
 @table("nullifiers")
 class NullifierRow extends Table {
   constructor(public key: u64 = 0, public nf: u8[] = []) {
@@ -243,6 +260,7 @@ class XprShield extends Contract {
   tokens: TableStore<TokenRow> = new TableStore<TokenRow>(this.receiver);
   keys: TableStore<KeyRow> = new TableStore<KeyRow>(this.receiver);
   backups: TableStore<BackupRow> = new TableStore<BackupRow>(this.receiver);
+  restored: TableStore<RestoredRow> = new TableStore<RestoredRow>(this.receiver);
   leaves: TableStore<Leaf> = new TableStore<Leaf>(this.receiver);
   trees: TableStore<TreeRow> = new TableStore<TreeRow>(this.receiver);
   roots: TableStore<RootRow> = new TableStore<RootRow>(this.receiver);
@@ -350,16 +368,18 @@ class XprShield extends Contract {
     let r = this.roots.first(); while (r != null) { const n = this.roots.next(r); this.roots.remove(r); r = n; }
     let k = this.keys.first(); while (k != null) { const n = this.keys.next(k); this.keys.remove(k); k = n; }
     let b = this.backups.first(); while (b != null) { const n = this.backups.next(b); this.backups.remove(b); b = n; }
+    let rs = this.restored.first(); while (rs != null) { const n = this.restored.next(rs); this.restored.remove(rs); rs = n; }
     let t = this.tokens.first(); while (t != null) { const n = this.tokens.next(t); this.tokens.remove(t); t = n; }
     const tr = this.trees.get(0); if (tr != null) this.trees.remove(tr);
     this.configs.remove(c!);
   }
 
   /**
-   * Committee recovery for a lost key: while paused, pay `quantity` from escrow to `to`. The
-   * notes themselves cannot be cancelled (their nullifiers are unknown without the key), so the
-   * committee must be satisfied the key is gone, as with `xprconf`'s restore. The memo puts the
-   * reason on chain.
+   * Committee recovery for a lost key: while paused, pay `quantity` from escrow to `to`, and mark
+   * the account restored so that it can no longer spend (its notes cannot be cancelled, since
+   * the nullifiers need the key, but its spends are signed). The mark stays until `unrestore`,
+   * which the committee runs only once it is satisfied the escrow is whole again. The memo puts
+   * the reason on chain.
    */
   @action("restore")
   restore(to: Name, quantity: Asset, memo: string): void {
@@ -376,7 +396,20 @@ class XprShield extends Contract {
     t.withdrawals += v;
     this.tokens.update(t, this.receiver);
     check(new TableStore<TokenAccount>(t.token_contract, to).get(quantity.symbol.code()) != null, "the account must hold a balance row for this token");
+    const r = this.restored.get(to.N);
+    if (r == null) this.restored.store(new RestoredRow(to, quantity.symbol.raw(), v), this.receiver);
+    else { r.sym = quantity.symbol.raw(); r.amount += v; this.restored.update(r, this.receiver); }
     sendTransferTokens(this.receiver, to, [new ExtendedAsset(quantity, t.token_contract)], "restore: " + memo);
+  }
+
+  /** lift the restored mark: the committee has verified the returned amount is back in escrow (or the account is closed for good) */
+  @action("unrestore")
+  unrestore(owner: Name, memo: string): void {
+    requireAuth(this.receiver);
+    check(memo.length <= 256, "memo too long");
+    const r = this.restored.get(owner.N);
+    check(r != null, "account is not marked restored");
+    this.restored.remove(r!);
   }
 
   @action("pause")
@@ -591,6 +624,7 @@ class XprShield extends Contract {
     requireAuth(owner);
     const c = this.config();
     check(!c.paused, "paused");
+    check(this.restored.get(owner.N) == null, "this account's balance was returned by the committee; contact the operator");
     check(proof.length == PROOF_LEN, "proof must be 256 bytes");
     check(publics.length == ACTION_LEN, "publics must be 16 words");
     for (let i = 0; i < N_ACTION; i++) if (i != 4 && i != 5) check(isCanonicalBE(publics, i * 32), "public word not canonical");

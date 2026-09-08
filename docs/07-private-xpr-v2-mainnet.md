@@ -39,7 +39,7 @@ shasum -a 256 deploy/mainnet/xprshield.contract.wasm
 
 The hash goes in this file and in the announcement, so anyone can compare it with `get_code_hash`.
 
-Built 2026-09-08 (after the third review round: owner-paid deposit slot, low-order ephemeral and auditor keys refused, one key per name, keep-semantics backups, balance-row check on payouts): wasm `5870ea355f2e1d5ee99cf4b5b904c7df554bee4408d6d571c1b5441212d4839f`, abi `83c168cd8c8ecce8390d92f828e57b2d7d9d5f96d83c093a1e20c0caffd98e96`. Testnet runs the same source with TESTNET=true, code hash `e42775fc…`. Rebuild and re-hash after any contract change.
+Built 2026-09-08 (after the third review round and Codex's second pass: owner-paid deposit slot, low-order ephemeral and auditor keys refused, one key per name, keep-semantics backups, balance-row check on payouts, restored accounts blocked from spending until `unrestore`): wasm `63904ba3282a555ab004358d674b6bb7698ed38ef2dfed5c36e752baf037b194`, abi `ede2a46bcb8d083a17f015ca56286d7dfd2cf494d92b4684eacdae6dfa35dae9`. Testnet runs the same source with TESTNET=true, code hash `addac58d…`. Rebuild and re-hash after any contract change.
 
 ## 2a. Secure the account (launch day, after the final contract is deployed and verified; Paul's call, not before)
 

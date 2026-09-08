@@ -192,3 +192,15 @@ as-is (changing it would change every derived key). The reviewers' reproductions
 session scratchpad and their tree/ring test is kept as `tests/tree-ring.test.mjs`; the differential
 fuzz (`tests/fuzz.test.mjs`) and the bit-flip fuzz in the main suite were added the same evening.
 
+## Shielded mode: independent review, second pass (Codex, 2026-09-08, late)
+
+Run against the tree before the third internal round was pushed; two of its findings were fixed
+by that round, two are new and fixed here.
+
+| # | severity | finding | fix |
+|---|---|---|---|
+| 1 | high | `restore` paid from escrow without invalidating the refunded notes: a key recovered later could spend them and leave the pool short (confirmed with a real proof in vert) | `restore` marks the account in a `restored` table and `spend` refuses a marked owner (every spend is signed, so the notes need not be cancelled); the committee lifts the mark with `unrestore` once the escrow is whole. Tested: the account's proof is refused until `unrestore`, then accepted |
+| 2 | high | committee copies sealed to an auditor key from one RPC server | fixed in the third internal round: the key is pinned per network and must be agreed by two nodes |
+| 3 | medium | the phrase-replacement copy said the old phrase "stops working"; copies in chain history still open with it and the key does not change | the wording now says exactly that, and what to do if the old phrase may have leaked |
+| 4 | medium | `build-mainnet.sh` did not create `deploy/mainnet/` on a clean checkout | `mkdir -p` |
+

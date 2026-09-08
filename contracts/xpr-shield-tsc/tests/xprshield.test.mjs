@@ -120,7 +120,7 @@ await expectToThrow(sh.actions.deposit(["alice", hex(a4.r + 1n)]).send("alice@ac
 await sh.actions.deposit(["alice", hex(a4.r)]).send("alice@active");
 assert.equal(String(slotOf("alice").amount), "0", "slot emptied");
 assert.equal(slotOf("alice").r, "00".repeat(32));
-local.append(a4.cm); local.append(0n);
+const i4 = local.size; local.append(a4.cm); local.append(0n);
 assert.equal(treeRow().root, hex(local.root), "root after the late deposit matches");
 await expectToThrow(sh.actions.deposit(["alice", hex(a4.r)]).send("alice@active"), "eosio_assert: no arrived deposit for this owner");
 lap("deposits: commitments and root match the library; the owner's slot takes one arrival at a time; bad memos refused");
@@ -262,6 +262,18 @@ await sh.actions.pause([false]).send("xprshield@active");
 await expectToThrow(sh.actions.restore(["alice", "1.0000 XPR", "x"]).send("xprshield@active"), "eosio_assert: restore is only possible while paused");
 await sh.actions.pause([true]).send("xprshield@active");
 lap("restore: paused only, contract authority, paid from escrow");
+// a restored account is marked and can no longer spend, even with its key, until the committee lifts the mark
+await sh.actions.pause([false]).send("xprshield@active");
+assert.equal(String(sh.tables.restored(scope).getTableRow(nameToBigInt("alice")).amount), String(units(1)), "restore recorded the returned amount");
+const jsRestored = N.buildJoinSplit({ keys: alice, tree: local, auditorPk: auditor.pk, sender: ALICE, inputs: [{ note: a4, index: i4 }], outputs: [{ pk: bob.pk, v: units(1) }, { pk: alice.pk, v: a4.v - units(1) }] });
+const pRestored = await prove(jsRestored);
+await expectToThrow(spend("alice", pRestored).send("alice@active"), "eosio_assert: this account's balance was returned by the committee; contact the operator");
+await expectToThrow(sh.actions.unrestore(["alice", "funds returned"]).send("alice@active"), "missing required authority xprshield");
+await sh.actions.unrestore(["alice", "funds returned"]).send("xprshield@active");
+await spend("alice", pRestored).send("alice@active");
+local.append(jsRestored.outNotes[0].cm); local.append(jsRestored.outNotes[1].cm);
+await sh.actions.pause([true]).send("xprshield@active");
+lap("a restored account cannot spend until the committee lifts the mark");
 
 // --- testnet reset wipes everything and allows a fresh init ---
 await expectToThrow(sh.actions.reset([]).send("bob@active"), "missing required authority xprshield");

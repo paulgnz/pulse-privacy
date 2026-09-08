@@ -357,8 +357,8 @@ the extra account is invisible. Cross-references: `xprconf` and `xprshield` shar
 of registration, the key derivation, the auditor key and the ceremony's phase 1.
 
 Done before mainnet (2026-09-08): a paused-only committee `restore` that pays from escrow
-with a memo (notes cannot be cancelled, so the committee must be satisfied the key is gone,
-as with `xprconf`); `reset` compiled in only when the `TESTNET` flag is true; and the
+with a memo and marks the account so it cannot spend until the committee's `unrestore` (its
+notes cannot be cancelled, but its spends are signed, so the mark closes the double claim); `reset` compiled in only when the `TESTNET` flag is true; and the
 owner-paid deposit: the token transfer's notification only records a small credit row, and
 the owner's own `deposit(owner, r)` action, normally the second action of the same
 transaction, builds the note and pays for its rows. An unfinished deposit can be finished

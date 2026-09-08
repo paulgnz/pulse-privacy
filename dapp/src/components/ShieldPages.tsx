@@ -43,7 +43,7 @@ const PhraseInput = ({ pass, setPass, custom, setCustom, copied, setCopied, repl
     </Field>
   ) : (
     <>
-      <p className="small muted" style={{ margin: "0 0 10px" }}>{replacing ? "Copy the new words before you save. Saving replaces the phrase you have now, and the old one stops working." : "Copy the words before you save. An encrypted copy of the key goes on chain; only these words open it, and they are not stored anywhere."}</p>
+      <p className="small muted" style={{ margin: "0 0 10px" }}>{replacing ? "Copy the new words before you save. Saving replaces the copy on chain, so the old words no longer open the current copy. They still open any copy someone saved from chain history, and the key itself does not change: if the old words may have leaked, treat the key as exposed and move your money to a new account." : "Copy the words before you save. An encrypted copy of the key goes on chain; only these words open it, and they are not stored anywhere."}</p>
       <div className="secret words" aria-label="Your recovery phrase"><code>{pass}</code></div>
       <div className="row" style={{ margin: "12px 0 14px" }}>
         <button className="btn secondary" onClick={copy}>{copied ? "Copied" : "Copy phrase"}</button>
