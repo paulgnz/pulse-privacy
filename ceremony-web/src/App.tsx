@@ -9,7 +9,7 @@ interface Head { file: string; sha256: string; index: number; name: string; url:
 interface Contribution { phase: 1 | 2; index: number; actor: string; timestamp: string; input: { file: string; sha256: string }; output: { file: string; sha256: string; url: string }; contributionHash: string | null; signerKey: string; note: string; signature: string }
 interface State { version: number; phase: 1 | 2; finished: boolean; head: Head | null; lock: { actor: string; until: string } | null; contributions: Contribution[]; phase1Final?: Head | null; updatedAt: string; stale?: string }
 
-type Step = "idle" | "locking" | "downloading" | "entropy" | "computing" | "sign" | "signing" | "uploading" | "recording" | "done";
+type Step = "idle" | "locking" | "downloading" | "entropy" | "computing" | "offline" | "sign" | "signing" | "uploading" | "recording" | "done";
 const AFTER_SIGN: Step[] = ["uploading", "recording"];
 const AFTER_COMPUTE: Step[] = ["sign", "signing", ...AFTER_SIGN];
 
@@ -30,6 +30,11 @@ export function App() {
   const [elapsed, setElapsed] = useState(0);
   const [result, setResult] = useState<{ index: number; phase: number; sha256: string; contributionHash: string | null; file: string } | null>(null);
   const [turn, setTurn] = useState<{ index: number; head: Head; phase: 1 | 2; until: string } | null>(null);
+  // offline: the head file is handed to the user, they run contribute.mjs on a machine that is not
+  // connected, and bring the output back; the browser then only hashes, signs and uploads it
+  const [offline, setOffline] = useState(false);
+  const [headBlobUrl, setHeadBlobUrl] = useState<string | null>(null);
+  const offlineFile = useRef<((f: File) => void) | null>(null);
   const sentenceReady = useRef<((s: string) => void) | null>(null);
   const timer = useRef<number | null>(null);
   // the finished contribution, held until the user clicks to sign: the wallet popup is only
@@ -117,6 +122,22 @@ export function App() {
       const inputSha = await sha256Hex(input);
       if (inputSha !== head.sha256) throw new Error("downloaded file does not match the published hash; refresh and try again");
 
+      if (offline) {
+        // 3'. the contribution is made elsewhere: offer the head file, wait for the output
+        const url = URL.createObjectURL(new Blob([input as BlobPart], { type: "application/octet-stream" }));
+        setHeadBlobUrl(url);
+        setStep("offline");
+        const f = await new Promise<File>((resolve) => { offlineFile.current = resolve; });
+        const outBytes = new Uint8Array(await f.arrayBuffer());
+        URL.revokeObjectURL(url);
+        setHeadBlobUrl(null);
+        if (outBytes.length < 1000) throw new Error("that does not look like a contribution file");
+        const outputSha = await sha256Hex(outBytes);
+        if (outputSha === inputSha) throw new Error("that is the head file itself, not your contribution");
+        ready.current = { out: outBytes, outputSha, inputSha, phase, index, contributionHash: null };
+        setStep("sign");
+        return;
+      }
       // 3. randomness: OS + motion + sentence
       setStep("entropy");
       setMotion(0);
@@ -287,6 +308,9 @@ export function App() {
         {session && step === "idle" && !alreadyDone ? (
           <div className="row">
             <button className="btn private" onClick={contribute} disabled={!canStart}>Take my turn</button>
+            <label className="muted" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <input type="checkbox" checked={offline} onChange={(e) => setOffline(e.target.checked)} /> contribute offline with the command-line tool (advanced)
+            </label>
             {lockHeld && lockHeld.actor !== mine ? <span className="muted">It is {lockHeld.actor}'s turn until {when(lockHeld.until)}. Try again after that.</span> : null}
             {state?.finished ? <span className="muted">This phase is closed.</span> : null}
           </div>
@@ -296,7 +320,23 @@ export function App() {
           <ol className="steps">
             <li className={step === "locking" ? "now" : "done"}>Taking your turn{turn ? `: contribution ${turn.index} of phase ${turn.phase}, yours until ${when(turn.until)}` : ""}{step === "locking" ? " (sign in your wallet to claim it)" : ""}</li>
             <li className={step === "downloading" ? "now" : ["entropy", "computing", ...AFTER_COMPUTE].includes(step) ? "done" : ""}>Downloading the current file ({turn?.phase === 1 ? "about 25 MB" : "about 25 MB"})</li>
-            <li className={step === "entropy" ? "now" : ["computing", ...AFTER_COMPUTE].includes(step) ? "done" : ""}>
+            {offline ? (
+              <li className={step === "offline" ? "now" : AFTER_COMPUTE.includes(step) ? "done" : ""}>
+                Contributing offline
+                {step === "offline" && turn ? (
+                  <div className="entropy">
+                    <p>1. <a href={headBlobUrl ?? "#"} download={`${String(turn.index - 1).padStart(2, "0")}-head.${turn.phase === 1 ? "ptau" : "zkey"}`}>Save the current file</a> and move it to a machine that is not connected (a USB stick is fine).</p>
+                    <p>2. There, with Node 20+ and <span className="mono">npm i snarkjs@0.7</span> plus <a href="https://github.com/paulgnz/pulse-privacy/blob/main/ceremony/contribute.mjs">contribute.mjs</a> from the repo, run:</p>
+                    <pre className="log">node contribute.mjs {String(turn.index - 1).padStart(2, "0")}-head.{turn.phase === 1 ? "ptau" : "zkey"} {String(turn.index).padStart(2, "0")}-{mine}.{turn.phase === 1 ? "ptau" : "zkey"} --name "{mine} (offline)"</pre>
+                    <p>3. Type a long random sentence when asked, bring the output file back here, then wipe or reboot that machine. Your turn is yours until {when(turn.until)}.</p>
+                    <div className="row">
+                      <input type="file" onChange={(e) => { const f = e.target.files?.[0]; if (f) offlineFile.current?.(f); }} />
+                    </div>
+                  </div>
+                ) : null}
+              </li>
+            ) : null}
+            <li className={step === "entropy" ? "now" : ["computing", ...AFTER_COMPUTE].includes(step) ? "done" : ""} hidden={offline}>
               Adding your randomness
               {step === "entropy" ? (
                 <div className="entropy">
@@ -311,7 +351,7 @@ export function App() {
                 </div>
               ) : null}
             </li>
-            <li className={step === "computing" ? "now" : AFTER_COMPUTE.includes(step) ? "done" : ""}>
+            <li className={step === "computing" ? "now" : AFTER_COMPUTE.includes(step) ? "done" : ""} hidden={offline}>
               Mixing it into the key in your browser{step === "computing" ? ` (${elapsed}s; phase 1 can take a few minutes)` : ""}
               {step === "computing" && log.length ? <pre className="log">{log.join("\n")}</pre> : null}
             </li>

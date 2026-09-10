@@ -21,6 +21,13 @@ result on) and takes a minute or two on a laptop. Files are ≈ 25 MB (ptau) and
 
 ## For contributors
 
+The easy way is the site, ceremony.privatexpr.com: connect your XPR wallet and press the button;
+the contribution is computed in your browser. Anyone who would rather not trust the site's code
+can tick "contribute offline": the site hands you the current file, you run `contribute.mjs` on
+a machine that is not connected, bring the output back, and the site only hashes, signs and
+uploads it. The coordinator verifies the file the same way either way. From the command line
+without the site:
+
 1. Install Node 20+, then in a fresh directory: `npm init -y && npm i snarkjs@0.7`; copy
    `contribute.mjs` next to it (or clone this repo and `npm install` in `ceremony/`).
 2. Receive `NN-prev.ptau` (or `.zkey`) from the coordinator and check its sha256 against the
