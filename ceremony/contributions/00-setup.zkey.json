@@ -1,0 +1,15 @@
+{
+  "phase": 2,
+  "index": 0,
+  "name": "coordinator setup (no secret)",
+  "timestamp": "2026-09-10T22:51:34.722Z",
+  "input": {
+    "file": "pot16_final.ptau",
+    "sha256": "f57eb7f4e066d46424770c70642db87dd37685099214039ac01c27481aa0fcf3"
+  },
+  "output": {
+    "file": "00-setup.zkey",
+    "sha256": "c77f99a08ef523e349f2fac9862be585a01ae31f773c914f860e9339026149f3"
+  },
+  "contributionHash": null
+}
