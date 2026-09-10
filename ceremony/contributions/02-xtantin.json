@@ -1,0 +1,45 @@
+{
+  "phase": 1,
+  "index": 2,
+  "actor": "xtantin",
+  "timestamp": "2026-09-07T09:46:38.017Z",
+  "input": {
+    "file": "p1/01-paul.ptau",
+    "sha256": "cad06250b26e07bbd8bfb33e41162a0c079a3bcaa396e31bf12ecb38f79fdfe5"
+  },
+  "output": {
+    "file": "p1/02-xtantin.ptau",
+    "sha256": "a56445132bee8a850eea9b7fc1664ba142f13bbd0e27aa7a4d15d459b1920b24",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p1/02-xtantin.ptau"
+  },
+  "contributionHash": "691a93cd094d071809d3e396723b49d8b50648027a1ee85e5cd37e15256e06289df4b7e8cc6ea84de06779cfe7e4de36b76f8b03b20a326648f6aa742ae1332f",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "xtantin",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "xtantin",
+          "note": "ceremony/1/2/a56445132bee8a850eea9b7fc1664ba142f13bbd0e27aa7a4d15d459b1920b24"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_K1_KjrQhFEcCb2nwnxk6aQPwJFJnCi7D3u2qMdJr16fNXc1DcNKDkMabXrb4TnLzSmhhLRtNg44jvutRvAe7n35jBjdDwdKbK",
+  "signerKey": "PUB_K1_7G1FAYzWmnDSrfTi42y3sbEpU4G4Mh9gWCLD1oZpXyn2AisQQ4",
+  "note": "ceremony/1/2/a56445132bee8a850eea9b7fc1664ba142f13bbd0e27aa7a4d15d459b1920b24"
+}

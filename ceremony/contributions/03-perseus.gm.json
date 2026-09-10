@@ -1,0 +1,45 @@
+{
+  "phase": 1,
+  "index": 3,
+  "actor": "perseus.gm",
+  "timestamp": "2026-09-07T12:17:26.079Z",
+  "input": {
+    "file": "p1/02-xtantin.ptau",
+    "sha256": "a56445132bee8a850eea9b7fc1664ba142f13bbd0e27aa7a4d15d459b1920b24"
+  },
+  "output": {
+    "file": "p1/03-perseus.gm.ptau",
+    "sha256": "e71aba8e34c046daef9c5a559f6c9fa147bf671b6588be0a402811786da3b12f",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p1/03-perseus.gm.ptau"
+  },
+  "contributionHash": "c9a95ea7c50c4ef5876870045489fcd9a8be75c7ee788bd93131e78ab5da7b1fdb73d4575cfa0f54459f01c432e1bb783fce31b3435174e111809638637f2b92",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "perseus.gm",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "perseus.gm",
+          "note": "ceremony/1/3/e71aba8e34c046daef9c5a559f6c9fa147bf671b6588be0a402811786da3b12f"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_K1_KhQ4G43pRvfm5HrSMHJEkTN6FY8rTeDynqDVFzNp8mAjuq3zhdgEsbVJHZ9w2Kft6P2CysKFuB8W8B42m3xjxDZeVRt9Zz",
+  "signerKey": "PUB_K1_84m7N76PZrWrr2rVNwbrk6BmAenbneBPTvTrmNpaiR6Ua3deoy",
+  "note": "ceremony/1/3/e71aba8e34c046daef9c5a559f6c9fa147bf671b6588be0a402811786da3b12f"
+}

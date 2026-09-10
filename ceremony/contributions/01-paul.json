@@ -1,0 +1,45 @@
+{
+  "phase": 1,
+  "index": 1,
+  "actor": "paul",
+  "timestamp": "2026-09-07T09:24:28.154Z",
+  "input": {
+    "file": "p1/00-start.ptau",
+    "sha256": "e68d8001cfee8f4174e5d6d90cb2cbdc5046a90ea9adc97809762720294f66e3"
+  },
+  "output": {
+    "file": "p1/01-paul.ptau",
+    "sha256": "cad06250b26e07bbd8bfb33e41162a0c079a3bcaa396e31bf12ecb38f79fdfe5",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p1/01-paul.ptau"
+  },
+  "contributionHash": "122e50ce632645eeb96bb98cc6acadcb354100b3e4c4bef05e36dd56680a2484482bb2eb1f6a718ef7651636961921ebd11c2e5f8b257ca9cb2d1eeb05f8976c",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "paul",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "paul",
+          "note": "ceremony/1/1/cad06250b26e07bbd8bfb33e41162a0c079a3bcaa396e31bf12ecb38f79fdfe5"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_WA_D4fbXFqPnSxNHLBW1DDyg2hh4DLy3KBHXR1Uf9BGEmE3LLzBKHgVxaanq5YkbRiLhHdzH39XTHiVSBHnBBcYbn16RdGbdmdLqJPtzubiD7ASCmMj57NVzreY7mtWbPGbZEfxvjy7ATDKaNycaisMw7ahrE3xy3z8obtCte9KmvBMWxBozqaw1phg1jf8UGka4M2mG3XfkPeVWPRNNZmkBgKCKdi9iSL4dzEcfhLoT1AfLNbPeyrZLcpu95Sk4XSMesCRe2EtGX2pXGJ9QvreTucsYaZtFCHSuGPJx4ugKQpxXchCk97KUQEVCyFKGSUxbouzTQR1o",
+  "signerKey": "PUB_WA_361eV9WuXuz9CthHTxKC4t3PeLxEWKoE4i1kxEUAqiv4heLiDSpsMmxVs9qYj8C3wNZL",
+  "note": "ceremony/1/1/cad06250b26e07bbd8bfb33e41162a0c079a3bcaa396e31bf12ecb38f79fdfe5"
+}

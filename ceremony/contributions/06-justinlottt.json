@@ -1,0 +1,45 @@
+{
+  "phase": 1,
+  "index": 6,
+  "actor": "justinlottt",
+  "timestamp": "2026-09-09T00:35:26.927Z",
+  "input": {
+    "file": "p1/05-cryptqueenie-4c64dfa7510adab9f1379983db980d90260d1314d1b96d6965f7aca863f6ba7f.ptau",
+    "sha256": "4c64dfa7510adab9f1379983db980d90260d1314d1b96d6965f7aca863f6ba7f"
+  },
+  "output": {
+    "file": "p1/06-justinlottt-917c710dc1b6f47879dff52979600f9c94df6d7de57efce62eae44ed52ba485f.ptau",
+    "sha256": "917c710dc1b6f47879dff52979600f9c94df6d7de57efce62eae44ed52ba485f",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p1/06-justinlottt-917c710dc1b6f47879dff52979600f9c94df6d7de57efce62eae44ed52ba485f.ptau"
+  },
+  "contributionHash": "a417bae2958b6bc602786b47187c420909fb4051fa196928bf538c19e8e543e4cc27567ad65c785bb37b100f4c387835d0590a99156d21d8d68a835009e50891",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "justinlottt",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "justinlottt",
+          "note": "ceremony/1/6/917c710dc1b6f47879dff52979600f9c94df6d7de57efce62eae44ed52ba485f"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_K1_KZsKGvighwWhkaJ5ovWmqsF9VFguB8sSaxU5KX3gf1hsogAyyXxAaQsnp26wD5HPJ66NGP7g59GTscAdAZMDnuxwBZUw3j",
+  "signerKey": "PUB_K1_8FDyjMbuBaqRPvNNYEJPePU7ysgPby6xMTBcvKmhfswp8Nsxi3",
+  "note": "ceremony/1/6/917c710dc1b6f47879dff52979600f9c94df6d7de57efce62eae44ed52ba485f"
+}
