@@ -284,7 +284,10 @@ export function App() {
         {state ? (
           <dl className="facts">
             <div><dt>Phase</dt><dd>{state.phase === 1 ? "1 of 2, universal setup" : "2 of 2, the join-split circuit, revision 6"}{state.finished ? ", closed" : ""}</dd></div>
-            <div><dt>Contributions so far</dt><dd>{state.contributions.filter((c) => c.phase === state.phase).length}</dd></div>
+            <div><dt>Contributions so far</dt><dd>{state.contributions.filter((c) => c.phase === state.phase).length}{state.phase === 2 ? " in phase 2 (everyone who did phase 1 is welcome to contribute again; each phase counts on its own)" : ""}</dd></div>
+            {state.phase === 2 && state.phase1Final ? (
+              <div><dt>Phase 1</dt><dd>Closed with {state.contributions.filter((c) => c.phase === 1).length} contributions. Its final file, with the beacon applied: <a href={`/files/${state.phase1Final.file}`}>{fileLabel(state.phase1Final.file)}</a> <span className="mono" title={state.phase1Final.sha256}>{short(state.phase1Final.sha256, 16)}</span>. Beacon: XPR mainnet block 402,780,000, announced before it existed; block id and hashes in the <a href="https://github.com/paulgnz/pulse-privacy/blob/main/ceremony/TRANSCRIPT.md">transcript record</a>.</dd></div>
+            ) : null}
             <div><dt>Current file</dt><dd>{state.head ? <>{state.head.file} <span className="mono">{short(state.head.sha256, 16)}</span></> : "not started"}</dd></div>
             <div><dt>Whose turn</dt><dd>{lockHeld ? `${lockHeld.actor}, until ${when(lockHeld.until)}` : "free"}</dd></div>
           </dl>

@@ -1,0 +1,16 @@
+{
+  "phase": 2,
+  "name": "paul (offline)",
+  "timestamp": "2026-09-10T23:13:01.596Z",
+  "input": {
+    "file": "00-head.zkey",
+    "sha256": "319ff7963b6c8a46e527a101225e93cf2d3181232cc3cb8129f4b7b51ce0419b"
+  },
+  "output": {
+    "file": "01-paul.zkey",
+    "sha256": "1c078235b811bc03d774b0dabde5ad96123642c7ece248531f4202404841af07"
+  },
+  "contributionHash": "22a28c9228ee3d8175d369e4413cd679f069a27e7cca484456200ec32f7fd9feff20c8c69e6c642a580902e2a1fdfdb3f13e1207958579cf1a58014347e3aa76",
+  "seconds": 3,
+  "tool": "snarkjs 0.7.6"
+}
