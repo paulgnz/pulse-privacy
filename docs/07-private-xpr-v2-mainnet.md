@@ -18,7 +18,7 @@ in order. Nothing here is done until its line says so.
 
 | item | who | status |
 |---|---|---|
-| Phase 1 of the ceremony: ≥ 5 contributors, then finalise with an announced beacon block | Paul, contributors | **12 contributors** by 2026-09-10 18:21 UTC (paul, xtantin, perseus.gm, drowninshark, cryptqueenie, justinlottt, onthewall, daorach, wesleyl, kwco, kylenelson, abtsec). Still open. Next: announce a beacon block height, then finalise |
+| Phase 1 of the ceremony: ≥ 5 contributors, then finalise with an announced beacon block | Paul, contributors | **12 contributors** by 2026-09-10 18:21 UTC (paul, xtantin, perseus.gm, drowninshark, cryptqueenie, justinlottt, onthewall, daorach, wesleyl, kwco, kylenelson, abtsec). Beacon announced 2026-09-10 21:45 UTC: mainnet block **402,780,000**; finalise once it is irreversible |
 | Phase 2 for `circuits/shielded/joinsplit.circom` **revision 6** (31,708 constraints, 28 public signals) on the ceremony site, then finalise; `final/vk.hex` | Paul | not started |
 | Contract account **`privatexpr`** on mainnet (decided 2026-09-08; explorer.xprnetwork.org/account/privatexpr): created; owner moves to `admin.proton@committee` on launch day (§2a) | Paul | created |
 | Deploy permission: v1 was deployed from the operational key without asking anyone, so none needed; if `setcode` is ever refused, that is the moment to ask | Paul | none needed |
