@@ -1,0 +1,45 @@
+{
+  "phase": 1,
+  "index": 14,
+  "actor": "lintoboss",
+  "timestamp": "2026-09-10T22:25:06.120Z",
+  "input": {
+    "file": "p1/13-echox-46fada4b137d9329971eff6a9222f565e77c95f71493a2e0224ed2401dc2bec1.ptau",
+    "sha256": "46fada4b137d9329971eff6a9222f565e77c95f71493a2e0224ed2401dc2bec1"
+  },
+  "output": {
+    "file": "p1/14-lintoboss-bf0544a824e45fe0571aafdaab33a9dacac00e5a29c1fc1dbaaaea3514c0a621.ptau",
+    "sha256": "bf0544a824e45fe0571aafdaab33a9dacac00e5a29c1fc1dbaaaea3514c0a621",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p1/14-lintoboss-bf0544a824e45fe0571aafdaab33a9dacac00e5a29c1fc1dbaaaea3514c0a621.ptau"
+  },
+  "contributionHash": "47ce9c919485e53afc2e543c9850f42994db3aba98b424bd4653f2d0c15cc009ed1167765fd7f5a84c013f5c992c5a70223ebf54b8644e1a1cbd09b9443bee76",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "lintoboss",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "lintoboss",
+          "note": "ceremony/1/14/bf0544a824e45fe0571aafdaab33a9dacac00e5a29c1fc1dbaaaea3514c0a621"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_WA_DDU9BxDJ2v2912sXXFnbQuEfZzB5AHyDACATXb8mcqcSfovKgGLUqkp8ssHhudsp67xagrf5mg2w9UDwyz1LaEr8ug9pAMEGE9stHsTeSmj99e4JqGcQXMn5cqKgtRswH9jZnzhdC1cWaFAuJy34y2a9kwsjEzqi4MraAP3rwTs2mt2urF4zUsanFnEfBKvV8eDdbRDBK86wu66HfQh62m1hcM7FjbmxWxbdu1e1LUVGCL7ipMYETYNBgQAANA5bTZqce9oUijbpWfAZ3MvmTnGPKAMXAn7dpCABd6Su12CYpunGBkcSqgwM4GAK9kYLgsBiCKTGC",
+  "signerKey": "PUB_WA_33BHfhNuPvHwyccqYrop3TQQNHzi2e7MyH7mWdaXkMoeuqNJYUavRe3vmDKKST9Mw9P5",
+  "note": "ceremony/1/14/bf0544a824e45fe0571aafdaab33a9dacac00e5a29c1fc1dbaaaea3514c0a621"
+}

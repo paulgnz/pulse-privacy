@@ -1,0 +1,45 @@
+{
+  "phase": 1,
+  "index": 12,
+  "actor": "abtsec",
+  "timestamp": "2026-09-10T18:21:35.906Z",
+  "input": {
+    "file": "p1/11-kylenelson-5a2d0e647e3f562337961f7a292546fc1fe8954e6da53ce69dbd169c29adbc4d.ptau",
+    "sha256": "5a2d0e647e3f562337961f7a292546fc1fe8954e6da53ce69dbd169c29adbc4d"
+  },
+  "output": {
+    "file": "p1/12-abtsec-28898f8aaa2f5add5c9c17a552e102d026fc0a42fcec2ea73ec4b00a65577f2f.ptau",
+    "sha256": "28898f8aaa2f5add5c9c17a552e102d026fc0a42fcec2ea73ec4b00a65577f2f",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p1/12-abtsec-28898f8aaa2f5add5c9c17a552e102d026fc0a42fcec2ea73ec4b00a65577f2f.ptau"
+  },
+  "contributionHash": "4cd83657994cb259484f318a33a1c0f4f588e8d0d60b81eaa2626be43a08401c4b9a474ec108b2520c31292616ec828774f22e8c96362bec6e6366c091613ea0",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "abtsec",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "abtsec",
+          "note": "ceremony/1/12/28898f8aaa2f5add5c9c17a552e102d026fc0a42fcec2ea73ec4b00a65577f2f"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_K1_K19L56swEHzx6EBScRVEYDGDKV3oScrgY1FB21YTjxj17DDzMVQA9wQSuaQojTFDSXvZTBrErx7gLyZhu7bBmsz8G98SYf",
+  "signerKey": "PUB_K1_8TqQHMBdXvPxBcfqi4jJcAUBxjdZ26CPG94N7gAWbV1JB3SQ8z",
+  "note": "ceremony/1/12/28898f8aaa2f5add5c9c17a552e102d026fc0a42fcec2ea73ec4b00a65577f2f"
+}

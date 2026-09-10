@@ -1,0 +1,45 @@
+{
+  "phase": 1,
+  "index": 9,
+  "actor": "wesleyl",
+  "timestamp": "2026-09-09T08:55:40.590Z",
+  "input": {
+    "file": "p1/08-daorach-19ee74ab3af37a8efdf24f6c4d8aa72d6c716c797be2350fd3b5459d40678585.ptau",
+    "sha256": "19ee74ab3af37a8efdf24f6c4d8aa72d6c716c797be2350fd3b5459d40678585"
+  },
+  "output": {
+    "file": "p1/09-wesleyl-ecba93d330802e1a6c7afd8afe5b8b0f419e00e7c802f6a756e8c2f11913ddab.ptau",
+    "sha256": "ecba93d330802e1a6c7afd8afe5b8b0f419e00e7c802f6a756e8c2f11913ddab",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p1/09-wesleyl-ecba93d330802e1a6c7afd8afe5b8b0f419e00e7c802f6a756e8c2f11913ddab.ptau"
+  },
+  "contributionHash": "4ae19eaef8d0865dd4c5270995f8d45b4e12c8e3f2bc536cb84baa3e98a27f754aa935bff044d22ebe20a0e433c97e696f4d7e61be8bc1fb091855f9a2e71b05",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "wesleyl",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "wesleyl",
+          "note": "ceremony/1/9/ecba93d330802e1a6c7afd8afe5b8b0f419e00e7c802f6a756e8c2f11913ddab"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_K1_Jv8PUKBTiU1Lqi3Q2oAhm2LUodjkNxiShSBh5qdQbez8Q9itMyWDUCKRDUkkwz5SankEoRYFqCqJ6Pj8N2LyntMsCoGba5",
+  "signerKey": "PUB_K1_6MHGdb4L3BczMVor3L8epRka2DhQ5pwTmALLDKeqvZAdUtmWDU",
+  "note": "ceremony/1/9/ecba93d330802e1a6c7afd8afe5b8b0f419e00e7c802f6a756e8c2f11913ddab"
+}

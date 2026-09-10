@@ -1,0 +1,45 @@
+{
+  "phase": 1,
+  "index": 13,
+  "actor": "echox",
+  "timestamp": "2026-09-10T21:52:35.518Z",
+  "input": {
+    "file": "p1/12-abtsec-28898f8aaa2f5add5c9c17a552e102d026fc0a42fcec2ea73ec4b00a65577f2f.ptau",
+    "sha256": "28898f8aaa2f5add5c9c17a552e102d026fc0a42fcec2ea73ec4b00a65577f2f"
+  },
+  "output": {
+    "file": "p1/13-echox-46fada4b137d9329971eff6a9222f565e77c95f71493a2e0224ed2401dc2bec1.ptau",
+    "sha256": "46fada4b137d9329971eff6a9222f565e77c95f71493a2e0224ed2401dc2bec1",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p1/13-echox-46fada4b137d9329971eff6a9222f565e77c95f71493a2e0224ed2401dc2bec1.ptau"
+  },
+  "contributionHash": "9b048be638323dbc36bba3de6bc1f44b04a6765aee6cfb975e32c717a60194f8a6e62f71d390364224f12123f91792895ebf813731cbecd7a321e865b24bded7",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "echox",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "echox",
+          "note": "ceremony/1/13/46fada4b137d9329971eff6a9222f565e77c95f71493a2e0224ed2401dc2bec1"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_K1_KXaa8163rjEiWBQfc77Z26mzaR5WJ7t26r5CuWsdXkMxAa1H6xaG4HsK53nMLZBW4wjvMqR9f4qCMZgB16NwJPZwYv9Mof",
+  "signerKey": "PUB_K1_865ZJbPa3CKdzd5Nkc4pMBH2yiQyjNRoB5iNPJigh2txf9Zg2b",
+  "note": "ceremony/1/13/46fada4b137d9329971eff6a9222f565e77c95f71493a2e0224ed2401dc2bec1"
+}
