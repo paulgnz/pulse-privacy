@@ -11,17 +11,17 @@ type Net = {
 const NETWORKS: Record<"testnet" | "mainnet", Net> = {
   testnet: {
     chainId: "71ee83bcf52142d61019d95f9cc5427ba6a0d7ff8accd9e2088ae2abeaf3d3dd",
-    endpoints: ["https://tn1.protonnz.com", "https://testnet.protonchain.com", "https://test.proton.eosusa.io"],
+    endpoints: ["https://tn1.protonnz.com", "https://api-xprnetwork-test.saltant.io", "https://testnet.protonchain.com"],
     // the only testnet Hyperion found live and at head; add more here when they exist
-    hyperions: ["https://test.proton.eosusa.io"],
+    hyperions: ["https://api-xprnetwork-test.saltant.io"],
     contract: "xprconf",
     explorer: "https://testnet.explorer.xprnetwork.org",
   },
   mainnet: {
     chainId: "384da888112027f0321850a169f737c33e53b388aad48b5adace4bab97f437e0",
     // v5 nodes only; greymass (v3.1) was measured at 15 s per get_block and rejects sends at 30 ms
-    endpoints: ["https://api.protonnz.com", "https://proton.eosusa.io", "https://proton.cryptolions.io", "https://proton.eoscafeblock.com", "https://proton.genereos.io"],
-    hyperions: ["https://hyperion-xpr-mainnet.protonnz.com", "https://proton.eosusa.io"],
+    endpoints: ["https://api.protonnz.com", "https://api-xprnetwork-main.saltant.io", "https://proton.cryptolions.io", "https://proton-api.eosiomadrid.io", "https://proton.eoscafeblock.com", "https://proton.genereos.io"],
+    hyperions: ["https://hyperion-xpr-mainnet.protonnz.com", "https://api-xprnetwork-main.saltant.io", "https://proton-api.eosiomadrid.io"],
     contract: "xprconf", // placeholder: the mainnet contract account is not created yet
     explorer: "https://explorer.xprnetwork.org",
   },

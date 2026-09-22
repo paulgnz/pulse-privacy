@@ -42,7 +42,7 @@ export function extendsChain(prev, next) {
   return { ok: true, added: next[next.length - 1] };
 }
 
-export const RPCS = ["https://api.protonnz.com", "https://proton.eosusa.io", "https://proton.cryptolions.io"];
+export const RPCS = ["https://api.protonnz.com", "https://api-xprnetwork-main.saltant.io", "https://proton.cryptolions.io"];
 
 /** the block id at `height` from every RPC; they must agree and the id must encode the height */
 export async function beaconId(height) {

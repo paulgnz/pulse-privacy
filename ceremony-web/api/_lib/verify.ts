@@ -6,7 +6,7 @@ import { ABIDecoder, Bytes, Checksum256, KeyType, PublicKey, Signature, Transact
 import { recoverPublic } from "@wharfkit/webauthn";
 
 export const CHAIN_ID = "384da888112027f0321850a169f737c33e53b388aad48b5adace4bab97f437e0";
-export const RPCS = ["https://api.protonnz.com", "https://proton.eosusa.io", "https://proton.cryptolions.io"];
+export const RPCS = ["https://api.protonnz.com", "https://api-xprnetwork-main.saltant.io", "https://proton.cryptolions.io"];
 export const CONTRACT = "xprconf";
 
 export const noteFor = (phase: number, index: number, sha256: string) => `ceremony/${phase}/${index}/${sha256}`;

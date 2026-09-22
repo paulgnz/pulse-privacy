@@ -8,8 +8,8 @@ import N from "../../circuits/lib/notes.mjs";
 export const NETWORKS = {
   testnet: {
     chain: "proton-test",
-    endpoints: ["https://tn1.protonnz.com", "https://testnet.protonchain.com", "https://test.proton.eosusa.io"],
-    hyperions: ["https://test.proton.eosusa.io"],
+    endpoints: ["https://tn1.protonnz.com", "https://api-xprnetwork-test.saltant.io", "https://testnet.protonchain.com"],
+    hyperions: ["https://api-xprnetwork-test.saltant.io"],
     explorer: "https://testnet.explorer.xprnetwork.org",
     contract: "xprshield",
     auditorPk: "2496233cca7c277d1e86aa8ffa6e25032580ff53a8a37f867fc045114a70e32c0f9d825b40b4bcc7b53a4f8fe1e0a10b6f00980b3510051d8b78ba72fdb2beaa",
@@ -17,8 +17,8 @@ export const NETWORKS = {
   },
   mainnet: {
     chain: "proton",
-    endpoints: ["https://api.protonnz.com", "https://proton.eosusa.io", "https://proton.cryptolions.io", "https://proton.eoscafeblock.com", "https://proton.genereos.io"],
-    hyperions: ["https://hyperion-xpr-mainnet.protonnz.com", "https://proton.eosusa.io"],
+    endpoints: ["https://api.protonnz.com", "https://api-xprnetwork-main.saltant.io", "https://proton.cryptolions.io", "https://proton-api.eosiomadrid.io", "https://proton.eoscafeblock.com", "https://proton.genereos.io"],
+    hyperions: ["https://hyperion-xpr-mainnet.protonnz.com", "https://api-xprnetwork-main.saltant.io", "https://proton-api.eosiomadrid.io"],
     explorer: "https://explorer.xprnetwork.org",
     contract: "privatexpr",
     auditorPk: "0fb61f4e0682adbe14b3168d79c18e6347eada6832a1e7dc767e73f90cb729c10dd3fe56084b2244c3a0e6a547b0c8c405c6f89b432c217f093121968563cd17", // the committee's v2 key (fresh, 2026-09-22)
