@@ -58,4 +58,9 @@ deterministic: `joinsplit.r1cs` sha256
 2026-09-10). Opened 2026-09-10 23:10 UTC from `contributions/00-setup.zkey` = `p2/00-start.zkey`
 (snarkjs `groth16 setup` over the phase-1 final; no secret), sha256
 `319ff7963b6c8a46e527a101225e93cf2d3181232cc3cb8129f4b7b51ce0419b`; record
-`contributions/00-setup.zkey.json`. Contributions are being collected on the site.
+`contributions/00-setup.zkey.json`. Sixteen contributions, the first an offline command-line
+contribution by paul (2026-09-10 23:15 UTC), the last by daorach (2026-09-14 10:46 UTC).
+
+**Beacon announced 2026-09-22 ~17:05 UTC, before the block existed: XPR mainnet block
+404,820,000** (expected about 18:02 UTC). The site closes to contributions about five minutes
+before that block; the beacon is applied to the last contribution recorded before it.
