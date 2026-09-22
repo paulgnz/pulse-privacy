@@ -3,7 +3,7 @@
 // same account always yields the same secret on any device and there is nothing to back up.
 // Hardware / WebAuthn keys randomise signatures; `unlock` detects that by signing twice and
 // reports `deterministic: false` so the UI can fall back to a saved key.
-import { CHAIN_ID, CONTRACT } from "../config";
+import { CHAIN_ID, CONTRACT, NETWORK } from "../config";
 import type { Session } from "./chain";
 import { watchPopup } from "./chain";
 import type { Hex } from "./crypto/types";
@@ -16,8 +16,15 @@ const DOMAIN = "pulse-privacy/elgamal/v1";
 // Signed texts: part of the key derivation. Never change these strings; a changed text is a different key.
 export const VIEWKEY_NOTE = "Derives your Confidential XPR viewing key on private.protonnz.com. Never sent to the chain. Moves nothing.";
 
-/** Shown by the wallet when deriving the shielded spending key: a different message, so a different key. */
-export const SHIELD_NOTE = "Derives your shielded spending key for Confidential XPR (testnet). Never sent to the chain. Moves nothing.";
+/**
+ * Shown by the wallet when deriving the Private XPR key: a different message, so a different key.
+ * One text per network. The testnet text predates the name Private XPR and must stay as it is (its
+ * users' keys come from it); the mainnet text was set before the first mainnet registration
+ * (2026-09-22) and is fixed from then on.
+ */
+const SHIELD_NOTE_TESTNET = "Derives your shielded spending key for Confidential XPR (testnet). Never sent to the chain. Moves nothing.";
+const SHIELD_NOTE_MAINNET = "Derives your Private XPR key. Never sent to the chain. Moves nothing.";
+export const SHIELD_NOTE = NETWORK === "mainnet" ? SHIELD_NOTE_MAINNET : SHIELD_NOTE_TESTNET;
 
 /** The fixed transaction. Every field is constant so the signing digest is constant. */
 export function unlockTransaction(actor: string, permission: string, legacy = false, contract = CONTRACT, note = VIEWKEY_NOTE) {
