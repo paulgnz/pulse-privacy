@@ -1,95 +1,93 @@
 # Private XPR
 
-Private payments with auditability on XPR Network. Version 2 (contract `xprshield`) hides who you
-pay and how much; the payer's signature stays public and a viewing key held by the XPR Network
-committee opens every payment. Private, not anonymous.
+Private payments with auditability on XPR Network. A payment hides **who was paid and how much**;
+the chain shows only that the payer made a payment. Deposits and withdrawals stay public, and the
+XPR Network committee's viewing key opens every payment. Private, not anonymous.
 
-**Live:** <https://private.protonnz.com> runs version 1 on mainnet (contract `xprconf`, amount
-hidden, parties visible); **deposits into v1 are paused since 2026-09-08**, withdrawals and
-payments inside continue. <https://testnet.private.protonnz.com> runs version 2 on testnet, with
-v1 at `/old`. Trusted-setup ceremony: <https://ceremony.private.protonnz.com>.
+**Live on mainnet since 2026-09-22:** <https://www.privatexpr.com> (contract `privatexpr`).
+Testnet: <https://testnet.privatexpr.com> (contract `xprshield`). Trusted-setup ceremony and its
+transcript: <https://ceremony.privatexpr.com>. The previous version (v1, contract `xprconf`,
+amount hidden but parties visible) is closed to deposits and stays withdrawable at
+<https://www.privatexpr.com/old>.
 
 Start with [docs/00-overview.md](docs/00-overview.md): what is where, what is live, what is next.
-A headless client for the whole product lives in [client/](client/README.md).
 
----
+## How it works
 
-## Version 1 (confidential, retiring)
+- **Notes.** Money inside the contract is held as sealed notes. Each note is a commitment (Poseidon
+  hash of owner key, amount, token and a random value) placed as a leaf of a Merkle tree on chain.
+  Nobody but the owner can tell which notes are theirs or what they hold.
+- **Spending with a proof.** A payment spends up to two notes and creates two new ones (to the
+  receiver, and change). A Groth16 proof (bn254, circuit revision 6: 31,708 constraints, 28 public
+  inputs) shows the notes exist in the tree, belong to the sender, add up, and have not been spent
+  before (each spend publishes a nullifier). The contract verifies it on chain in about 17 ms of
+  CPU. Proving takes about a second on a laptop.
+- **Sealed to the receiver and the auditor.** Every new note is encrypted to its receiver and to
+  the committee's viewing key, and the proof enforces both. A payment the auditor cannot open
+  cannot be created.
+- **Signed by the payer.** The payer's own account signs every payment, as with any XPR transfer;
+  there is no relayer. The payer's name is public, the receiver and amount are not.
+- **Deposits and withdrawals** move ordinary XPR or XMD in and out and are public.
+- **Recovery.** Each account's key can be restored from a seven-word phrase copy or a committee
+  copy, both stored encrypted on chain, or from a key file.
+- **Capacity.** Trees hold 2^20 leaves each; the contract opens a new tree when one is full, and
+  notes in closed trees stay spendable.
 
-## What it does
-
-You deposit ordinary XPR or XMD into a contract. From then on your balance and every payment you
-make are stored as encrypted numbers. The chain still records who paid whom and when. It no longer
-shows how much. Three parties can read an amount: you, the other party, and the designated auditor.
-Withdrawing turns the balance back into ordinary tokens.
-
-- **Boxes you can add without opening.** Balances and payments are twisted ElGamal ciphertexts on
-  Baby Jubjub. The contract adds and subtracts them without decrypting.
-- **A proof with every payment.** A Groth16 proof (bn254, 46,874 constraints) shows the amount is
-  in range, the sender is not overdrawn, and every copy of the box holds the same number. XPR
-  Network verifies it on chain in about 12 ms using Leap's `CRYPTO_PRIMITIVES` intrinsics. Proving
-  takes about two seconds in the browser.
-- **Two keyholes on every box.** Each payment is encrypted to the receiver and to the auditor, and
-  the proof enforces it. A payment the auditor cannot read cannot be created.
-- **Your wallet is the key.** The user's encryption key is derived from a WebAuth signature over a
-  fixed, never-broadcast message. There is nothing extra to back up.
-- **Incoming box.** Payments to you land in a separate box and are added to your balance when you
-  act, so a balance changes only under its owner's control.
-- **Recovery.** Accounts whose wallet signs with a passkey keep a saved key instead of a derived
-  one. They can store a passphrase-protected copy on chain to restore it on any device, and an
-  encrypted copy that only the committee's viewing key opens. If a key is ever beyond recovery, the
-  committee can pause the token and return the account's balance from escrow.
-
-The full design, including the ELI5 walk-through, the threat model and the edge-privacy analysis,
-is in [docs/01-design.md](docs/01-design.md). The mainnet operations record is
-[docs/02-mainnet-runbook.md](docs/02-mainnet-runbook.md), and the internal security review with
-its findings and fixes is [docs/03-security-review.md](docs/03-security-review.md).
+Full design: [docs/06-shielded-design.md](docs/06-shielded-design.md). Launch runbook and record:
+[docs/07-private-xpr-v2-mainnet.md](docs/07-private-xpr-v2-mainnet.md).
 
 ## Status
 
-This is early access. Read this before holding value in it.
+Early access. Read this before holding value in it.
 
 | | |
 |---|---|
-| Proving key | From a one-person rehearsal until the public ceremony completes. Anyone can contribute at the ceremony site. |
-| Review | Two adversarial reviews on 2026-09-07, findings and fixes in [docs/03-security-review.md](docs/03-security-review.md). No external audit yet. |
-| Caps, set on chain | XPR: 10,000 per deposit, 100,000,000 in the contract. XMD: 100 per deposit, 100,000 in the contract. Withdrawals in whole units, except an exact final withdrawal that empties the box. The live figures are read from the contract on the site's How it works page. |
-| Contract owner | `admin.proton@committee` (3 of 6). |
-| Auditor key | Held for the committee. The public key is in the contract's config. |
+| Proving key | From a public two-phase ceremony: 14 contributors in phase 1, 16 in phase 2 (one of them offline), each phase sealed with an XPR mainnet block announced in advance. Record: [ceremony/TRANSCRIPT.md](ceremony/TRANSCRIPT.md). |
+| Review | Internal adversarial reviews and seventeen independent passes, findings and fixes in [docs/03-security-review.md](docs/03-security-review.md). **No external audit yet.** |
+| Caps, set on chain | XPR: 10,000 per deposit, 1,000,000 in the contract. XMD: 100 per deposit, 100,000 in the contract. |
+| Contract account | `privatexpr@active`: 2 of 3 separate signers (plus the contract's own `eosio.code`). `privatexpr@owner`: `admin.proton@committee` (3 of 6). |
+| Auditor key | Generated offline for the committee on 2026-09-22; only its public key is on chain and pinned in the app and client. |
 
 ## Repository
 
 | directory | what it is |
 |---|---|
-| `contracts/xpr-conf-tsc/` | The contract, in proton-tsc (AssemblyScript): tables, actions, the Groth16 verifier and Baby Jubjub arithmetic over the chain's `alt_bn128_*` and `mod_exp` intrinsics. Tests run under vert. |
-| `circuits/` | The transfer circuit (circom 2.2), the ElGamal client library, and the setup scripts. Withdrawals reuse the transfer circuit. |
-| `dapp/` | The web app: Vite, React, `@proton/web-sdk`, snarkjs in the browser. Statement, send, deposit, withdraw, activity, auditor and settings. Design notes in `dapp/DESIGN.md`. |
-| `ceremony/` | Trusted-setup tooling: contribute, verify, finalize with an XPR block beacon. Becomes the public transcript once the ceremony has run. |
+| `contracts/xpr-shield-tsc/` | The v2 contract (proton-tsc): note tree, root ring, nullifiers, Groth16 verifier over the chain's `alt_bn128` intrinsics, deposits, withdrawals, recovery rows. Tests under vert, including fuzzing and the tree-rollover regression. |
+| `circuits/` | `shielded/joinsplit.circom` (v2) and the note library `lib/notes.mjs`; `transfer/` is the v1 circuit. |
+| `dapp/` | The web app (Vite, React, `@proton/web-sdk`, snarkjs in the browser): statement, send, deposit, withdraw, activity, auditor, settings; v1 withdrawals at `/old`. |
+| `client/` | Headless client: the whole product from a terminal, including the committee's audit and recovery. See [client/README.md](client/README.md). |
+| `ceremony/` | Trusted-setup tooling (contribute, verify, finalize with an XPR block beacon) and the ceremony's public record. |
 | `ceremony-web/` | The browser-based contribution site (Vercel functions and Blob). |
-| `tools/auditor-cli/` | Reads the ledger with the viewing key and reconciles escrow against deposits and withdrawals. |
-| `bench/` | Groth16 versus Bulletproofs verifier benchmarks, native and in WASM under metering. |
-| `docs/` | Design doc and mainnet runbook. |
+| `contracts/xpr-conf-tsc/`, `tools/auditor-cli/` | v1 contract and its auditor tool (legacy, withdrawals only). |
+| `bench/` | Groth16 versus Bulletproofs verifier benchmarks. |
+| `tests/` | Repository-wide security regressions. |
+| `docs/` | Designs, runbooks, security review. |
 
 ## Building and running
 
-Each part has its own README. In short:
-
 ```sh
-# circuit: compile, run the rehearsal setup, test
-cd circuits && npm install && npm run compile && npm run setup && npm test
+# circuit: compile revision 6
+cd circuits && npm install && npm run compile:shielded
 
 # contract: build with proton-tsc, test under vert
-cd contracts/xpr-conf-tsc && npm install && npm run build && npm test
+cd contracts/xpr-shield-tsc && npm install && npm run build && npm test
 
 # web app: simulated backend, no wallet needed
 cd dapp && npm install && VITE_CRYPTO=mock npm run dev
-# real backend against testnet
+# against testnet (default) or mainnet
 cd dapp && npm run dev
+VITE_NETWORK=mainnet npm run dev
+
+# headless client
+node client/privatexpr.mjs
 ```
 
-The dapp reads its network from `VITE_NETWORK` (`testnet` by default, `mainnet` for the main
-site). Chain writes from scripts sign through the `proton` CLI keychain; no private key is ever
-passed to a script or committed here.
+Verify the proving key yourself: the circuit compiles deterministically (the r1cs hash is in the
+transcript), and `node ceremony/verify.mjs` or `snarkjs zkey verify` checks the final key against
+it and the ceremony's contributions.
+
+Chain writes from scripts sign through the `proton` CLI keychain; no private key is ever passed to
+a script or committed here.
 
 ## Security
 
