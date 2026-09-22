@@ -65,6 +65,11 @@ pool 100,000, deposit ≤ 100, min 1; tx ab1c689a…); v2 enabled in the mainnet
 www.privatexpr.com and private.protonnz.com, v1 at `/old`. private.protonnz.com is kept serving rather than redirected
 for now: v1 still holds 243.98 XPR across about ten accounts, and a key saved in a browser is per address.
 
+**First use on mainnet, 2026-09-22:** paul registered and deposited 5 XPR (19:07), paul123 registered with the
+headless client, paul paid paul123 1 XPR (19:13, tx 2cb4a4e3…), paul withdrew 1 XPR (19:18, tx 208ce1bd…). The
+committee audit with the fresh auditor key opened every note (payer, receiver, amounts, block, time). Escrow
+26.2223 XPR = pool counter 4.0000 (paul 3 + paul123 1) + 22.2223 left over from the RAM purchase.
+
 ```sh
 proton chain:set proton
 proton contract:set privatexpr ./deploy/mainnet          # answer y to the table-change prompt if any
