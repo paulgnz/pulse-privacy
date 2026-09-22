@@ -45,6 +45,15 @@ Built 2026-09-09 from circuit revision 6 (several trees with automatic rollover;
 
 ## 2a. Secure the account (launch day, after the final contract is deployed and verified; Paul's call, not before)
 
+**Done 2026-09-22.** `privatexpr@active` = 2 of `paul@active`, `protonnz@active`, `mysafe1@active`, plus
+`privatexpr@eosio.code` at weight 2 so the contract still pays withdrawals by itself (tx bf338f16…; proven by a
+paul123 withdrawal right after, tx 0065e9d8…). Tested with proposal `paul123/pxmsigtest1` (addtoken XPR at its
+existing values), approved by paul and protonnz, executed 19:25:09 UTC as privatexpr@active. Then
+`privatexpr@owner` = `admin.proton@committee` (3 of 6; tx fddd5f85…). The operational key no longer controls the
+account. From now on every contract action (upload, caps, pause, auditor key) is an `eosio.msig` proposal, e.g.
+`proton msig:propose <name> '<actions with privatexpr@active>' paul123@active`, approved by two of the three, then
+`proton msig:exec paul123 <name> paul123@active`.
+
 ```sh
 proton chain:set proton
 proton action eosio updateauth '{"account":"privatexpr","permission":"owner","parent":"","auth":{"threshold":1,"keys":[],"accounts":[{"permission":{"actor":"admin.proton","permission":"committee"},"weight":1}],"waits":[]}}' privatexpr@owner
