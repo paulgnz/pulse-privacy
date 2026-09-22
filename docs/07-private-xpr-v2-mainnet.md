@@ -79,6 +79,8 @@ headless client, paul paid paul123 1 XPR (19:13, tx 2cb4a4e3…), paul withdrew 
 committee audit with the fresh auditor key opened every note (payer, receiver, amounts, block, time). Escrow
 26.2223 XPR = pool counter 4.0000 (paul 3 + paul123 1) + 22.2223 left over from the RAM purchase.
 
+**Announced 2026-09-22:** https://x.com/paulgrey/status/2102483375965761560
+
 ```sh
 proton chain:set proton
 proton contract:set privatexpr ./deploy/mainnet          # answer y to the table-change prompt if any
