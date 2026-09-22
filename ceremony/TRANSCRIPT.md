@@ -62,5 +62,5 @@ deterministic: `joinsplit.r1cs` sha256
 contribution by paul (2026-09-10 23:15 UTC), the last by daorach (2026-09-14 10:46 UTC).
 
 **Beacon announced 2026-09-22 ~17:05 UTC, before the block existed: XPR mainnet block
-404,820,000** (expected about 18:02 UTC). The site closes to contributions about five minutes
+404,820,000** (announcement: https://x.com/paulgrey/status/2102446574655918121) (expected about 18:02 UTC). The site closes to contributions about five minutes
 before that block; the beacon is applied to the last contribution recorded before it.
