@@ -255,20 +255,46 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
     if (seq.current === mine) refresh().catch(() => undefined);
   };
 
-  const run = async (label: string, f: (onProgress: (fr: number, s: string) => void) => Promise<{ txid: string }>) => {
-    setBusy(true); setNotice(null); setStage({ f: 0, s: "Starting" });
-    const before = { unspent: (notes ?? []).map((n) => n.index).join(","), count: (notes ?? []).length };
+  // Two clicks per payment: the first prepares (reads the chain, builds the proof), the second opens
+  // the wallet. Browsers only allow a pop-up straight from a click, and preparing takes a second or
+  // two, so a wallet window opened at the end of the first click is blocked, often silently.
+  const [pending, setPending] = useState<{ label: string; what: string; actions: unknown[]; after?: (txid: string) => void } | null>(null);
+  const [signing, setSigning] = useState(false);
+  const [slowSign, setSlowSign] = useState(false);
+  useEffect(() => {
+    if (!signing) { setSlowSign(false); return; }
+    const t = setTimeout(() => setSlowSign(true), 4000);
+    return () => clearTimeout(t);
+  }, [signing]);
+  const run = async (label: string, what: string, f: (onProgress: (fr: number, s: string) => void) => Promise<{ actions: unknown[]; after?: (txid: string) => void }>) => {
+    setBusy(true); setNotice(null); setPending(null); setStage({ f: 0, s: "Starting" });
     try {
       const r = await f((fr, s) => setStage({ f: fr, s }));
-      setNotice({ ok: true, text: label, txid: r.txid });
+      setPending({ label, what, ...r });
+    } catch (e) {
+      setNotice({ ok: false, text: `Not done. ${(e as Error).message}` });
+      pre.current = null;
+    } finally { setBusy(false); setStage(null); }
+  };
+  /** from a click: open the wallet for the prepared transaction */
+  const sign = async () => {
+    const pd = pending;
+    if (!pd || !session) return;
+    setBusy(true); setSigning(true); setNotice(null);
+    const before = { unspent: (notes ?? []).map((n) => n.index).join(","), count: (notes ?? []).length };
+    try {
+      const txid = await broadcast(session, pd.actions);
+      pd.after?.(txid);
+      setPending(null); setSigning(false);
+      setNotice({ ok: true, text: pd.label, txid });
       setForm(null);
       setStage({ f: 1, s: "Confirming on chain" });
       await refreshUntil((res) => res.notes.map((n) => n.index).join(",") !== before.unspent || res.notes.length !== before.count);
     } catch (e) {
       const detail = describeLastError();
       const msg = (e as Error).message;
-      setNotice({ ok: false, text: `Not done. ${msg}${detail && !msg.startsWith("Your browser blocked") ? ` Details: ${detail}` : ""}` });
-    } finally { setBusy(false); setStage(null); pre.current = null; }
+      setNotice({ ok: false, text: `Not signed. ${msg}${detail && !msg.startsWith("Your browser blocked") ? ` Details: ${detail}` : ""} Your ${pd.what} is still ready: press Sign again.` });
+    } finally { setBusy(false); setSigning(false); setStage(null); pre.current = null; }
   };
 
   const toggleReveal = () => { setRevealed((r) => { try { localStorage.setItem(REVEAL, r ? "0" : "1"); } catch { /* ignore */ } return !r; }); };
@@ -440,7 +466,7 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
         <Note level="warn">
           <p>{unfinished.length === 1 ? "A deposit arrived but was never placed in your notes." : `${unfinished.length} deposits arrived but were never placed in your notes.`} Finishing takes one wallet signature and pays the small storage cost.</p>
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="btn secondary" disabled={busy} onClick={() => run("Deposit placed in your notes.", async () => { const txid = await broadcast(session, unfinished.map((u) => sh.finishDepositAction(session, u.r))); return { txid }; })}>{busy ? "Working" : "Finish"}</button>
+            <button className="btn secondary" disabled={busy} onClick={() => run("Deposit placed in your notes.", "deposit to place", async () => ({ actions: unfinished.map((u) => sh.finishDepositAction(session, u.r)) }))}>{busy ? "Working" : "Finish"}</button>
           </div>
         </Note>
       ) : null}
@@ -472,18 +498,30 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
         <button className="btn secondary" onClick={() => toggle("withdraw")} aria-expanded={form === "withdraw"}>Withdraw</button>
       </div>
 
-      {form === "send" ? (
+      {pending ? (
+        <div className="form" role="region" aria-label="Sign in your wallet">
+          <p>Your {pending.what} is ready. Sign it in your wallet.</p>
+          <div className="row">
+            <button className="btn private" onClick={sign} disabled={signing} autoFocus>{signing ? "Waiting for your wallet" : "Sign in wallet"}</button>
+            <button className="textbtn quiet" onClick={() => { setPending(null); pre.current = null; }} disabled={signing}>Cancel</button>
+          </div>
+          {signing && slowSign ? (
+            <p className="muted">Nothing opened? Your browser may have blocked the wallet window. Allow pop-ups for {location.host} (the icon at the right of the address bar), then press Sign in wallet again. On a phone, approve the request in the WebAuth app and come back to this tab.</p>
+          ) : null}
+        </div>
+      ) : null}
+      {!pending && form === "send" ? (
         <SendForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} spendable={balance(token.code)} busy={busy} stage={stage} parsed={parsedAmount} onClose={() => setForm(null)}
           peers={peers}
-          onSend={(to, amount) => run(`Sent ${fmtUnits(amount, token)} ${token.code} to ${to}. The chain shows that you paid, not whom or how much.`, async (p) => { const prep = await sh.prepareSend(session, keys, cfg, token, to, amount, p, pre.current); const txid = await broadcast(session, [prep.action]); sh.rememberSend(actor, txid, to); p(1, "Done"); return { txid }; })} />
+          onSend={(to, amount) => run(`Sent ${fmtUnits(amount, token)} ${token.code} to ${to}. The chain shows that you paid, not whom or how much.`, `payment of ${fmtUnits(amount, token)} ${token.code} to ${to}`, async (p) => { const prep = await sh.prepareSend(session, keys, cfg, token, to, amount, p, pre.current); p(1, "Ready"); return { actions: [prep.action], after: (txid) => sh.rememberSend(actor, txid, to) }; })} />
       ) : null}
-      {form === "deposit" ? (
+      {!pending && form === "deposit" ? (
         <DepositForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} publicBalance={pub[token.code] ?? null} busy={busy} parsed={parsedAmount} onClose={() => setForm(null)}
-          onDeposit={(amount) => run(`Deposited ${fmtUnits(amount, token)} ${token.code} into a private note.`, async () => { const slot = await sh.depositSlot(actor); if (slot && slot.amount > 0n) throw new Error("A deposit is still waiting to be placed. Finish it first."); const { actions } = sh.depositActions(session, cfg, token, keys.pk, amount, !!slot); const txid = await broadcast(session, actions); return { txid }; })} />
+          onDeposit={(amount) => run(`Deposited ${fmtUnits(amount, token)} ${token.code} into a private note.`, `deposit of ${fmtUnits(amount, token)} ${token.code}`, async () => { const slot = await sh.depositSlot(actor); if (slot && slot.amount > 0n) throw new Error("A deposit is still waiting to be placed. Finish it first."); const { actions } = sh.depositActions(session, cfg, token, keys.pk, amount, !!slot); return { actions }; })} />
       ) : null}
-      {form === "withdraw" ? (
+      {!pending && form === "withdraw" ? (
         <WithdrawForm token={token} tokens={shieldTokens} onSelectToken={setTokenCode} spendable={balance(token.code)} busy={busy} stage={stage} parsed={parsedAmount} onClose={() => setForm(null)} actor={actor}
-          onWithdraw={(amount) => run(`Withdrew ${fmtUnits(amount, token)} ${token.code} to ${actor}.`, async (p) => { const prep = await sh.prepareWithdraw(session, keys, cfg, token, amount, p, pre.current); const hasRow = await hasBalanceRow(actor, token).catch(() => true); const txid = await broadcast(session, [...(hasRow ? [] : [openBalanceAction(session, token)]), prep.action]); p(1, "Done"); return { txid }; })} />
+          onWithdraw={(amount) => run(`Withdrew ${fmtUnits(amount, token)} ${token.code} to ${actor}.`, `withdrawal of ${fmtUnits(amount, token)} ${token.code}`, async (p) => { const prep = await sh.prepareWithdraw(session, keys, cfg, token, amount, p, pre.current); const hasRow = await hasBalanceRow(actor, token).catch(() => true); p(1, "Ready"); return { actions: [...(hasRow ? [] : [openBalanceAction(session, token)]), prep.action] }; })} />
       ) : null}
 
       <div className="group public">
