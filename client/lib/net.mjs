@@ -21,7 +21,7 @@ export const NETWORKS = {
     hyperions: ["https://hyperion-xpr-mainnet.protonnz.com", "https://proton.eosusa.io"],
     explorer: "https://explorer.xprnetwork.org",
     contract: "privatexpr",
-    auditorPk: "", // pinned at launch (docs/07)
+    auditorPk: "0fb61f4e0682adbe14b3168d79c18e6347eada6832a1e7dc767e73f90cb729c10dd3fe56084b2244c3a0e6a547b0c8c405c6f89b432c217f093121968563cd17", // the committee's v2 key (fresh, 2026-09-22)
     tokens: { XPR: { contract: "eosio.token", precision: 4, id: 1n }, XMD: { contract: "xmd.token", precision: 6, id: 2n } },
   },
 };

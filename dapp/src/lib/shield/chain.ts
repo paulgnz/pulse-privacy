@@ -10,8 +10,8 @@ import type { Token } from "../token";
 import { TOKEN_IDS, Tree, buildJoinSplit, commitment, decompressPoint, decryptAuditor, hex32, nameToU64, newNote, nullifier, treeOf, tryDecryptReceiver, unpack, words } from "./notes";
 import type { OwnedNote, ShieldKeys } from "./notes";
 
-const WASM = "/circuit/joinsplit-r6.wasm";
-const ZKEY = "/circuit/joinsplit-r6_final.zkey";
+const WASM = "/circuit/joinsplit-r6c.wasm"; // revision 6, ceremony final key (2026-09-22)
+const ZKEY = "/circuit/joinsplit-r6c_final.zkey";
 
 // Testnet nodes fall behind each other by minutes at times: order the endpoints by head block,
 // probed once per few minutes, so table reads come from the freshest node.

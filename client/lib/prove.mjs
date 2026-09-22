@@ -11,7 +11,7 @@ import { encodeInputs, encodeProof } from "../../circuits/lib/encode.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(join(HERE, "../../circuits/package.json"));
 const snarkjs = require("snarkjs");
-const REV = "r6";
+const REV = "r6c"; // revision 6 with the ceremony's final key
 const DIR = process.env.PRIVATEXPR_CIRCUIT_DIR ?? join(HERE, "../../dapp/public/circuit");
 export const WASM = join(DIR, `joinsplit-${REV}.wasm`);
 export const ZKEY = join(DIR, `joinsplit-${REV}_final.zkey`);

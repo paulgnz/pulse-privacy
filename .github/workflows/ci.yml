@@ -50,8 +50,8 @@ jobs:
       - name: proving key from the dapp's tracked circuit files
         run: |
           mkdir -p circuits/build/joinsplit_js
-          cp dapp/public/circuit/joinsplit-r6.wasm circuits/build/joinsplit_js/joinsplit.wasm
-          cp dapp/public/circuit/joinsplit-r6_final.zkey circuits/build/joinsplit_final.zkey
+          cp dapp/public/circuit/joinsplit-r6c.wasm circuits/build/joinsplit_js/joinsplit.wasm
+          cp dapp/public/circuit/joinsplit-r6c_final.zkey circuits/build/joinsplit_final.zkey
           cd circuits && npx snarkjs zkey export verificationkey build/joinsplit_final.zkey build/joinsplit_vk.json
       - run: node tests/poseidon.test.mjs
         working-directory: contracts/xpr-shield-tsc
