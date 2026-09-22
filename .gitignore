@@ -1,3 +1,9 @@
 .vercel
 .env*.local
 dapp/dist-mock/
+
+# local tooling installs at the repo root (e.g. snarkjs for an offline ceremony contribution) and macOS metadata
+/node_modules/
+/package.json
+/package-lock.json
+.DS_Store
