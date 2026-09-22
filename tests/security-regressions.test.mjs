@@ -16,9 +16,10 @@ function load(file, mocks = {}, globals = {}) {
   return module.exports;
 }
 const points = { good: '1'.padStart(64, '0') + '2'.padStart(64, '0'), bad: '3'.padStart(64, '0') + '4'.padStart(64, '0') };
-function shield(answers, calls = []) {
+const operatorOf = (url) => new URL(url).hostname.split('.').slice(-2).join('.');
+function shield(answers, calls = [], endpoints = ['https://one', 'https://two', 'https://three']) {
   return load('dapp/src/lib/shield/chain.ts', {
-    snarkjs: {}, '../../config': { ENDPOINTS: ['https://one', 'https://two', 'https://three'], SHIELD: { contract: 'xprshield' } },
+    snarkjs: {}, '../../config': { ENDPOINTS: endpoints, KEY_QUORUM: 2, operatorOf, SHIELD: { contract: 'xprshield' } },
     '../crypto/babyjub': {}, './notes': { words: (h) => h.match(/.{64}/g).map((w) => BigInt('0x' + w)) },
   }, { fetch: async (url, options) => {
     const ep = new URL(url).hostname, body = JSON.parse(options.body);
@@ -29,25 +30,33 @@ function shield(answers, calls = []) {
   } });
 }
 const row = (key = points.good) => ({ owner: 'bob', pubkey: key });
-test('recipient key fails closed with only one reachable server, including repeated reads', async () => {
+test('recipient key fails closed with only one reachable operator, including repeated reads', async () => {
   const sh = shield({ one: [row(points.bad)], two: new Error('offline'), three: new Error('offline') });
-  await assert.rejects(sh.registeredKeys(), /two independent servers/);
-  await assert.rejects(sh.registeredKey('bob'), /two independent servers/);
+  await assert.rejects(sh.registeredKeys(), /independent node operators/);
+  await assert.rejects(sh.registeredKey('bob'), /independent node operators/);
 });
-test('two honest servers defeat a substituted key and recipient names stay local', async () => {
-  const calls = [], sh = shield({ one: [row(points.bad)], two: [row()], three: [row()] }, calls);
+test('agreeing operators confirm a key, and recipient names stay local', async () => {
+  const calls = [], sh = shield({ one: [row()], two: [row()], three: [row()] }, calls);
   assert.equal(String(await sh.registeredKey('bob')), '1,2');
   await sh.registeredKey('bob');
-  assert.equal(calls.length, 3, 'only quorum-confirmed data is cached');
+  assert.equal(calls.length, 3, 'confirmed data is cached');
   assert.ok(calls.every((body) => !JSON.stringify(body).includes('bob')));
 });
-test('disagreeing servers cannot authorize a recipient key', async () => {
+test('a substituted key from one operator blocks the name instead of being outvoted', async () => {
+  const sh = shield({ one: [row(points.bad)], two: [row()], three: [row()] });
+  await assert.rejects(sh.registeredKey('bob'), /disagree/);
+});
+test('disagreeing operators cannot authorize a recipient key', async () => {
   const sh = shield({ one: [row(points.bad)], two: [row()], three: new Error('offline') });
-  assert.equal(await sh.registeredKey('bob'), null);
+  await assert.rejects(sh.registeredKey('bob'), /disagree/);
 });
 test('duplicate rows cannot supply additional votes', async () => {
   const sh = shield({ one: [row(), row()], two: new Error('offline'), three: new Error('offline') });
-  await assert.rejects(sh.registeredKey('bob'), /two independent servers/);
+  await assert.rejects(sh.registeredKey('bob'), /independent node operators/);
+});
+test('two hostnames of one operator count as one vote', async () => {
+  const sh = shield({ 'a.op.com': [row(points.bad)], 'b.op.com': [row(points.bad)], three: new Error('offline') }, [], ['https://a.op.com', 'https://b.op.com', 'https://three']);
+  await assert.rejects(sh.registeredKey('bob'), /independent node operators/);
 });
 test('pagination retains keys past 20,000 rows', async () => {
   const names = Array.from({length: 21001}, (_, i) => 'u' + i.toString(32).replace(/./g, (c) => 'abcdefghijklmnopqrstuvwxyz12345.'[parseInt(c, 32)]));
@@ -58,7 +67,7 @@ test('pagination retains keys past 20,000 rows', async () => {
 });
 test('a repeating pagination cursor fails instead of looping or trusting partial data', async () => {
   const page = () => ({ rows: [row()], more: true, next_key: '1' });
-  await assert.rejects(shield({ one: page, two: page, three: page }).registeredKeys(), /two independent servers/);
+  await assert.rejects(shield({ one: page, two: page, three: page }).registeredKeys(), /independent node operators/);
 });
 const files = load('ceremony-web/shared/files.ts');
 const hash = 'a'.repeat(64), token = 'private-lock-token';
