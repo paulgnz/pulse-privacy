@@ -433,19 +433,19 @@ export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: 
         Before a payment is accepted, your device attaches a zero-knowledge proof: a short piece of mathematics that shows a
         statement is true without revealing anything else about it. Here the statement is that the notes you are spending exist in
         the tree, they are yours, they have not been spent before, and the new notes add up to the old ones. The network checks the
-        proof in a few milliseconds and learns only that it holds, not which notes were involved or what they are worth. Each spent
+        proof in a few hundredths of a second and learns only that it holds, not which notes were involved or what they are worth. Each spent
         note leaves a one-way tag behind so it can never be spent again, and every payment leaves two tags, one of them a decoy when a
         single note was spent, so the number of notes stays hidden too.
       </p>
       <p>
-        The proofs are Groth16 proofs, the system used by Zcash, made in your browser in about two seconds. They need a one-time
-        public setup, which is what the ceremony below is for.
+        The proofs are Groth16 proofs, the system used by Zcash, made in your browser in a second or two. They need a one-time
+        public setup, which was done in the ceremony described below.
       </p>
 
       <h3>Two keyholes on every note</h3>
       <p>
         Each note is sealed to the receiver's key and to the auditor's key, and the proof checks both. A note the auditor cannot
-        read cannot be created. That is what makes this shielded rather than anonymous.
+        read cannot be created. That is what makes this private rather than anonymous.
       </p>
     </section>
 
@@ -465,7 +465,7 @@ export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: 
       <h2>Getting started</h2>
       <ol className="howto">
         <li>Connect your WebAuth wallet. Nothing is sent to the chain.</li>
-        <li>Sign one message. For most wallets the signature becomes your shielded key, the same on every device, with nothing to write down. Passkey wallets sign differently each time, so they get a saved key and a seven-word recovery phrase instead.</li>
+        <li>Sign one message. For most wallets the signature becomes your Private XPR key, the same on every device, with nothing to write down. Passkey wallets sign differently each time, so they get a saved key and a seven-word recovery phrase instead.</li>
         <li>Register once. This publishes the public half of your key under your name, so anyone can pay you by name. It is the only time your account and your key appear together on chain.</li>
         <li>Deposit XPR or XMD from your public balance. From here on, pay any registered account, or withdraw to your own account.</li>
       </ol>
@@ -493,7 +493,7 @@ export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: 
             <li>Who made each payment, and when</li>
             <li>Deposits into the contract, with amounts</li>
             <li>Withdrawals out of it, with amounts</li>
-            <li>Which accounts have set up shielded payments</li>
+            <li>Which accounts have set up Private XPR</li>
           </ul>
         </div>
         <div>
@@ -517,7 +517,7 @@ export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: 
       <p>
         Inside, payments are hidden by cryptography. At the edges they are hidden by time and volume. With few users, "someone paid
         someone" narrows quickly, and a receiver who withdraws exactly what they were paid, right after being paid, links the two by
-        timing. The private path is to keep money inside and pay other shielded accounts directly.
+        timing. The private path is to keep money inside and pay other Private XPR accounts directly.
       </p>
     </section>
 
@@ -525,7 +525,7 @@ export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: 
       <h2>The auditor</h2>
       <p>
         One viewing key, held by the XPR Network committee, opens every note: the receiver and the amount. The payer is named by the
-        signed transaction. The key cannot spend. This is the difference between shielded and anonymous: the details are hidden from
+        signed transaction. The key cannot spend. This is the difference between private and anonymous: the details are hidden from
         the public, not from oversight. The auditor page shows what that key sees.
       </p>
     </section>
@@ -536,8 +536,8 @@ export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: 
         For most accounts the key comes back from your wallet's signature every time, so there is nothing to lose. Passkey accounts
         keep a saved key, and three things bring it back on another device: the seven-word recovery phrase, a key file, or an encrypted
         copy kept with the XPR Network committee, which returns the key after you prove you own the account. Set these up in Settings.
-        And if a key is ever beyond recovery, the committee can pause the contract and return an account's money from escrow, using
-        what its viewing key can read. Money in the contract is recoverable; it is never simply gone.
+        And if a key is ever beyond recovery, the committee can read the account's notes with its viewing key, and the contract's
+        signers can return that money from escrow to the account. Money in the contract is recoverable; it is never simply gone.
       </p>
     </section>
 
@@ -553,15 +553,16 @@ export const ShieldAbout = ({ onConnect, signedIn, tokens = [] }: { onConnect?: 
         <li>
           Running on {NETWORK_LABEL}. Contract{" "}
           <a href={`${EXPLORER}/account/${SHIELD.contract}`} target="_blank" rel="noreferrer">{SHIELD.contract}</a>
-          {NETWORK === "mainnet" ? ", owned by the XPR Network committee." : ", a testnet account. Mainnet follows the ceremony."}
+          {NETWORK === "mainnet" ? ", live since 22 September 2026. No single key controls it: changes need 2 of 3 separate signers, and the XPR Network committee is the account's owner." : ", a testnet account for trying it out with test tokens. It runs the same code and the same proving key as mainnet."}
         </li>
-        <li>Zero-knowledge proofs are generated in your browser and take about two seconds. The network checks one in about six milliseconds.</li>
+        <li>Zero-knowledge proofs are generated in your browser in a second or two. The network checks one, and applies the payment, in about 17 milliseconds.</li>
         <li>
-          The proving key comes from a one-person rehearsal until the public ceremony completes. Anyone can{" "}
-          <a href={CEREMONY_URL} target="_blank" rel="noreferrer">contribute randomness</a>; as long as one contributor was honest, nobody can forge a proof.
-          The first phase of the ceremony is shared with the confidential contract; the second is run for this circuit.
+          The proving key comes from a public{" "}
+          <a href={CEREMONY_URL} target="_blank" rel="noreferrer">ceremony</a>: 14 people contributed randomness to the first phase
+          and 16 to the second, and each phase was sealed with an XPR mainnet block announced before it existed. As long as one
+          contributor was honest, nobody can forge a proof. The full transcript is public.
         </li>
-        <li>The code has been through two independent reviews and has not been audited yet. The caps above bound what is at stake until it has.</li>
+        <li>The code has been through internal adversarial reviews and seventeen independent review passes, all findings fixed. It has not yet been audited by an outside firm; the caps above bound what is at stake until it has.</li>
         <li>
           The design, the circuit and the contract are public:{" "}
           <a href="https://github.com/paulgnz/pulse-privacy" target="_blank" rel="noreferrer">github.com/paulgnz/pulse-privacy</a>.

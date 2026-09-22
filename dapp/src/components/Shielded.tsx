@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PATHS, SHIELD, SHIELD_HOME } from "../config";
+import { NETWORK, PATHS, SHIELD } from "../config";
 import { broadcast, describeLastError, deterministicSigner, getPublicBalance, hasBalanceRow, openBalanceAction } from "../lib/chain";
 import type { Session } from "../lib/chain";
 import type { Pt } from "../lib/crypto/babyjub";
@@ -288,12 +288,12 @@ export const Shielded = ({ session, onConnect, connectBusy, tokens }: { session:
 
   // ---------------------------------------------------------------- states
 
-  if (!SHIELD.enabled) return <section className="statement"><h2>Private XPR</h2><p className="muted">Private XPR v2 is on the testnet site only for now.</p></section>;
+  if (!SHIELD.enabled) return <section className="statement"><h2>Private XPR</h2><p className="muted">Private XPR is not enabled on this site.</p></section>;
 
   const intro = (
     <>
       <h2>Private XPR</h2>
-      <p className="lede" style={{ marginBottom: 26 }}>A private payment hides who was paid and how much. The chain shows only that you paid someone. Your wallet signs every payment, as always, and only the XPR Network auditor's key opens the details. Deposits and withdrawals stay public.{SHIELD_HOME ? " Testnet, early access." : " Testnet only, early access."} <a href={PATHS.shieldedAbout}>How it works</a>.</p>
+      <p className="lede" style={{ marginBottom: 26 }}>A private payment hides who was paid and how much. The chain shows only that you paid someone. Your wallet signs every payment, as always, and only the XPR Network auditor's key opens the details. Deposits and withdrawals stay public.{NETWORK === "mainnet" ? " Live on XPR Network mainnet, early access with deposit caps." : " Testnet: test tokens, for trying it out."} <a href={PATHS.shieldedAbout}>How it works</a>.</p>
     </>
   );
 
