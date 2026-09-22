@@ -246,6 +246,8 @@ export function App() {
   const lockHeld = state?.lock && Date.parse(state.lock.until) > Date.now() ? state.lock : null;
   const mine = session?.auth.actor;
   const alreadyDone = !!(state && mine && state.contributions.some((c) => c.phase === state.phase && c.actor === mine));
+  // the whole ceremony is over once phase 2 is closed: the page becomes its record
+  const complete = !!state?.finished && state.phase === 2;
   const canStart = !!session && !!state?.head && !state.finished && step === "idle" && (!lockHeld || lockHeld.actor === mine) && !alreadyDone;
 
   return (
@@ -256,11 +258,29 @@ export function App() {
           <span>Private XPR</span>
         </a>
         <div className="muted">
-          Trusted setup ceremony <span className="sep">|</span> <a href="https://www.privatexpr.com/about">How it works</a> <span className="sep">|</span> <a href="https://private.protonnz.com">Open the app</a>
+          Trusted setup ceremony <span className="sep">|</span> <a href="https://www.privatexpr.com/about">How it works</a> <span className="sep">|</span> <a href="https://www.privatexpr.com">Open the app</a>
         </div>
       </header>
 
-      <section>
+      {complete ? (
+        <section>
+          <h1>The proving key that no one can forge is made</h1>
+          <p>
+            Every Private XPR payment carries a small proof, checked against a key built from a random secret. Whoever knew that secret
+            could forge proofs, so the key was built by many people in turn, each adding their own randomness and throwing it away. As long
+            as one of them really threw theirs away, nobody can forge a proof. The ceremony is complete and closed to contributions; this
+            page stays online as its public record.
+          </p>
+          <dl className="facts">
+            <div><dt>Phase 1</dt><dd>14 contributions, sealed with XPR mainnet block 402,780,000, announced before it existed</dd></div>
+            <div><dt>Phase 2</dt><dd>16 contributions for the join-split circuit, revision 6, one of them made offline; sealed with XPR mainnet block 404,820,000, announced before it existed</dd></div>
+            <div><dt>Final proving key</dt><dd><span className="mono">26ec798e00175fda8768b5956d7cc77f589138182b326e776704639cabdd7a0f</span></dd></div>
+            <div><dt>Verifying key on chain</dt><dd>installed on <a href="https://explorer.xprnetwork.org/account/privatexpr">privatexpr</a>; <span className="mono">vk.hex</span> sha256 <span className="mono">bc498abd08417af55d60326af11431e29a1a9cb3d79ed38e48ab4c5bf8a83978</span></dd></div>
+            <div><dt>Record</dt><dd><a href="https://github.com/paulgnz/pulse-privacy/blob/main/ceremony/TRANSCRIPT.md">Transcript</a>, every contributor's signed attestation, and the tool to verify it all yourself</dd></div>
+          </dl>
+        </section>
+      ) : null}
+      <section hidden={complete}>
         <h1>Help make the proving key that no one can forge</h1>
         <p>
           Every Private XPR payment carries a small proof. The key those proofs are checked against is built from a random secret,
@@ -296,7 +316,7 @@ export function App() {
         )}
       </section>
 
-      <section className="contribute">
+      <section className="contribute" hidden={complete}>
         <h2>Contribute</h2>
         {!session ? (
           <div className="row">
