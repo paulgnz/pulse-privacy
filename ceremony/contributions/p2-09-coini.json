@@ -1,0 +1,45 @@
+{
+  "phase": 2,
+  "index": 9,
+  "actor": "coini",
+  "timestamp": "2026-09-11T04:21:15.350Z",
+  "input": {
+    "file": "p2/08-cryptqueenie-ad4e82ed6df82b4508f87792e4430ca04ae20b04668b585a0a2800a8d040ad79.zkey",
+    "sha256": "ad4e82ed6df82b4508f87792e4430ca04ae20b04668b585a0a2800a8d040ad79"
+  },
+  "output": {
+    "file": "p2/09-coini-5847777e23d2beecfbfeb7f77c2a19f58ee21b721741ea23372acb003cc104f5.zkey",
+    "sha256": "5847777e23d2beecfbfeb7f77c2a19f58ee21b721741ea23372acb003cc104f5",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p2/09-coini-5847777e23d2beecfbfeb7f77c2a19f58ee21b721741ea23372acb003cc104f5.zkey"
+  },
+  "contributionHash": "0e55f46d33530bcb70edc14429de4271e653d4a8310b098870bc9b097172268ed973199960be14b4490f2c95f072de6be3e0792bf7575bc9f2ce19ed123e53ff",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "coini",
+            "permission": "owner"
+          }
+        ],
+        "data": {
+          "owner": "coini",
+          "note": "ceremony/2/9/5847777e23d2beecfbfeb7f77c2a19f58ee21b721741ea23372acb003cc104f5"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_K1_K8xx9RoWTXCdxJnyMwVnUkCtSUuFrK2J9BJ1m5EffC6tfxzvTZ32SANStaXd9J2cx7C2z3gzizsvvfVFMXpZQy8FCaii6F",
+  "signerKey": "PUB_K1_79RxUZAWDPLezaRSoiBkUWtW9iCuNqyL1q4kyNomq3VPt2QVsx",
+  "note": "ceremony/2/9/5847777e23d2beecfbfeb7f77c2a19f58ee21b721741ea23372acb003cc104f5"
+}

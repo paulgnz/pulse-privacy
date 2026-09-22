@@ -1,0 +1,45 @@
+{
+  "phase": 2,
+  "index": 12,
+  "actor": "teng5",
+  "timestamp": "2026-09-11T14:30:58.941Z",
+  "input": {
+    "file": "p2/11-protea-0d5901d4aa866dc7d3223628a98cf2266d89994eea39222a65af6bf9892f965f.zkey",
+    "sha256": "0d5901d4aa866dc7d3223628a98cf2266d89994eea39222a65af6bf9892f965f"
+  },
+  "output": {
+    "file": "p2/12-teng5-ae943fa2a5dbbdac40388090c867901fa15031360f00aa4350391c1e51d85693.zkey",
+    "sha256": "ae943fa2a5dbbdac40388090c867901fa15031360f00aa4350391c1e51d85693",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p2/12-teng5-ae943fa2a5dbbdac40388090c867901fa15031360f00aa4350391c1e51d85693.zkey"
+  },
+  "contributionHash": "c8510042b88b4a9c5184b687a221cabfff13f58a949767509fb95aa2ba40984a0b8a9141ea04bec9bf2a1aeb529a17f2712e2b23536b81cef1a3fdf169d2068d",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "teng5",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "teng5",
+          "note": "ceremony/2/12/ae943fa2a5dbbdac40388090c867901fa15031360f00aa4350391c1e51d85693"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_K1_KcWxpNBWRq46QhPpXDHH53ofhVWGXWZRdtXfZnReh54p21d6aXwewQbbaVpndDYFQU8PM9WixxjJEhx5uCx1ak4nni8CPk",
+  "signerKey": "PUB_K1_8GbmwwfTuVhrvpm5ZQMEgLxz1Cx2GQJA1MKNyui3pUDhuipMTc",
+  "note": "ceremony/2/12/ae943fa2a5dbbdac40388090c867901fa15031360f00aa4350391c1e51d85693"
+}

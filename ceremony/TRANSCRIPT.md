@@ -62,5 +62,20 @@ deterministic: `joinsplit.r1cs` sha256
 contribution by paul (2026-09-10 23:15 UTC), the last by daorach (2026-09-14 10:46 UTC).
 
 **Beacon announced 2026-09-22 ~17:05 UTC, before the block existed: XPR mainnet block
-404,820,000** (announcement: https://x.com/paulgrey/status/2102446574655918121) (expected about 18:02 UTC). The site closes to contributions about five minutes
-before that block; the beacon is applied to the last contribution recorded before it.
+404,820,000** (announcement: https://x.com/paulgrey/status/2102446574655918121) (expected about 18:02 UTC). The site was closed at 17:57:44 UTC (block 404,819,429).
+Block 404,820,000 was produced 2026-09-22 18:02:26 UTC; id
+`1821102043702b0380a2a3bfd57e239dd5a7d417f8a739ea06e8a424c342a20f`, reported identically by
+api.protonnz.com and proton.cryptolions.io (proton.eosusa.io did not answer). The last
+contribution, #16 daorach, was recorded 2026-09-14 10:46 UTC, before the block. Applied with
+`finalize.mjs phase2` (snarkjs `zkey beacon`, 10 iterations).
+
+| file | sha256 |
+|---|---|
+| last contribution `p2/16-daorach-….zkey` | `6ab8879c2caf87f5645fb7c2d9f57b37d39511a63ba91f1c3eeb62b03e667c25` |
+| `final/joinsplit_final.zkey` | `26ec798e00175fda8768b5956d7cc77f589138182b326e776704639cabdd7a0f` |
+| `final/joinsplit_vk.json` | `9f9e5db5487e0bb4f08cdc76372826169f18e1354bf0c6cb33e16c6f51b23766` |
+| `final/vk.hex` (for `init` / `setvk`) | `bc498abd08417af55d60326af11431e29a1a9cb3d79ed38e48ab4c5bf8a83978` |
+
+`snarkjs zkey verify joinsplit.r1cs pot16_final.ptau joinsplit_final.zkey`: **ZKey Ok**, listing
+contributions 1 (paul, offline) to 16 (daorach) and 17 (the beacon). Record: `final/phase2.json`,
+attestations `contributions/p2-NN-<account>.json`. **The ceremony is complete.**

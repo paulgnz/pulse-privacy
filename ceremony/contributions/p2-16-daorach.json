@@ -1,0 +1,45 @@
+{
+  "phase": 2,
+  "index": 16,
+  "actor": "daorach",
+  "timestamp": "2026-09-14T10:46:55.923Z",
+  "input": {
+    "file": "p2/15-perseus-9fd4e74a0bd71549f577c1c8a451bb7cf240f1cd58df4d16e9da477e5b9a346b.zkey",
+    "sha256": "9fd4e74a0bd71549f577c1c8a451bb7cf240f1cd58df4d16e9da477e5b9a346b"
+  },
+  "output": {
+    "file": "p2/16-daorach-6ab8879c2caf87f5645fb7c2d9f57b37d39511a63ba91f1c3eeb62b03e667c25.zkey",
+    "sha256": "6ab8879c2caf87f5645fb7c2d9f57b37d39511a63ba91f1c3eeb62b03e667c25",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p2/16-daorach-6ab8879c2caf87f5645fb7c2d9f57b37d39511a63ba91f1c3eeb62b03e667c25.zkey"
+  },
+  "contributionHash": "59648327053803b7936d41d309be9eb091f992aa2f27e9e83840bed6a2ae27be2c6fe602276818fcab91d747aa33b35e9a29b2722ce43ea547922a36b7320001",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "daorach",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "daorach",
+          "note": "ceremony/2/16/6ab8879c2caf87f5645fb7c2d9f57b37d39511a63ba91f1c3eeb62b03e667c25"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_K1_K4CFfebo2ybA7PDw2YM1sWwgwioCyM8UGvvXQv121WnvwW9YDE6mTsUA7gjJna6Px2xbyE5sVAvmdqpaLjwLxwTxDoFKd9",
+  "signerKey": "PUB_K1_4wS8AeW5pxEqJLYUBxHsT9K82wmB91KRajiwvWEkDHntFrzwug",
+  "note": "ceremony/2/16/6ab8879c2caf87f5645fb7c2d9f57b37d39511a63ba91f1c3eeb62b03e667c25"
+}

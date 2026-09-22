@@ -1,0 +1,45 @@
+{
+  "phase": 2,
+  "index": 8,
+  "actor": "cryptqueenie",
+  "timestamp": "2026-09-11T03:47:13.616Z",
+  "input": {
+    "file": "p2/07-zephyrstorm-506108abf3315a848214f7c56490dfa380fed444098dc22d0ff9f8951684c1f8.zkey",
+    "sha256": "506108abf3315a848214f7c56490dfa380fed444098dc22d0ff9f8951684c1f8"
+  },
+  "output": {
+    "file": "p2/08-cryptqueenie-ad4e82ed6df82b4508f87792e4430ca04ae20b04668b585a0a2800a8d040ad79.zkey",
+    "sha256": "ad4e82ed6df82b4508f87792e4430ca04ae20b04668b585a0a2800a8d040ad79",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p2/08-cryptqueenie-ad4e82ed6df82b4508f87792e4430ca04ae20b04668b585a0a2800a8d040ad79.zkey"
+  },
+  "contributionHash": "3ffc0c65925549d3357f2ce8afee0f7e89410558517adbe360b646b93095dc5d66fa76328f25e0a29bd8b42471090b3997d06a2744416e29f9a01a51bc93e703",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "cryptqueenie",
+            "permission": "owner"
+          }
+        ],
+        "data": {
+          "owner": "cryptqueenie",
+          "note": "ceremony/2/8/ad4e82ed6df82b4508f87792e4430ca04ae20b04668b585a0a2800a8d040ad79"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_K1_K6y2dLX2wPkRH2wMapVyjZEv6rxihHa38cpJuYDBpsm6d8hAmoW4vDR7iqPM4aDQ35XYNTpFn9d6AKpm99cehkfbs6vm6h",
+  "signerKey": "PUB_K1_5xXtdL2km4KYZ69xknC2hku9WGQDb5FA79QWSxz7iJZQBmUARW",
+  "note": "ceremony/2/8/ad4e82ed6df82b4508f87792e4430ca04ae20b04668b585a0a2800a8d040ad79"
+}

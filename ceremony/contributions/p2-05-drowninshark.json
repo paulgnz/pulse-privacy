@@ -1,0 +1,45 @@
+{
+  "phase": 2,
+  "index": 5,
+  "actor": "drowninshark",
+  "timestamp": "2026-09-11T00:38:55.902Z",
+  "input": {
+    "file": "p2/04-onthewall-46e706fd7c078ce28828fe34df7e30da96d154ba23d631546ea1e2eae72084b3.zkey",
+    "sha256": "46e706fd7c078ce28828fe34df7e30da96d154ba23d631546ea1e2eae72084b3"
+  },
+  "output": {
+    "file": "p2/05-drowninshark-8bfe0d9358017117b02ef215aa05c73093f1b0c13c5e250c5bbbbd622098c944.zkey",
+    "sha256": "8bfe0d9358017117b02ef215aa05c73093f1b0c13c5e250c5bbbbd622098c944",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p2/05-drowninshark-8bfe0d9358017117b02ef215aa05c73093f1b0c13c5e250c5bbbbd622098c944.zkey"
+  },
+  "contributionHash": "12ad73247a3342e43b17f34e8af6d3be1e2074ae6b11da76bd6d9c845260988c57c5f6ef6e4c2c94e5e9e91c4c2d90f1628f48e9fbe13dac56d37040a2b59e4b",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "drowninshark",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "drowninshark",
+          "note": "ceremony/2/5/8bfe0d9358017117b02ef215aa05c73093f1b0c13c5e250c5bbbbd622098c944"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_WA_DL6nudBuwymsGL72n2e5nHQQ35zgFVVvry6vt9YNGA3KeGmtHiR6Wfg4cuFKZ7Mc47PhhSb4XRdRxzzB3YcbDmB5tEzoPRfQLG7LZWMGFztUVNweBRuHM7mGUE54RhTchrMgn2U9h3DKLSkqW1fAnrJRMN8Wuq8NzLLtVkfgXxeeWsC2tk8LWFzZ9pYpfF1RRPXffwRmh9ud9uDn7z6c6DB4wbG9TXKosbZV5CUz7hbjusdWb9CjDdHnhcDGFpJgwJ6y8HGSWNr7zPnGirnxSJeuFkUZAAna36VdHyzkRBYWzGZ4JwkAt6nmJ5YUbAK3Ek3Ewagnn",
+  "signerKey": "PUB_WA_2zNMGaun63L43bzVxyt6ji9u1bMedWAVs2ySC3YvtzdNQjovYCuX4T44s4kiMmZD7K8j",
+  "note": "ceremony/2/5/8bfe0d9358017117b02ef215aa05c73093f1b0c13c5e250c5bbbbd622098c944"
+}

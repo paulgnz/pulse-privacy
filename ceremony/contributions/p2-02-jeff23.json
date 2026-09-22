@@ -1,0 +1,45 @@
+{
+  "phase": 2,
+  "index": 2,
+  "actor": "jeff23",
+  "timestamp": "2026-09-10T23:19:20.389Z",
+  "input": {
+    "file": "p2/01-paul-1c078235b811bc03d774b0dabde5ad96123642c7ece248531f4202404841af07.zkey",
+    "sha256": "1c078235b811bc03d774b0dabde5ad96123642c7ece248531f4202404841af07"
+  },
+  "output": {
+    "file": "p2/02-jeff23-358fe4c36a5f52f7c86cf08e235fed10dbd7325edca64037f0755f8ef96b9a6a.zkey",
+    "sha256": "358fe4c36a5f52f7c86cf08e235fed10dbd7325edca64037f0755f8ef96b9a6a",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p2/02-jeff23-358fe4c36a5f52f7c86cf08e235fed10dbd7325edca64037f0755f8ef96b9a6a.zkey"
+  },
+  "contributionHash": "17d6699929629c256cab14f9abfba8565fb75e4a651ec84d5b1569a0d1882f132ee34a489a34399c7c128c0ccca7178ed9488ab13b5c1c1752377f0bf065c6e0",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "jeff23",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "jeff23",
+          "note": "ceremony/2/2/358fe4c36a5f52f7c86cf08e235fed10dbd7325edca64037f0755f8ef96b9a6a"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_WA_Cu5M73ucm7vx6Z1g1mohpDEVr6FVaijnRjKRu4ktWTvGFr8ptX5LAuyG7rMATa6e1fgnuSeRBxif9WaZCVtAf6VZUQBj3Y8v5PR4XH9CtQUkc7ncbkdshFKcRX9LRpzrE75tWranZtvZZraeH6jktuwFaFXaEdNGm6LXNgC4h16zzora72b9XfmS6VrGt7QG8uek4arq8gstDrRkfjLn7CkqCRqMKnzXfFnV8Dd1mSs7aCeUY3egGjafQUEQYNYq6mhxwBxDRZ6Mrqguq7G4niKpUTWDVc3qE41jtFPC5watz7FxMG9EzSNWENGX7oAfSywDsywZe",
+  "signerKey": "PUB_WA_3YsELRdPF271SKq1nkw8FESxGgfL8zpYvighH5eM4KSHk1yTdx7tQvdmRQCSxBrw4PFf",
+  "note": "ceremony/2/2/358fe4c36a5f52f7c86cf08e235fed10dbd7325edca64037f0755f8ef96b9a6a"
+}

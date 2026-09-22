@@ -1,0 +1,45 @@
+{
+  "phase": 2,
+  "index": 4,
+  "actor": "onthewall",
+  "timestamp": "2026-09-11T00:33:07.581Z",
+  "input": {
+    "file": "p2/03-labyrinth-675a68b90b42dec6b913325cb4d295a6383d9c58395dd52b48d2ad83d7dca454.zkey",
+    "sha256": "675a68b90b42dec6b913325cb4d295a6383d9c58395dd52b48d2ad83d7dca454"
+  },
+  "output": {
+    "file": "p2/04-onthewall-46e706fd7c078ce28828fe34df7e30da96d154ba23d631546ea1e2eae72084b3.zkey",
+    "sha256": "46e706fd7c078ce28828fe34df7e30da96d154ba23d631546ea1e2eae72084b3",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p2/04-onthewall-46e706fd7c078ce28828fe34df7e30da96d154ba23d631546ea1e2eae72084b3.zkey"
+  },
+  "contributionHash": "9511090f1c036fb3c43b11ed9cf1bfba7465dc7fc162868bf07cc31336d7cb35780e76f256b64f182a9ffe275e6b8ffee9f70db643c8cdbcb0e695cad9914024",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "onthewall",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "onthewall",
+          "note": "ceremony/2/4/46e706fd7c078ce28828fe34df7e30da96d154ba23d631546ea1e2eae72084b3"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_K1_Kbo3cF3cUdoUdYL9oNCdwvStdwozzAkKkM8LHesoBujcpJ7TkJWFu7GVLarZG6PQ2TReyZBux1pstQcwSDihWuY7Q3cTHP",
+  "signerKey": "PUB_K1_7cegc1VDQZWyXe9Uu57KUEmMEHJ8Yab5BaXEjbBUGjDPMJJePb",
+  "note": "ceremony/2/4/46e706fd7c078ce28828fe34df7e30da96d154ba23d631546ea1e2eae72084b3"
+}

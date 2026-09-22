@@ -1,0 +1,45 @@
+{
+  "phase": 2,
+  "index": 11,
+  "actor": "protea",
+  "timestamp": "2026-09-11T07:31:06.057Z",
+  "input": {
+    "file": "p2/10-abtsec-8b07516945291fa081ee625ac6b14374e5bad77df24472e490a85d57ab0f0c3f.zkey",
+    "sha256": "8b07516945291fa081ee625ac6b14374e5bad77df24472e490a85d57ab0f0c3f"
+  },
+  "output": {
+    "file": "p2/11-protea-0d5901d4aa866dc7d3223628a98cf2266d89994eea39222a65af6bf9892f965f.zkey",
+    "sha256": "0d5901d4aa866dc7d3223628a98cf2266d89994eea39222a65af6bf9892f965f",
+    "url": "https://iuzwdmo30xvpiahz.public.blob.vercel-storage.com/p2/11-protea-0d5901d4aa866dc7d3223628a98cf2266d89994eea39222a65af6bf9892f965f.zkey"
+  },
+  "contributionHash": "716eddf1bab0a126198a2726754872cabaf124252fadcd2735ee7a4108ad825834f74a8c44f1aded144e6bfce42927c48aedb4079c84a306e7f65573fafd3a63",
+  "transaction": {
+    "expiration": "2035-01-01T00:00:00",
+    "ref_block_num": 0,
+    "ref_block_prefix": 0,
+    "max_net_usage_words": 0,
+    "max_cpu_usage_ms": 0,
+    "delay_sec": 0,
+    "context_free_actions": [],
+    "actions": [
+      {
+        "account": "xprconf",
+        "name": "viewkey",
+        "authorization": [
+          {
+            "actor": "protea",
+            "permission": "active"
+          }
+        ],
+        "data": {
+          "owner": "protea",
+          "note": "ceremony/2/11/0d5901d4aa866dc7d3223628a98cf2266d89994eea39222a65af6bf9892f965f"
+        }
+      }
+    ],
+    "transaction_extensions": []
+  },
+  "signature": "SIG_K1_JvnUEmKUH85zEkNALD4fP1m6kiPpKPxfoDexUD6T7r2Ft66sZg9uWo6argEmoo65CLJbtEjWiCkQrVZh5Rv94bKmGcME1g",
+  "signerKey": "PUB_K1_5s3uqBJT2wqsxG9uh3k5k53GnDqWcc11z5auuvN17iJVLoLcAF",
+  "note": "ceremony/2/11/0d5901d4aa866dc7d3223628a98cf2266d89994eea39222a65af6bf9892f965f"
+}
