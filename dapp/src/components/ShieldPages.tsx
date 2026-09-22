@@ -338,7 +338,7 @@ export const ShieldAuditor = ({ cfg, token }: { cfg: ShieldConfig; token: Token 
 
 // ---------------------------------------------------------------- How it works
 
-const CEREMONY_URL = "https://ceremony.private.protonnz.com";
+const CEREMONY_URL = "https://ceremony.privatexpr.com";
 
 /** the shielded contract's tokens and caps, read from the contract */
 const ShieldLimits = ({ tokens }: { tokens: Token[] }) => {

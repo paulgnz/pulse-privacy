@@ -251,12 +251,12 @@ export function App() {
   return (
     <main className="page">
       <header className="top">
-        <a className="brand" href="https://private.protonnz.com">
+        <a className="brand" href="https://www.privatexpr.com">
           <img src="/xpr-network.svg" alt="XPR Network" height={20} />
           <span>Private XPR</span>
         </a>
         <div className="muted">
-          Trusted setup ceremony <span className="sep">|</span> <a href="https://private.protonnz.com/about">How it works</a> <span className="sep">|</span> <a href="https://private.protonnz.com">Open the app</a>
+          Trusted setup ceremony <span className="sep">|</span> <a href="https://www.privatexpr.com/about">How it works</a> <span className="sep">|</span> <a href="https://private.protonnz.com">Open the app</a>
         </div>
       </header>
 
@@ -441,7 +441,7 @@ node verify.mjs               # the release check, once both phases are final`}<
 
       <footer className="foot">
         <span>Private XPR ceremony. Coordinator: <a href="https://protonnz.com">protonnz</a>. Phase 1 is universal; phase 2 is for the version 2 contract xprshield on XPR Network.</span>
-        <a href="https://private.protonnz.com">private.protonnz.com</a>
+        <a href="https://www.privatexpr.com">www.privatexpr.com</a>
       </footer>
     </main>
   );
