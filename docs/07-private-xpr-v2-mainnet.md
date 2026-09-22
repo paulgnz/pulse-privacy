@@ -22,7 +22,7 @@ in order. Nothing here is done until its line says so.
 | Phase 2 for `circuits/shielded/joinsplit.circom` **revision 6** (31,708 constraints, 28 public signals) on the ceremony site, then finalise; `final/vk.hex` | Paul, contributors | **Done 2026-09-22 18:02 UTC.** 16 contributors incl. Paul offline; beacon block 404,820,000; final zkey `26ec798e…7a0f`, vk.hex `bc498abd…3978`; zkey verify OK (ceremony/TRANSCRIPT.md) |
 | Contract account **`privatexpr`** on mainnet (decided 2026-09-08; explorer.xprnetwork.org/account/privatexpr): created; owner moves to `admin.proton@committee` on launch day (§2a) | Paul | created |
 | Deploy permission: v1 was deployed from the operational key without asking anyone, so none needed; if `setcode` is ever refused, that is the moment to ask | Paul | none needed |
-| RAM, re-measured 2026-09-22: the chain charges 10 bytes per wasm byte, so the 86.5 KB mainnet wasm alone takes ≈ 865 KB (testnet `xprshield` uses 877 KB; v1's 36 KB wasm uses 378 KB). The contract also pays the root ring (up to 1,024 rows plus one per closed tree) and its config. Buy **1.25 MB**: at 0.0020 XPR/byte plus the 10 % fee ≈ **2,750 XPR**, paid into `privatexpr` first (it holds 0 XPR; `paul` is a passkey account the CLI cannot sign for). NET and CPU for the upload are already covered by the account's default stake (1.7 MB NET available, same as v1) | Paul funds, Claude buys | not bought |
+| RAM, re-measured 2026-09-22: the chain charges 10 bytes per wasm byte, so the 86.5 KB mainnet wasm alone takes ≈ 865 KB (testnet `xprshield` uses 877 KB; v1's 36 KB wasm uses 378 KB). The contract also pays the root ring (up to 1,024 rows plus one per closed tree) and its config. Buy **1.25 MB**: at 0.0020 XPR/byte plus the 10 % fee ≈ **2,750 XPR**, paid into `privatexpr` first (it holds 0 XPR; `paul` is a passkey account the CLI cannot sign for). NET and CPU for the upload are already covered by the account's default stake (1.7 MB NET available, same as v1) | Paul funds, Claude buys | **done 2026-09-22**: 2,800 XPR from paul123 (tx b5c2a2c9…), 1,250,000 bytes bought for 2,777.78 XPR (tx be369b27…); quota 1,259,592 B |
 | Resource plan for the account (NET for the code upload, CPU for nothing: users pay their own) via `resources::buyplan` | Paul | not bought |
 | Auditor key: reuse v1's mainnet viewing key (the file Paul holds) or generate a fresh pair the same way; only the public key goes on chain (`init`) and gets pinned in `dapp/src/config.ts` | Paul | **Done 2026-09-22: fresh pair**, generated offline with `client/auditor-keygen.mjs`; public key `0fb61f4e…63cd17` pinned in `dapp/src/config.ts` and `client/lib/net.mjs` |
 | Release-artifact rehearsal on testnet with the ceremony's **final** key (not the rehearsal key): the browser app with a passkey account and a key account (register, deposit, pay, withdraw, recovery by phrase and by file), the headless client (`register`, `deposit`, `send`, `withdraw`, `restore`), and the committee's `audit` and `recover`; then the same on mainnet with a small deposit before the caps are raised | Paul | final key live on testnet 2026-09-22 (setvk, app and client r6c); client deposit, payment and withdrawal passed; **browser pass by Paul pending** |
@@ -53,6 +53,12 @@ proton action eosio updateauth '{"account":"privatexpr","permission":"owner","pa
 After this only the committee (3 of 6) can change the account's keys; the operational key keeps `active` for deployment and setup (uploads use `active`, so the owner move alone would not block them), and `active` moves to the committee after launch as with v1. Decision 2026-09-08: owner stays on the operational key until the code is final, so contracts can be re-uploaded freely.
 
 ## 3. Deploy (day of)
+
+**Status 2026-09-22:** contract deployed to `privatexpr` (code hash `2b617881…0f3f`, matches §2;
+RAM 870 KB used of 1.26 MB; `eosio.code` on active) and initialised (tx 57f36d0e…): auditor key
+`0fb61f4e…63cd17`, verifying key sha256 `a85ebd02…` = the ceremony's `vk.hex`, not paused, tree 0
+open. **No tokens added yet**, so nothing can be deposited: `addtoken` is left for launch day,
+together with a small first deposit, payment and withdrawal from the app.
 
 ```sh
 proton chain:set proton
