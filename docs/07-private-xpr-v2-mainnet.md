@@ -81,6 +81,8 @@ committee audit with the fresh auditor key opened every note (payer, receiver, a
 
 **Announced 2026-09-22:** https://x.com/paulgrey/status/2102483375965761560
 
+The 22.2223 XPR RAM leftover stays in `privatexpr` as a buffer (decision 2026-09-22), so the Auditor tab's reconciliation reads 22.2223 XPR more than deposits minus withdrawals: that surplus is expected.
+
 ```sh
 proton chain:set proton
 proton contract:set privatexpr ./deploy/mainnet          # answer y to the table-change prompt if any
