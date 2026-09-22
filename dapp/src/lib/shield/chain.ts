@@ -2,7 +2,7 @@
 // proving, and the actions the wallet signs. Every chain write is a wallet transaction of the
 // sender; the proof hides the receiver, the amount and the notes spent (docs/06 §8).
 import * as snarkjs from "snarkjs";
-import { ENDPOINTS, EXPLORER, HYPERIONS, SHIELD } from "../../config";
+import { ENDPOINTS, EXPLORER, HYPERIONS, KEY_QUORUM, SHIELD, operatorOf } from "../../config";
 import type { Session } from "../chain";
 import type { Pt } from "../crypto/babyjub";
 import { ptHex, w32 } from "../crypto/babyjub";
@@ -139,11 +139,17 @@ export async function getConfig(knownTokens: Token[]): Promise<ShieldConfig | nu
  * Every account with a shielded key, with the keys, fetched as one table read (cached briefly).
  * Recipients are resolved from this locally, so a name is never sent to a node on its own.
  */
-let keysCache: { at: number; map: Map<string, Pt> } | null = null;
-export async function registeredKeys(): Promise<Map<string, Pt>> {
-  if (keysCache && Date.now() - keysCache.at < 60000) return keysCache.map;
-  // Each vote is a complete table from a distinct configured server. Cached data from a
-  // single server is never an independent vote, and no request contains the recipient.
+let keysCache: { at: number; map: Map<string, Pt>; disputed: Set<string> } | null = null;
+/**
+ * A payment is sealed to the key this returns, so a key is believed only when at least KEY_QUORUM
+ * distinct node operators return it and no answering operator returns a different one. Counting
+ * hostnames would let one operator (or an attacker holding two small nodes) outvote the rest; a
+ * disagreement blocks the name instead of being settled by majority.
+ */
+async function keyTables(): Promise<{ map: Map<string, Pt>; disputed: Set<string> }> {
+  if (keysCache && Date.now() - keysCache.at < 60000) return keysCache;
+  // Each vote is a complete table from a distinct operator. Cached data from a single server is
+  // never an independent vote, and no request contains the recipient.
   const answers = await Promise.allSettled([...new Set(ENDPOINTS)].map(async (ep) => {
     const table = await rows<{ owner: string; pubkey: string }>("keys", "owner", ep);
     const map = new Map<string, string>();
@@ -151,30 +157,38 @@ export async function registeredKeys(): Promise<Map<string, Pt>> {
       if (!/^[a-z1-5.]{1,12}$/.test(row.owner) || !/^[0-9a-f]{128}$/i.test(row.pubkey) || map.has(row.owner)) throw new Error("Malformed shielded key table");
       map.set(row.owner, row.pubkey.toLowerCase());
     }
-    return map;
+    return { op: operatorOf(ep), map };
   }));
-  const tables = answers.flatMap((a) => a.status === "fulfilled" ? [a.value] : []);
-  if (tables.length < 2) throw new Error("Cannot confirm shielded keys with two independent servers. Try again shortly.");
+  const byOp = new Map<string, Map<string, string>>();
+  for (const a of answers) if (a.status === "fulfilled" && !byOp.has(a.value.op)) byOp.set(a.value.op, a.value.map);
+  const tables = [...byOp.values()];
+  if (tables.length < KEY_QUORUM) throw new Error(`Cannot confirm registered keys with ${KEY_QUORUM} independent node operators right now. Try again shortly.`);
   const map = new Map<string, Pt>();
-  for (const table of tables) for (const [owner, pubkey] of table) {
-    if (tables.filter((t) => t.get(owner) === pubkey).length >= 2) {
-      const w = words(pubkey);
-      map.set(owner, [w[0], w[1]]);
-    }
+  const disputed = new Set<string>();
+  for (const owner of new Set(tables.flatMap((t) => [...t.keys()]))) {
+    const seen = new Set(tables.flatMap((t) => (t.has(owner) ? [t.get(owner)!] : [])));
+    if (seen.size > 1) { disputed.add(owner); continue; }
+    const [pubkey] = [...seen];
+    if (tables.filter((t) => t.get(owner) === pubkey).length >= KEY_QUORUM) { const w = words(pubkey); map.set(owner, [w[0], w[1]]); }
   }
-  keysCache = { at: Date.now(), map };
-  return map;
+  keysCache = { at: Date.now(), map, disputed };
+  return keysCache;
+}
+export async function registeredKeys(): Promise<Map<string, Pt>> {
+  return (await keyTables()).map;
 }
 export async function registeredNames(): Promise<string[]> {
   return [...(await registeredKeys()).keys()].sort();
 }
 
 /**
- * Only use keys confirmed by two distinct servers. Resolve locally so sending does not
- * reveal the recipient's name to an RPC server.
+ * Only use keys confirmed by KEY_QUORUM distinct operators with no dissent. Resolve locally so
+ * sending does not reveal the recipient's name to an RPC server.
  */
 export async function registeredKey(actor: string): Promise<Pt | null> {
-  return (await registeredKeys()).get(actor) ?? null;
+  const t = await keyTables();
+  if (t.disputed.has(actor)) throw new Error(`The network's nodes disagree about ${actor}'s Private XPR key, so nothing was sent. Try again later; if this persists, tell the Private XPR team.`);
+  return t.map.get(actor) ?? null;
 }
 
 /** a short fingerprint of a key, shown next to the recipient so a wrong key is visible */
@@ -440,7 +454,7 @@ export async function prepareSend(s: Session, keys: ShieldKeys, cfg: ShieldConfi
   if (!entry) throw new Error(`${token.code} is not enabled in the shielded contract.`);
   onProgress?.(0.02, "Reading your notes");
   const toPk = await registeredKey(to);
-  if (!toPk) throw new Error(`${to} has not set up shielded payments yet.`);
+  if (!toPk) throw new Error(`${to} has not set up Private XPR yet.`);
   const p = fresh(pre) ?? (await prefetch(keys));
   const { inputs, tree, rootSeq } = pickInTree(p, entry.id, amount);
   const change = inputs.reduce((sum, n) => sum + n.v, 0n) - amount;
@@ -544,7 +558,14 @@ export interface ShieldLedgerRow {
 /** one signed spend from history: who, when, the nullifiers and commitments it carried, the public amount */
 export interface SpendRecord { owner: string; ts: string; trx: string; block: number; publics: string; nf: string[]; cm: string[]; amount: bigint; tokenId: bigint }
 /** every spend on the contract, oldest first, from the first history node that answers; [] when none does */
-export async function spendHistory(): Promise<SpendRecord[] | null> {
+/**
+ * Every spend on the contract, oldest first. `expected` is the number of spends the contract itself
+ * records (two spend tags each): a history node that answers with fewer is behind or empty, so the
+ * next one is tried, and the most complete answer is used when none covers them all. null when no
+ * history node answers at all.
+ */
+export async function spendHistory(expected = 0): Promise<SpendRecord[] | null> {
+  let best: SpendRecord[] | null = null;
   for (const h of HYPERIONS) {
     try {
       const out: SpendRecord[] = [];
@@ -561,10 +582,11 @@ export async function spendHistory(): Promise<SpendRecord[] | null> {
         if (j.actions.length < 100) break;
         skip += 100;
       }
-      return out;
+      if (out.length >= expected) return out;
+      if (!best || out.length > best.length) best = out;
     } catch { /* next history node */ }
   }
-  return null;
+  return best;
 }
 /**
  * A history record is only believed once a chain node's block confirms it: the transaction is in
@@ -604,7 +626,7 @@ export async function verifySpend(rec: SpendRecord): Promise<SpendRecord | null>
  * share a nullifier with a current one; only the one whose outputs exist counts).
  */
 async function verifiedSpends(nfOnChain: Set<string>, cmOnChain: Set<string>, relevant: (r: SpendRecord) => boolean): Promise<SpendRecord[] | null> {
-  const all = await spendHistory();
+  const all = await spendHistory(Math.floor(nfOnChain.size / 2));
   if (all === null) return null;
   const seenNf = new Set<string>(); // a spend is identified by its first nullifier, which the chain allows once
   const out: SpendRecord[] = [];
@@ -710,7 +732,8 @@ export async function activity(keys: ShieldKeys, actor: string, res: ScanResult)
     const sent = sumIn - change - sp.amount;
     if (sent > 0n) events.push({ kind: "sent", ts: sp.ts, trx: sp.trx, amount: sent, token, counterparty: sends[sp.trx] ?? null, notes: spent.map((n) => n.index), change, changeNote });
   }
-  // sealed notes with no matching spend in history (history behind, or none): show as received from an unknown payer
+  // sealed notes with no matching spend in history (history behind, or none): shown as notes of unknown origin
+  // (a change note is ours too, so "received" would be wrong for it)
   for (const n of mine) if (n.kind !== "deposit" && !seen.has(n.index)) events.push({ kind: "received", ts: null, trx: null, amount: n.v, token: n.token, counterparty: null, notes: [n.index] });
   events.sort((a, b) => (b.ts ?? "9").localeCompare(a.ts ?? "9") || Math.max(...b.notes) - Math.max(...a.notes));
   return { events, history: spends !== null };

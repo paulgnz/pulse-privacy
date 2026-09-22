@@ -9,6 +9,7 @@ export const NETWORKS = {
   testnet: {
     chain: "proton-test",
     endpoints: ["https://tn1.protonnz.com", "https://api-xprnetwork-test.saltant.io", "https://testnet.protonchain.com"],
+    keyQuorum: 2,
     hyperions: ["https://api-xprnetwork-test.saltant.io"],
     explorer: "https://testnet.explorer.xprnetwork.org",
     contract: "xprshield",
@@ -18,6 +19,7 @@ export const NETWORKS = {
   mainnet: {
     chain: "proton",
     endpoints: ["https://api.protonnz.com", "https://api-xprnetwork-main.saltant.io", "https://proton.cryptolions.io", "https://proton-api.eosiomadrid.io", "https://proton.eoscafeblock.com", "https://proton.genereos.io"],
+    keyQuorum: 3,
     hyperions: ["https://hyperion-xpr-mainnet.protonnz.com", "https://api-xprnetwork-main.saltant.io", "https://proton-api.eosiomadrid.io"],
     explorer: "https://explorer.xprnetwork.org",
     contract: "privatexpr",
@@ -27,6 +29,8 @@ export const NETWORKS = {
 };
 
 export const hex = N.hex32;
+/** a node operator: the registrable domain of the address */
+export const operatorOf = (url) => new URL(url).hostname.split(".").slice(-2).join(".");
 export const words = (h) => (h.match(/.{64}/g) ?? []).map((w) => BigInt("0x" + w));
 const lower = (s) => String(s).toLowerCase();
 
@@ -223,18 +227,35 @@ export class Net {
     return agreed;
   }
 
-  /** registered keys as two nodes agree on them: name → point */
+  /**
+   * Registered keys a payment may be sealed to: returned identically by at least keyQuorum distinct
+   * node operators, with no answering operator returning a different key (a disputed name is left
+   * out and listed in `disputedKeys`). name → point
+   */
   async registeredKeys() {
-    const tables = await this.fromAll(async (ep) => new Map((await this.table(ep, "keys")).map((r) => [r.owner, lower(r.pubkey)])));
-    if (tables.length < 2) throw new Error("cannot confirm registered keys with two nodes; try again");
+    const got = await this.fromAll(async (ep) => ({ op: operatorOf(ep), map: new Map((await this.table(ep, "keys")).map((r) => [r.owner, lower(r.pubkey)])) }));
+    const byOp = new Map();
+    for (const g of got) if (!byOp.has(g.op)) byOp.set(g.op, g.map);
+    const tables = [...byOp.values()];
+    if (tables.length < this.keyQuorum) throw new Error(`cannot confirm registered keys with ${this.keyQuorum} independent node operators; try again`);
     const out = new Map();
-    for (const t of tables) for (const [owner, pk] of t) if (tables.filter((o) => o.get(owner) === pk).length >= 2) out.set(owner, words(pk));
+    this.disputedKeys = new Set();
+    for (const owner of new Set(tables.flatMap((t) => [...t.keys()]))) {
+      const seen = new Set(tables.flatMap((t) => (t.has(owner) ? [t.get(owner)] : [])));
+      if (seen.size > 1) { this.disputedKeys.add(owner); continue; }
+      const [pk] = [...seen];
+      if (tables.filter((t) => t.get(owner) === pk).length >= this.keyQuorum) out.set(owner, words(pk));
+    }
     return out;
   }
 
   /** spend actions from history, each confirmed by a chain node's block before it is believed */
   async verifiedSpends(relevant = () => true, cmOnChain = null) {
+    // the contract's own count of spends (two tags each): a history node with fewer is behind or empty,
+    // so the next one is tried and the most complete answer is kept
+    const expected = Math.floor((await this.tableAny("nullifiers").catch(() => [])).length / 2);
     let recs = null;
+    let best = null;
     for (const h of this.hyperions) {
       try {
         recs = [];
@@ -249,9 +270,11 @@ export class Net {
           }
           if (j.actions.length < 100) break;
         }
-        break;
-      } catch { recs = null; }
+        if (recs.length >= expected) { best = recs; break; }
+        if (!best || recs.length > best.length) best = recs;
+      } catch { /* next history node */ }
     }
+    recs = best;
     if (recs === null) return null;
     const out = [];
     const seenNf = new Set();

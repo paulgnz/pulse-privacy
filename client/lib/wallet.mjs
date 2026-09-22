@@ -27,10 +27,15 @@ export function saveKey(network, account, ask, meta = {}) {
   chmodSync(p, 0o600);
   return p;
 }
-export function parseSecret(input) {
+export function parseSecret(input, network = null) {
   let t = input.trim();
   if (existsSync(t)) t = readFileSync(t, "utf8").trim();
-  if (t.startsWith("{")) t = String(JSON.parse(t).secret ?? "");
+  if (t.startsWith("{")) {
+    const j = JSON.parse(t);
+    // a key file names its network; using it on the other network would link the two identities
+    if (network && j.network && j.network !== `xpr-${network}`) throw new Error(`that key file is for ${j.network}, not xpr-${network}; refusing`);
+    t = String(j.secret ?? "");
+  }
   t = t.replace(/^0x/i, "");
   if (!/^[0-9a-f]{64}$/i.test(t)) throw new Error("a secret is 64 hexadecimal characters, or a key file");
   return BigInt("0x" + t);

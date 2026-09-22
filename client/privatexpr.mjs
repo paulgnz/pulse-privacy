@@ -70,6 +70,7 @@ const say = (...a) => console.log(...a);
 
 async function registeredOrThrow(name) {
   const keys = await net.registeredKeys();
+  if (net.disputedKeys?.has(name)) throw new Error(`the nodes disagree about ${name}'s registered key; nothing was sent. Try again later`);
   const pk = keys.get(name);
   if (!pk) throw new Error(`${name} has not registered a key on ${net.contract}`);
   return pk;
@@ -95,7 +96,7 @@ try {
       const p = saveKey(network, account(name), ask);
       say(`key for ${name} on ${network} saved to ${p} (fingerprint ${fingerprint(N.keygen(ask).pk)}); next: register ${name}`);
     } else if (sub === "import") {
-      const ask = parseSecret(secret ?? "");
+      const ask = parseSecret(secret ?? "", network);
       const p = saveKey(network, account(name), ask);
       say(`key for ${name} saved to ${p} (fingerprint ${fingerprint(N.keygen(ask).pk)})`);
     } else if (sub === "show") {
@@ -233,7 +234,7 @@ try {
   } else if (cmd === "audit" || cmd === "recover") {
     const file = process.env.PRIVATEXPR_AUDITOR_KEY;
     if (!file) throw new Error("set PRIVATEXPR_AUDITOR_KEY to the committee's key file");
-    const auditorAsk = parseSecret(file);
+    const auditorAsk = parseSecret(file, network);
     const cfg = await net.config();
     const apk = N.keygen(auditorAsk).pk;
     if (apk[0] !== cfg.auditorPk[0] || apk[1] !== cfg.auditorPk[1]) throw new Error("that key is not the auditor key configured on the contract");

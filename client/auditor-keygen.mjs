@@ -5,7 +5,7 @@
 // key (the value for the contract's `init` and for the app's and client's pinned `auditorPk`).
 // The secret never appears on screen. The file works as PRIVATEXPR_AUDITOR_KEY for `audit` and
 // `recover`. Keep it offline and give the committee its copy under the same custody as v1's key.
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import N from "../circuits/lib/notes.mjs";
@@ -17,7 +17,13 @@ const keys = N.keygen();
 if (keys.ask === 0n) { console.error("degenerate key; run again"); process.exit(1); }
 const publicKey = N.hex32(keys.pk[0]) + N.hex32(keys.pk[1]);
 mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-writeFileSync(path, JSON.stringify({
+// exclusive and no-follow: fails if anything (a file or a symlink) appeared at the path since the check above
+let fd;
+try { fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600); }
+catch (e) { console.error(`could not create ${path} exclusively (${e.code}); refusing`); process.exit(1); }
+const st = fstatSync(fd);
+if (!st.isFile() || (st.mode & 0o077) !== 0 || st.uid !== process.getuid()) { closeSync(fd); console.error(`${path} is not a private file owned by you; refusing`); process.exit(1); }
+writeSync(fd, JSON.stringify({
   format: "pulse-privacy/auditorkey/v1",
   purpose: "Private XPR auditor viewing key (committee). Opens every note's audit copy. Cannot spend.",
   contract: "privatexpr",
@@ -25,8 +31,8 @@ writeFileSync(path, JSON.stringify({
   created: new Date().toISOString(),
   publicKey,
   secret: "0x" + N.hex32(keys.ask),
-}, null, 2) + "\n", { mode: 0o600 });
-chmodSync(path, 0o600);
+}, null, 2) + "\n");
+closeSync(fd);
 // read it back the way `audit` does and check it yields the same public key
 const back = JSON.parse(readFileSync(path, "utf8"));
 const again = N.keygen(BigInt(back.secret));

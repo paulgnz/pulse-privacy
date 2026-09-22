@@ -3,6 +3,8 @@
 type Net = {
   chainId: string;
   endpoints: string[];
+  /** distinct node operators that must return the same registered key before a payment is sealed to it (and none may differ) */
+  keyQuorum: number;
   /** Hyperion history endpoints, tried in order (failover) */
   hyperions: string[];
   contract: string;
@@ -12,6 +14,7 @@ const NETWORKS: Record<"testnet" | "mainnet", Net> = {
   testnet: {
     chainId: "71ee83bcf52142d61019d95f9cc5427ba6a0d7ff8accd9e2088ae2abeaf3d3dd",
     endpoints: ["https://tn1.protonnz.com", "https://api-xprnetwork-test.saltant.io", "https://testnet.protonchain.com"],
+    keyQuorum: 2,
     // the only testnet Hyperion found live and at head; add more here when they exist
     hyperions: ["https://api-xprnetwork-test.saltant.io"],
     contract: "xprconf",
@@ -21,6 +24,7 @@ const NETWORKS: Record<"testnet" | "mainnet", Net> = {
     chainId: "384da888112027f0321850a169f737c33e53b388aad48b5adace4bab97f437e0",
     // v5 nodes only; greymass (v3.1) was measured at 15 s per get_block and rejects sends at 30 ms
     endpoints: ["https://api.protonnz.com", "https://api-xprnetwork-main.saltant.io", "https://proton.cryptolions.io", "https://proton-api.eosiomadrid.io", "https://proton.eoscafeblock.com", "https://proton.genereos.io"],
+    keyQuorum: 3,
     hyperions: ["https://hyperion-xpr-mainnet.protonnz.com", "https://api-xprnetwork-main.saltant.io", "https://proton-api.eosiomadrid.io"],
     contract: "xprconf", // placeholder: the mainnet contract account is not created yet
     explorer: "https://explorer.xprnetwork.org",
@@ -31,6 +35,9 @@ const NET = NETWORKS[NETWORK];
 
 export const CHAIN_ID = NET.chainId;
 export const ENDPOINTS = NET.endpoints;
+export const KEY_QUORUM = NET.keyQuorum;
+/** a node operator, for counting independent answers: the registrable domain of the address (api.protonnz.com and tn1.protonnz.com are one operator) */
+export const operatorOf = (url: string) => new URL(url).hostname.split(".").slice(-2).join(".");
 export const HYPERIONS = NET.hyperions;
 /** first Hyperion (kept for callers that want one); reads use `HYPERIONS` with failover */
 export const HYPERION = NET.hyperions[0];

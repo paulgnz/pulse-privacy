@@ -215,7 +215,7 @@ export const ShieldActivity = ({ cfg, keys, actor, notes, spent, token, revealed
     return () => { live = false; };
   }, [keys, actor, notes, spent]);
   const all = useMemo(() => [...(notes ?? []).map((n) => ({ n, spent: false })), ...spent.map((n) => ({ n, spent: true }))].sort((a, b) => b.n.index - a.n.index), [notes, spent]);
-  const label = (e: ActivityEvent) => e.kind === "deposit" ? "Deposited" : e.kind === "withdrew" ? `Withdrew to ${e.counterparty}` : e.kind === "received" ? (e.counterparty ? `Received from ${e.counterparty}` : "Received") : e.counterparty ? `Sent to ${e.counterparty}` : "Sent";
+  const label = (e: ActivityEvent) => e.kind === "deposit" ? "Deposited" : e.kind === "withdrew" ? `Withdrew to ${e.counterparty}` : e.kind === "received" ? (e.counterparty ? `Received from ${e.counterparty}` : e.trx ? "Received" : "Note, origin not in history yet") : e.counterparty ? `Sent to ${e.counterparty}` : "Sent";
   const sub = (e: ActivityEvent) => e.kind === "deposit" ? "public" : e.kind === "withdrew" ? "public" : e.kind === "sent" ? (e.change && e.change > 0n ? `sealed; change ${fmtUnits(e.change, tokenOf(cfg, e.token, token))} kept as note ${e.changeNote}` : "sealed") : e.counterparty ? "sealed; the payer is named by the signed transaction" : "sealed; payer not yet in history";
   return (
     <section className="section">
